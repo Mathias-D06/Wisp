@@ -70,6 +70,21 @@ from `.venv`. Dates are when checked.
 | test `test_win_integration.py` | real UIA click (Invoke) + type (ValuePattern) on a Qt window; window bounds, minimise/restore; mss capture → JPEG | 2026-10-12 |
 | test `test_f2_tools.py::test_real_recycle` (opt-in, run once) | item lands in the Recycle Bin (`NameSpace(10)`) | 2026-10-12 |
 
+## Dictation (phase 4)
+
+| URL | Confirmed | Checked |
+|---|---|---|
+| https://ai.google.dev/gemini-api/docs/audio | audio/wav (and others) accepted inline; 20 MB request limit; 32 tokens per second; recommended model gemini-3.8-flash | 2026-10-12 |
+| https://ai.google.dev/gemini-api/docs/thinking | gemini-3.8-flash thinking levels low/medium/high (default medium); cannot be switched off | 2026-10-12 |
+| https://ai.google.dev/gemini-api/docs/interactions | Interactions API GA; generateContent "remains fully supported"; Interactions store inputs by default (store=true, 55 days paid) | 2026-10-12 |
+| https://ai.google.dev/api/generate-content | `client.models.generate_content(model=, contents=, config=GenerateContentConfig(system_instruction=…))`, `response.text` | 2026-10-12 |
+| SDK introspection | `types.Part.from_bytes(*, data, mime_type)`; `GenerateContentConfig.thinking_config`; `ThinkingLevel.LOW` | 2026-10-12 |
+| https://learn.microsoft.com/en-us/windows/win32/dataxchg/clipboard-formats | ExcludeClipboardContentFromMonitorProcessing (any data), CanIncludeInClipboardHistory (DWORD 0/1), CanUploadToCloudClipboard (DWORD 0/1) | 2026-10-12 |
+| https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-emptyclipboard | NULL owner on OpenClipboard → EmptyClipboard sets owner NULL → SetClipboardData fails | 2026-10-12 |
+| https://learn.microsoft.com/en-us/windows/win32/dataxchg/wm-destroyclipboard | sent to the clipboard owner's window procedure when emptied | 2026-10-12 |
+| https://mhammond.github.io/pywin32/win32clipboard__SetClipboardData_meth.html, __GetClipboardDataHandle_meth.html | SetClipboardData copies a buffer into new global memory; GetClipboardDataHandle returns the data handle (read with GetGlobalMemory) | 2026-10-12 |
+| tests `test_dictation.py::test_real_clipboard_round_trip`, `::test_real_paste_into_focused_field` (opt-in, run 2026-10-12) | byte-exact restore incl. a custom format; exclusion markers detected; real Ctrl+V pastes into a focused field | 2026-10-12 |
+
 ## Dependencies (PyPI JSON API, checked 2026-10-12)
 
 | Package | Version | Released | Licence | Note |

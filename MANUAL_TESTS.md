@@ -33,6 +33,15 @@ General, paste your key and click **Save and test** (expect "Key works…").
 | MT-16 | Create `Desktop\wisp-test.txt`, say "delete wisp-test.txt from my desktop". | Card asks first; after "yes" the file is in the Recycle Bin (restorable). |
 | MT-17 | Run Task Manager as administrator, say "click the Processes tab in Task Manager". | Wisp explains that Windows blocks controlling admin windows; nothing is clicked. |
 
+## F3 Dictation (copy something first, e.g. the word "clipboard-check")
+
+| ID | Steps | Expected |
+|---|---|---|
+| MT-18 | Click into Notepad. Hold **Ctrl+Win**, say "um so let's meet at nine... no, ten tomorrow", release. | Pill shows Dictating → Transcribing → Inserted; Notepad gets "So let's meet at 10 tomorrow." (or similar, no "um", no "nine"). Start menu does not open. Press Ctrl+V: "clipboard-check" is pasted (clipboard restored). |
+| MT-19 | Repeat MT-18 in a browser text box (e.g. a search field) and in VS Code. | Same result in both. |
+| MT-20 | Win+V (clipboard history). | The dictated text is **not** in Windows clipboard history. |
+| MT-21 | Hold Ctrl+Win briefly (< 0.2 s) and release; then press Ctrl+Win+D. | Nothing is recorded for the tap; Ctrl+Win+D creates a virtual desktop as usual (remove it with Ctrl+Win+F4). |
+
 ## Hotkeys
 
 | ID | Steps | Expected |

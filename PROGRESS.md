@@ -9,10 +9,10 @@ acceptance step needs real hardware/API key and is listed in `MANUAL_TESTS.md` (
 
 ## Status
 
-- Current phase: 4 — F3 dictation
-- Next step: verify Gemini audio-understanding docs (inline WAV, model, thinking level) and
-  clipboard APIs (exclusion formats); write `wisp/dictation.py` (record on Ctrl+Win hold, clean via
-  generate_content, paste with Ctrl+V, restore clipboard) and wire hotkey "dictation".
+- Current phase: 5 — F4 Circle to Ask
+- Next step: write `wisp/ui/overlay.py` (one transparent overlay per QScreen, freehand loop),
+  `wisp/circle.py` (hotkey "circle": grab screens before showing overlays, stream question audio to
+  the Live session, crop loop bbox in physical pixels, send JPEG + activity_end, show answer bubble).
 - Environment: Windows 11, Python 3.12.10 venv in `.venv`, Git 2.55, Inno Setup 6.7.3 (per-user,
   `%LOCALAPPDATA%\Programs\Inno Setup 6\ISCC.exe`).
 - Commands: `.venv\Scripts\python -m pytest`, `.venv\Scripts\ruff check src tests`,
@@ -31,7 +31,8 @@ acceptance step needs real hardware/API key and is listed in `MANUAL_TESTS.md` (
 - [x] 3 F2 computer-control tools — `system/app_index.py`, `winapi/{windows,screen,uia,files}.py`,
   `tools/builtin/{apps,windows,web,screen,ui,files}.py`; tests `test_app_index.py`,
   `test_f2_tools.py`, `test_win_integration.py`
-- [ ] 4 F3 dictation
+- [x] 4 F3 dictation — `dictation.py`, `ai/dictation.py`, `system/clipboard.py`, `ui/hud.py`; tests
+  `test_dictation.py`, `test_dictation_request.py`
 - [ ] 5 F4 Circle to Ask
 - [ ] 6 F5 to-dos + F6 scheduler
 - [ ] 7 F7 Island
@@ -92,13 +93,20 @@ acceptance step needs real hardware/API key and is listed in `MANUAL_TESTS.md` (
 - [~] F2.A Accept on clean Windows 11 — MT-11, MT-12, MT-13, MT-14 (needs your API key + machine)
 
 ### F3 Dictation
-- [ ] F3.1 Hold Ctrl+Win (configurable) records; release sends audio to Gemini
-- [ ] F3.2 Returns only clean intended text (fillers, false starts, self-corrections resolved)
-- [ ] F3.3 Pastes into focused field and restores previous clipboard
-- [ ] F3.4 Ctrl+Win does not open Start menu or trigger virtual-desktop shortcuts
-- [ ] F3.5 Triggers only when no other key pressed and held > ~250 ms
-- [ ] F3.6 Accept: works in Notepad, a browser text box and VS Code
-- [ ] F3.7 Words dictated tracked for Stats
+- [x] F3.1 Hold Ctrl+Win records; release sends to Gemini — `dictation.py`;
+  `test_dictation.py::test_full_flow_pastes_and_restores`, `test_dictation_request.py::test_request_shape`
+- [~] F3.2 Clean intended text — prompt + post-processing tested (`test_dictation.py::test_clean_output`,
+  `::test_prompt_mentions_self_corrections`); model quality needs MT-18
+- [x] F3.3 Paste + restore previous clipboard — `system/clipboard.py`;
+  `test_dictation.py::test_real_clipboard_round_trip`, `::test_real_paste_into_focused_field` (opt-in,
+  passed 2026-10-12), `::test_no_restore_if_clipboard_changed`, `::test_waits_for_modifiers_before_paste`
+- [x] F3.4 No Start menu / virtual-desktop interference — chord logic `test_hotkeys.py::test_other_key_while_armed_spoils_chord`,
+  `::test_hold_fires_after_timer_and_release_emits` (mask key requested); shell behaviour UNDOCUMENTED
+  (D-009) → MT-10, MT-21
+- [x] F3.5 Only when no other key and held > 250 ms — `test_hotkeys.py::test_short_tap_does_nothing`,
+  `::test_other_key_while_active_cancels`, `::test_extra_modifier_means_different_chord`
+- [~] F3.6 Accept: Notepad, browser text box, VS Code — MT-18, MT-19
+- [x] F3.7 Words dictated → Stats — `test_dictation.py::test_full_flow_pastes_and_restores` (stats event)
 
 ### F4 Circle to Ask
 - [ ] F4.1 Hold Ctrl+Shift (configurable) shows full-screen transparent overlay

@@ -127,6 +127,34 @@ comtypes calls CoInitializeEx(STA) on import in the importing thread; importing 
 worker raises RPC_E_CHANGED_MODE. `winapi/uia.py` imports it at start-up (main thread); tool
 workers initialise COM as MTA (UIA docs recommend non-UI threads for clients).
 
+## D-023 Dictation through generateContent, not the Live session or Interactions
+Gap: the brief says "send the audio to Gemini". Decision: one stateless `generate_content` call
+on the text model (default `gemini-3.8-flash`) with inline WAV and `thinking_level=low`. The
+Interactions API stores inputs server-side by default (up to 55 days) — not acceptable for
+private dictation — and the Live session would mix dictation into the conversation. If a model
+rejects `thinking_level`, the call is retried without it.
+Sources: ai.google.dev/gemini-api/docs/audio, /thinking, /interactions, api/generate-content.
+
+## D-024 Paste and clipboard restore
+Decision: snapshot every memory-based clipboard format byte-for-byte (GDI-handle and
+synthesized formats skipped, 64 MB cap), put the text on the clipboard marked with
+ExcludeClipboardContentFromMonitorProcessing + CanIncludeInClipboardHistory=0 +
+CanUploadToCloudClipboard=0 (so neither Windows nor Wisp history keeps it), wait until Ctrl/Win/
+Alt/Shift are physically released (else Ctrl+V becomes Win+V), re-activate the original window if
+focus moved, send Ctrl+V, and restore the snapshot after 600 ms only if the clipboard sequence
+number is still ours (the user did not copy something new). Clipboard writes happen on the Qt
+thread with a hidden native window as owner (EmptyClipboard: a NULL owner makes
+SetClipboardData fail; WM_DESTROYCLIPBOARD is sent to the owner, so it must pump messages).
+
+## D-025 Dictation into admin windows
+UIPI silently drops SendInput aimed at elevated windows. If the target window is elevated, Wisp
+leaves the text on the clipboard and asks the user to press Ctrl+V.
+
+## D-026 Dictation feedback
+A small "HUD" pill near the bottom of the active screen shows Dictating / Transcribing / Inserted.
+It never takes focus or mouse input (`WindowDoesNotAcceptFocus`, `WA_ShowWithoutActivating`,
+`WindowTransparentForInput`), so the caret stays in the target field.
+
 ## D-022 Secure desktop / lock screen detection
 `OpenInputDesktop(DESKTOP_SWITCHDESKTOP)` fails while the UAC secure desktop, Ctrl+Alt+Del screen
 or lock screen is the input desktop. Wisp uses that only to explain why it cannot act; it never

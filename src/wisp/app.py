@@ -7,12 +7,14 @@ import sys
 from datetime import datetime
 
 from PySide6.QtCore import QObject
-from PySide6.QtWidgets import QApplication, QMessageBox
+from PySide6.QtWidgets import QApplication, QMessageBox, QWidget
 
 from wisp import paths, startup
+from wisp.ai import dictation as dictation_ai
 from wisp.audio.capture import MicCapture
 from wisp.audio.playback import Player
 from wisp.db import Database
+from wisp.dictation import DictationController, DictationDeps
 from wisp.hotkeys.manager import HotkeyManager
 from wisp.keystore import KeyStore
 from wisp.live.config import build_live_config, is_extended_thinking, system_instruction
@@ -25,6 +27,7 @@ from wisp.settings import Settings, SettingsStore
 from wisp.single_instance import SingleInstance
 from wisp.stores.action_log import ActionLog
 from wisp.stores.stats import Stats
+from wisp.system import clipboard
 from wisp.system.app_index import AppIndex
 from wisp.tools.builtin import apps as apps_tools
 from wisp.tools.builtin import core as core_tools
@@ -41,10 +44,13 @@ from wisp.ui import theme
 from wisp.ui.bridge import UiInvoker
 from wisp.ui.confirm_card import ConfirmCard
 from wisp.ui.console import ConsoleWindow
+from wisp.ui.hud import Hud
 from wisp.ui.settings.dialog import SettingsDialog
 from wisp.ui.settings.general_page import GeneralPage
 from wisp.ui.tray import Tray
 from wisp.voice import VoiceController, VoiceSignals, make_callbacks
+from wisp.winapi import input as winput
+from wisp.winapi import windows as win
 
 log = logging.getLogger(__name__)
 
@@ -118,6 +124,12 @@ class WispApp(QObject):
         self.hotkeys.apply(settings)
         self.hotkeys.signals.event.connect(self._on_hotkey)
 
+        self.clipboard_owner = QWidget()  # native window on the Qt thread that owns our writes
+        self.clipboard_owner_hwnd = int(self.clipboard_owner.winId())
+        self.hud = Hud(settings.loadout.accent)
+        self.dictation = DictationController(self._dictation_deps(), self.mic, self.hud,
+                                             self.services.stats, self.notify)
+
         palette = theme.palette(settings.loadout.theme, settings.loadout.accent)
         self.console = ConsoleWindow(self.voice, settings.loadout.accent)
         self.confirm_card = ConfirmCard(self.confirmations)
@@ -132,6 +144,27 @@ class WispApp(QObject):
         for module in (core_tools, apps_tools, windows_tools, web_tools, screen_tools, ui_tools,
                        files_tools):
             self.registry.register_all(module.tools())
+
+    def _dictation_deps(self) -> DictationDeps:
+        peek = self.settings_store.peek
+        owner = self.clipboard_owner_hwnd
+        modifier_keys = (winput.VK_LWIN, winput.VK_RWIN, winput.VK_LCONTROL, winput.VK_RCONTROL,
+                         winput.VK_LSHIFT, winput.VK_RSHIFT, winput.VK_LMENU, winput.VK_RMENU)
+        return DictationDeps(
+            transcribe=lambda pcm: dictation_ai.transcribe(
+                self.keystore.get() or "", peek().ai.text_model, pcm, peek().ai.language),
+            has_key=self.keystore.has_key,
+            snapshot=lambda: clipboard.snapshot(owner),
+            set_text=lambda text: clipboard.set_text(text, owner),
+            restore=lambda snap: clipboard.restore(snap, owner),
+            clipboard_sequence=clipboard.sequence,
+            paste=winput.paste_shortcut,
+            modifiers_down=lambda: any(winput.is_down(vk) for vk in modifier_keys),
+            foreground=win.foreground_window,
+            activate=win.activate,
+            target_is_elevated=lambda w: win.is_process_elevated(w.pid)
+            and not win.self_elevated(),
+        )
 
     def _live_config(self, handle: str | None):
         settings = self.settings_store.get()
@@ -199,6 +232,7 @@ class WispApp(QObject):
     def _on_hotkey(self, name: str, kind: str) -> None:
         log.info("Hotkey %s %s", name, kind)
         self.voice.on_hotkey(name, kind)
+        self.dictation.on_hotkey(name, kind)
 
     def _apply_theme(self, settings: Settings) -> None:
         palette = theme.palette(settings.loadout.theme, settings.loadout.accent)
