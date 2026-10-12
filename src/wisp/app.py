@@ -29,16 +29,20 @@ from wisp.services import Services
 from wisp.settings import Settings, SettingsStore
 from wisp.single_instance import SingleInstance
 from wisp.stores.action_log import ActionLog
+from wisp.stores.clipboard_history import ClipboardHistory
 from wisp.stores.stats import Stats
 from wisp.stores.todos import TodoStore
 from wisp.system import clipboard
 from wisp.system.app_index import AppIndex
+from wisp.system.clipboard_monitor import ClipboardMonitor
+from wisp.system.media import MediaWatcher
 from wisp.tools.base import Origin
 from wisp.tools.builtin import apps as apps_tools
 from wisp.tools.builtin import core as core_tools
 from wisp.tools.builtin import files as files_tools
 from wisp.tools.builtin import schedule as schedule_tools
 from wisp.tools.builtin import screen as screen_tools
+from wisp.tools.builtin import system as system_tools
 from wisp.tools.builtin import todos as todo_tools
 from wisp.tools.builtin import ui as ui_tools
 from wisp.tools.builtin import web as web_tools
@@ -53,6 +57,16 @@ from wisp.ui.bubble import AnswerBubble
 from wisp.ui.confirm_card import ConfirmCard
 from wisp.ui.console import ConsoleWindow
 from wisp.ui.hud import Hud
+from wisp.ui.island.apps_tab import AppsTab
+from wisp.ui.island.clipboard_tab import ClipboardTab
+from wisp.ui.island.common import Background
+from wisp.ui.island.controls_tab import ControlsTab
+from wisp.ui.island.island import Island
+from wisp.ui.island.music import MediaSignals
+from wisp.ui.island.power_tab import PowerTab
+from wisp.ui.island.stats_tab import StatsTab
+from wisp.ui.island.today_tab import TodayTab
+from wisp.ui.island.wallpaper_tab import WallpaperTab
 from wisp.ui.settings.dialog import SettingsDialog
 from wisp.ui.settings.general_page import GeneralPage
 from wisp.ui.settings.routines_page import RoutinesPage
@@ -97,6 +111,7 @@ class WispApp(QObject):
             app_index=AppIndex(self.db),
             todos=TodoStore(self.db),
             tasks=TaskStore(self.db),
+            clipboard=ClipboardHistory(self.db, lambda: peek().general.clipboard_history_size),
         )
         self.services.scheduler = TaskScheduler(
             self.services.tasks, f"sqlite:///{paths.jobs_database_file()}", peek,
@@ -153,14 +168,38 @@ class WispApp(QObject):
         self.confirm_card = ConfirmCard(self.confirmations)
         self.confirm_card.apply_palette(palette.surface, palette.border)
         self.voice.visual.connect(lambda state, _level, text: self.tray.set_state(state, text))
+        self._build_island(settings, palette)
         self._settings_dialog: SettingsDialog | None = None
         self.settings_store.subscribe(lambda s: self.ui.call(lambda: self._on_settings_changed(s)))
         self.keystore.subscribe(lambda has_key: self.ui.call(lambda: self._on_key_changed(has_key)))
 
+    # ----- Island ----------------------------------------------------------------------------
+    def _build_island(self, settings: Settings, palette) -> None:
+        self.background = Background(self.loop.loop)
+        self.media_signals = MediaSignals()
+        self.media = MediaWatcher(self.loop.loop, self.media_signals.changed.emit)
+        self.services.media = self.media
+        self.clipboard_monitor = ClipboardMonitor(self.services.clipboard,
+                                                  self.clipboard_owner_hwnd)
+        services = self.services
+        tabs = [
+            ("Controls", ControlsTab(self.background, palette)),
+            ("Today", TodayTab(services.todos, services.scheduler)),
+            ("Stats", StatsTab(services.stats, self.settings_store, settings.loadout.accent)),
+            ("Clipboard", ClipboardTab(services.clipboard, self.clipboard_monitor)),
+            ("Apps", AppsTab(services.app_index, self.background, palette)),
+            ("Wallpaper", WallpaperTab(self.background)),
+            ("Power", PowerTab(self.background, palette, services.action_log)),
+        ]
+        self.island = Island(self.voice, palette, settings.loadout.accent, self.keystore.has_key,
+                             lambda action: self.media.command(action), tabs)
+        self.island.settings_requested.connect(lambda page: self.open_settings(page or None))
+        self.media_signals.changed.connect(self.island.show_media)
+
     # ----- tools -----------------------------------------------------------------------------
     def _register_tools(self) -> None:
         for module in (core_tools, apps_tools, windows_tools, web_tools, screen_tools, ui_tools,
-                       files_tools, todo_tools):
+                       files_tools, todo_tools, system_tools):
             self.registry.register_all(module.tools())
         self.registry.register_all(schedule_tools.tools(self.registry))
 
@@ -240,6 +279,10 @@ class WispApp(QObject):
         self._reminder_timer.timeout.connect(self._check_reminders)
         self._reminder_timer.start(20_000)
         QTimer.singleShot(3000, self._check_reminders)
+        self.media.start()
+        self.island.update_key_prompt()
+        if self.settings_store.peek().general.show_island:
+            self.island.show()
         error = self.hotkeys.start()
         if error:
             self.notify("Hotkeys unavailable", f"Wisp could not install its keyboard hook: {error}")
@@ -254,6 +297,9 @@ class WispApp(QObject):
     def quit(self) -> None:
         log.info("Wisp quitting")
         self.services.scheduler.shutdown()
+        self.media.stop()
+        self.background.shutdown()
+        self.island.hide()
         self.hotkeys.stop()
         self.live.disconnect()
         self.mic.close()
@@ -306,6 +352,7 @@ class WispApp(QObject):
         self.qt_app.setStyleSheet(theme.stylesheet(palette))
 
     def _on_key_changed(self, has_key: bool) -> None:
+        self.island.update_key_prompt()
         if has_key:
             self.live.request_reconnect()
         else:
@@ -316,6 +363,13 @@ class WispApp(QObject):
         self._apply_theme(settings)
         self.tray.set_accent(settings.loadout.accent)
         self.console.set_accent(settings.loadout.accent)
+        palette = theme.palette(settings.loadout.theme, settings.loadout.accent)
+        self.island.set_palette(palette)
+        self.island.set_accent(settings.loadout.accent)
+        self.confirm_card.apply_palette(palette.surface, palette.border)
+        self.bubble.apply_palette(palette.surface, palette.border)
+        self.hud.accent = settings.loadout.accent
+        self.island.setVisible(settings.general.show_island)
         self.hotkeys.apply(settings)
         self.talk_action.setText(f"Talk ({self.hotkeys.display('push_to_talk')})")
         self.mute_action.blockSignals(True)

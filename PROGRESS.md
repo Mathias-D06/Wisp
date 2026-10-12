@@ -9,11 +9,26 @@ acceptance step needs real hardware/API key and is listed in `MANUAL_TESTS.md` (
 
 ## Status
 
-- Current phase: 7 — F7 Island
-- Next step: verify media session (winrt Windows.Media.Control), radios, pycaw (volume + devices),
-  Night Light / dark mode registry (UNDOCUMENTED), WMI brightness, SPI wallpaper, power APIs; write
-  `system/{media,controls,wallpaper,power}.py`, clipboard history store/monitor, `ui/island/*`
-  (pill + tabs Controls/Today/Stats/Clipboard/Apps/Wallpaper/Power + music strip).
+- Current phase: 7 — F7 Island (code written and wired, runs; NOT yet unit-tested or documented)
+- Done in phase 7 so far: `system/{controls,media,radios,wallpaper,power,clipboard_monitor}.py`,
+  `stores/clipboard_history.py`, `winapi/shell_icons.py` (GetDIBits keeps icon alpha),
+  `tools/builtin/system.py` (volume, brightness, toggle_setting, output_device, media, power,
+  copy_to_clipboard, clipboard_history), `ui/island/*` (pill + 7 tabs + music strip), wired in
+  `app.py`. Rendered and checked visually with `spikes/render_ui.py island`. Read-only probes:
+  `spikes/system_probe.py`, `spikes/winrt_in_loop_thread.py`, `spikes/shell_icon_probe.py`.
+  Install note: `winrt-Windows.Foundation.Collections==3.2.1` was added to the venv — also add it
+  to `pyproject.toml` dependencies.
+- Next steps: (1) add `winrt-Windows.Foundation.Collections==3.2.1` to pyproject; (2) tests for
+  `controls.toggle_night_light_blob`/`parse_night_light` (pure), `media.current_position`,
+  `ClipboardHistory` (dedupe, prune, search), ClipboardMonitor exclusion skip, system tools risk
+  (wifi off / power confirm), Island expand/collapse + tab refresh (qt), PowerTab confirm;
+  (3) DECISIONS D-030 (UNDOCUMENTED: Night Light blob, dark-mode registry write, IPolicyConfig
+  output switch, AttachThreadInput) + SOURCES rows for phase 7 docs already fetched (Radio,
+  GSMTC manager, WmiSetBrightness + ExecMethod_, SetSuspendState, ms-settings URIs, Segoe Fluent
+  Icons, IShellItemImageFactory::GetImage, GetDIBits); (4) MANUAL_TESTS F7 section; (5) tick F7
+  and F5.2/F5.4 in PROGRESS; commit; then phases 8–11.
+- Safety note for automated runs: never toggle the user's Night Light/Wi-Fi/Bluetooth/theme/
+  volume/output device in tests on this PC; test write paths with pure functions + manual tests.
 - Environment: Windows 11, Python 3.12.10 venv in `.venv`, Git 2.55, Inno Setup 6.7.3 (per-user,
   `%LOCALAPPDATA%\Programs\Inno Setup 6\ISCC.exe`).
 - Commands: `.venv\Scripts\python -m pytest`, `.venv\Scripts\ruff check src tests`,

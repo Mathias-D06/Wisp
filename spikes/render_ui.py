@@ -120,7 +120,44 @@ def render_circle(app: QApplication) -> None:
     bubble.grab().save(str(OUT / "answer_bubble.png"))
 
 
-RENDERERS = {"settings": render_settings, "console": render_console, "circle": render_circle}
+def _pump(app: QApplication, seconds: float) -> None:
+    import time
+
+    end = time.monotonic() + seconds
+    while time.monotonic() < end:
+        app.processEvents()
+        time.sleep(0.02)
+
+
+def render_island(app: QApplication) -> None:
+    from wisp.app import WispApp
+    from wisp.system.media import MediaState
+
+    wisp_app = WispApp(app, background=True)
+    _sample_data(wisp_app)
+    services = wisp_app.services
+    services.clipboard.add_text("Meeting notes: launch review moved to Thursday 3pm")
+    services.clipboard.add_text("https://example.org/quarterly-report")
+    services.stats.record("dictation", words=180, seconds=60)
+    services.stats.record("command")
+    services.stats.record("routine")
+    services.app_index.refresh()
+    island = wisp_app.island
+    island.show()
+    island.show_media(MediaState(True, "Weightless", "Marconi Union", "Spotify", True, 95, 480))
+    island.collapse()
+    _pump(app, 0.3)
+    island.grab().save(str(OUT / "island_collapsed.png"))
+    island.expand()
+    for index, (name, _widget) in enumerate(island.tabs):
+        island.show_tab(index)
+        _pump(app, 2.0 if name in ("Controls", "Apps", "Wallpaper") else 0.4)
+        island.grab().save(str(OUT / f"island_{name.lower()}.png"))
+    wisp_app.quit()
+
+
+RENDERERS = {"settings": render_settings, "console": render_console, "circle": render_circle,
+             "island": render_island}
 
 
 def main() -> None:
