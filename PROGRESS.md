@@ -9,9 +9,10 @@ acceptance step needs real hardware/API key and is listed in `MANUAL_TESTS.md` (
 
 ## Status
 
-- Current phase: 2 — audio, Live session, tool framework, safety layer
-- Next step: verify sounddevice + Live docs details, then write `wisp/audio/*`, `wisp/live/*`,
-  `wisp/tools/*` (registry, dispatcher, safety, confirmations)
+- Current phase: 3 — F2 computer-control tools
+- Next step: verify Get-StartApps / shell:AppsFolder launch, window APIs, mss, UIA COM docs; then
+  write `wisp/services/app_index.py`, `wisp/tools/builtin/{apps,windows,web,screen,ui,files}.py`
+  and register them in `WispApp._register_tools`.
 - Environment: Windows 11, Python 3.12.10 venv in `.venv`, Git 2.55, Inno Setup 6.7.3 (per-user,
   `%LOCALAPPDATA%\Programs\Inno Setup 6\ISCC.exe`).
 - Commands: `.venv\Scripts\python -m pytest`, `.venv\Scripts\ruff check src tests`,
@@ -23,7 +24,10 @@ acceptance step needs real hardware/API key and is listed in `MANUAL_TESTS.md` (
 - [x] 1 Skeleton, tray, settings, secrets — `wisp/app.py`, `settings.py`, `keystore.py`,
   `logging_setup.py`, `db.py`, `startup.py`, `single_instance.py`, `ui/tray.py`, `ui/settings/*`;
   tests `test_settings.py`, `test_keystore.py`, `test_db_and_startup.py`, `test_settings_ui.py`
-- [ ] 2 Audio + Live session + tool framework + safety layer
+- [x] 2 Audio + Live session + tool framework + safety layer — `audio/*`, `live/*`, `tools/*`,
+  `hotkeys/*`, `winapi/input.py`, `voice.py`, `ui/{console,orb,confirm_card,bridge}.py`; tests
+  `test_live_session.py` (fake server), `test_dispatcher.py`, `test_tools_core.py`,
+  `test_hotkeys.py`, `test_voice.py`, `test_audio_and_config.py`, `test_audio_devices.py`
 - [ ] 3 F2 computer-control tools
 - [ ] 4 F3 dictation
 - [ ] 5 F4 Circle to Ask
@@ -37,21 +41,35 @@ acceptance step needs real hardware/API key and is listed in `MANUAL_TESTS.md` (
 ## Acceptance criteria
 
 ### F1 Voice core
-- [ ] F1.1 Push-to-talk via configurable hotkey
-- [ ] F1.2 Push-to-talk by clicking the orb
-- [ ] F1.3 Optional always-listening mode using Live API voice activity detection
-- [ ] F1.4 Answers aloud (24 kHz PCM playback)
-- [ ] F1.5 Calls tools mid-conversation
-- [ ] F1.6 Barge-in: playback stops immediately when interrupted
-- [ ] F1.7 Context window compression enabled
-- [ ] F1.8 Session resumption with latest handle
-- [ ] F1.9 GoAway handled by transparent reconnect
-- [ ] F1.10 Backoff on network errors with clear status
-- [ ] F1.11 Idle sessions close after configurable timeout and reconnect on next use
-- [ ] F1.12 Text console
-- [ ] F1.13 Mic-mute toggle
-- [ ] F1.A Accept: 30-minute conversation with tool calls never drops context
-- [ ] F1.B Accept: network unplug shows clear status, then recovers
+- [x] F1.1 Push-to-talk via configurable hotkey — `test_hotkeys.py` (all), `spikes/hook_probe.py`,
+  `test_voice.py::test_push_to_talk_round_trip`, `test_live_session.py::test_push_to_talk_turn`;
+  manual MT-01
+- [x] F1.2 Push-to-talk by clicking the orb — `test_voice.py::test_orb_click_toggles`; MT-02
+- [x] F1.3 Optional always-listening mode using Live API VAD —
+  `test_audio_and_config.py::test_always_listening_and_resume_handle`,
+  `test_live_session.py::test_always_listening_streams_without_activity_markers`; MT-04
+- [x] F1.4 Answers aloud (24 kHz PCM playback) — `test_audio_devices.py::test_player_opens_24khz_and_clears_instantly`,
+  model audio routed to player in `test_live_session.py::test_push_to_talk_turn`; MT-01
+- [x] F1.5 Calls tools mid-conversation — `test_live_session.py::test_tool_call_mid_conversation`
+- [x] F1.6 Barge-in — `test_live_session.py::test_barge_in_clears_playback_locally_and_on_server_interrupt`,
+  `test_audio_devices.py::test_player_opens_24khz_and_clears_instantly`; MT-03
+- [x] F1.7 Context window compression — `test_audio_and_config.py::test_push_to_talk_config_disables_server_vad`
+  (sliding window present in setup)
+- [x] F1.8 Session resumption — `test_live_session.py::test_go_away_reconnects_with_latest_handle`,
+  `::test_idle_timeout_closes_and_next_turn_resumes`, `::test_failed_resume_starts_fresh`
+- [x] F1.9 GoAway → transparent reconnect — `test_live_session.py::test_go_away_reconnects_with_latest_handle`
+- [x] F1.10 Backoff + clear status — `test_live_session.py::test_network_error_shows_status_and_recovers`,
+  `::test_fatal_key_error_stops_retrying`, `test_voice.py::test_offline_state_visual`
+- [x] F1.11 Idle timeout + reconnect on next use — `test_live_session.py::test_idle_timeout_closes_and_next_turn_resumes`,
+  `::test_idle_not_triggered_while_speaking`; MT-08
+- [x] F1.12 Text console — `ui/console.py`, `test_live_session.py::test_typed_text_uses_realtime_text`,
+  `test_voice.py::test_typed_text_counts_as_user_evidence`; MT-05
+- [x] F1.13 Mic-mute toggle — `test_voice.py::test_mute_persists_and_cancels_turn`; MT-06
+- [~] F1.A Accept: 30-minute conversation — simulated in
+  `test_live_session.py::test_long_conversation_survives_many_reconnects` (4 connections, GoAway ×2,
+  network blip, 6 tool calls, handle continuity); real run MT-09
+- [~] F1.B Accept: network unplug — simulated in `::test_network_error_shows_status_and_recovers`;
+  real run MT-07
 
 ### F2 Computer-control tools
 - [ ] F2.1 open_app with fuzzy match over Start Menu shortcuts + Store apps index
@@ -140,8 +158,13 @@ acceptance step needs real hardware/API key and is listed in `MANUAL_TESTS.md` (
   Windows, risky-tool toggles, model name, language
 
 ### F12 Safety
-- [ ] F12.1 Risk tiers enforced in dispatcher
-- [ ] F12.2 Confirm tier needs spoken "yes" or a click
+- [x] F12.1 Risk tiers enforced in dispatcher — `tools/safety.py` + `tools/dispatcher.py`;
+  `test_tools_core.py` (safety tests), `test_dispatcher.py::test_disabled_skill_is_denied_in_dispatcher`,
+  `::test_model_cannot_confirm_without_user`
+- [x] F12.2 Confirm tier needs spoken "yes" or a click — `test_dispatcher.py::test_confirm_flow_with_spoken_yes`,
+  `::test_click_executes_and_notifies_model`, `::test_spoken_no_cancels`,
+  `::test_scheduled_confirm_waits_for_click`, `test_live_session.py::test_spoken_yes_confirms_through_transcription`;
+  card `ui/confirm_card.py`
 - [ ] F12.3 Terminal + raw mouse/keyboard disabled by default behind Settings toggle
 - [ ] F12.4 Screen/web/file text is untrusted; confirm-tier after reading it always asks
 - [ ] F12.5 Action log of every tool call, viewable in Settings

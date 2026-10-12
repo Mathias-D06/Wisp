@@ -13,7 +13,7 @@ from pathlib import Path
 
 os.environ.setdefault("WISP_DATA_DIR", tempfile.mkdtemp(prefix="wisp-render-"))
 
-from PySide6.QtWidgets import QApplication  # noqa: E402
+from PySide6.QtWidgets import QApplication
 
 OUT = Path(__file__).parent / "out"
 
@@ -35,7 +35,30 @@ def render_settings(app: QApplication) -> None:
     print("data dir", paths.data_dir())
 
 
-RENDERERS = {"settings": render_settings}
+def render_console(app: QApplication) -> None:
+    from wisp.app import WispApp
+    from wisp.tools.base import Origin
+
+    wisp_app = WispApp(app, background=True)
+    console = wisp_app.console
+    console.add("user", "Open Spotify and play something chill", True)
+    console.add("model", "Opening Spotify now. Want me to search for a lofi playlist?", True)
+    console.add("notice", "Microphone muted.", True)
+    console.add("user", "yes and turn the volume", False)
+    console.resize(560, 520)
+    console.show()
+    app.processEvents()
+    console.grab().save(str(OUT / "console.png"))
+    wisp_app.confirmations.create("delete_file", {"path": "C:/x.txt"},
+                                  "Move C:\\Users\\me\\report.docx to the Recycle Bin",
+                                  Origin.VOICE)
+    for _ in range(5):
+        app.processEvents()
+    wisp_app.confirm_card.grab().save(str(OUT / "confirm_card.png"))
+    wisp_app.quit()
+
+
+RENDERERS = {"settings": render_settings, "console": render_console}
 
 
 def main() -> None:

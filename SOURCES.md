@@ -34,6 +34,23 @@ from `.venv`. Dates are when checked.
 | SDK source `google/genai/errors.py`, `models.py` | `APIError.code/.status/.message`; `ClientError`, `ServerError`; `models.get(model=)`, `models.generate_content(model=, contents=, config=)` | 2026-10-12 |
 | https://docs.python.org/3/library/logging.handlers.html#rotatingfilehandler | `RotatingFileHandler(maxBytes, backupCount, encoding)` | 2026-10-12 |
 
+## Audio, Live session, hotkeys (phase 2)
+
+| URL | Confirmed | Checked |
+|---|---|---|
+| https://python-sounddevice.readthedocs.io/en/latest/api/streams.html | stream parameters; callbacks run at real-time priority and must not block; output callback must fill all of `outdata` (zeros if empty) | 2026-10-12 |
+| spike `spikes/audio_formats.py` | MME/DirectSound default devices accept 16 kHz mono int16 in and 24 kHz out; WASAPI/WDM-KS reject them (PaErrorCode -9997) | 2026-10-12 |
+| https://raw.githubusercontent.com/google-gemini/gemini-skills/main/skills/gemini-live-api-dev/SKILL.md | official Google repo: realtime input for all user input incl. text; extended-thinking Live model requires NON_BLOCKING; compression for sessions > 15 min; clear playback on interruption; headphones to avoid echo | 2026-10-12 |
+| https://github.com/googleapis/python-genai/issues/1720 | lead only (not relied on alone): text sent inside manual activity markers triggers a reply immediately | 2026-10-12 |
+| spike `spikes/live_config_build.py` | lower-case OpenAPI types in dict declarations parse to `Type.OBJECT`, etc.; the SDK maps compression, resumption, VAD, transcription, tools into the `setup` message | 2026-10-12 |
+| SDK `types.LiveServerMessage._from_response` (introspection) | `go_away.time_left` is a duration string such as `"12.5s"`; base64 audio decoded to bytes; `Transcription.finished` bool | 2026-10-12 |
+| https://learn.microsoft.com/en-us/windows/win32/winmsg/lowlevelkeyboardproc | return nonzero to block a key; call `CallNextHookEx` otherwise; hook runs on the installing thread, which needs a message loop; exceeding `LowLevelHooksTimeout` (max 1000 ms) silently removes the hook (Win 7+) | 2026-10-12 |
+| https://learn.microsoft.com/en-us/windows/win32/api/winuser/ns-winuser-kbdllhookstruct | fields vkCode, scanCode, flags, time, dwExtraInfo; `LLKHF_INJECTED` = 0x10 | 2026-10-12 |
+| https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-setwindowshookexw | WH_KEYBOARD_LL = 13 is global only; pass a module handle (NULL hMod with thread 0 may fail); call `UnhookWindowsHookEx` before exit | 2026-10-12 |
+| https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-sendinput | `SendInput(cInputs, pInputs, cbSize)`; UIPI silently blocks input to higher-integrity windows; keyboard state is not reset | 2026-10-12 |
+| https://learn.microsoft.com/en-us/windows/win32/inputdev/virtual-key-codes | all VK values used; 0xE8 is "Unassigned" | 2026-10-12 |
+| spike `spikes/hook_probe.py` | on this PC the hook installs, sees injected keys, ignores keys tagged with Wisp's dwExtraInfo signature; `sizeof(INPUT)` = 40 on x64 | 2026-10-12 |
+
 ## Dependencies (PyPI JSON API, checked 2026-10-12)
 
 | Package | Version | Released | Licence | Note |

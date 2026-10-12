@@ -179,6 +179,17 @@ def validate(settings: Settings) -> list[str]:
     unknown = [s for s in settings.loadout.skills if s not in TOOL_GROUPS]
     if unknown:
         problems.append(f"Unknown skill groups: {', '.join(unknown)}.")
+    from wisp.hotkeys.chords import find_conflicts
+
+    problems.extend(
+        find_conflicts(
+            {
+                "Push-to-talk": settings.hotkeys.push_to_talk,
+                "Dictation": settings.hotkeys.dictation,
+                "Circle to Ask": settings.hotkeys.circle,
+            }
+        )
+    )
     return problems
 
 
@@ -209,6 +220,11 @@ class SettingsStore:
         """Return a copy; mutate it and pass it to :meth:`save`."""
         with self._lock:
             return copy.deepcopy(self._settings)
+
+    def peek(self) -> Settings:
+        """The current settings object without copying, for hot paths. Never mutate it;
+        :meth:`save` replaces it wholesale."""
+        return self._settings
 
     def save(self, settings: Settings) -> None:
         problems = validate(settings)

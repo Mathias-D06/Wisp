@@ -4,22 +4,44 @@ from __future__ import annotations
 
 import logging
 import sys
+from datetime import datetime
 
 from PySide6.QtCore import QObject
 from PySide6.QtWidgets import QApplication, QMessageBox
 
 from wisp import paths, startup
+from wisp.audio.capture import MicCapture
+from wisp.audio.playback import Player
 from wisp.db import Database
+from wisp.hotkeys.manager import HotkeyManager
 from wisp.keystore import KeyStore
+from wisp.live.config import build_live_config, is_extended_thinking, system_instruction
+from wisp.live.connector import GenaiConnector
+from wisp.live.session import LiveSessionManager
 from wisp.logging_setup import configure as configure_logging
+from wisp.loop import LoopThread
+from wisp.services import Services
 from wisp.settings import Settings, SettingsStore
 from wisp.single_instance import SingleInstance
+from wisp.stores.action_log import ActionLog
+from wisp.stores.stats import Stats
+from wisp.tools.builtin import core as core_tools
+from wisp.tools.confirm import ConfirmationManager
+from wisp.tools.dispatcher import Dispatcher
+from wisp.tools.registry import ToolRegistry
+from wisp.tools.safety import SafetyPolicy, TaintTracker
 from wisp.ui import theme
+from wisp.ui.bridge import UiInvoker
+from wisp.ui.confirm_card import ConfirmCard
+from wisp.ui.console import ConsoleWindow
 from wisp.ui.settings.dialog import SettingsDialog
 from wisp.ui.settings.general_page import GeneralPage
 from wisp.ui.tray import Tray
+from wisp.voice import VoiceController, VoiceSignals, make_callbacks
 
 log = logging.getLogger(__name__)
+
+RECONNECT_FIELDS = ("voice", "personality", "custom_personality", "skills")
 
 
 class WispApp(QObject):
@@ -28,40 +50,132 @@ class WispApp(QObject):
         self.qt_app = qt_app
         self.background = background
         self.keystore = KeyStore(paths.secrets_file())
-        configure_logging(paths.log_dir(), self.keystore.get)
+        self.redactor = configure_logging(paths.log_dir(), self.keystore.get)
         log.info("Wisp starting (frozen=%s)", paths.is_frozen())
         self.settings_store = SettingsStore(paths.settings_file())
         self.db = Database(paths.database_file())
         settings = self.settings_store.get()
+        self._last_settings = settings
         self._apply_theme(settings)
+        self.ui = UiInvoker()
         self.tray = Tray(settings.loadout.accent)
+        self.loop = LoopThread()
+        self.loop.start()
+
+        peek = self.settings_store.peek
+        self.confirmations = ConfirmationManager()
+        self.taint = TaintTracker(lambda: peek().safety.taint_minutes)
+        self.registry = ToolRegistry()
+        self.services = Services(
+            settings=self.settings_store, keystore=self.keystore, db=self.db, ui=self.ui,
+            notify=self.notify, confirmations=self.confirmations, taint=self.taint,
+            registry=self.registry,
+            action_log=ActionLog(self.db, self.redactor.redact),
+            stats=Stats(self.db, lambda: peek().general.typing_wpm),
+        )
+        self._register_tools()
+        self.dispatcher = Dispatcher(
+            self.registry, SafetyPolicy(peek, self.taint), self.confirmations,
+            self.services.action_log, self.services.stats, self.services,
+        )
+        self.dispatcher.bind_loop(self.loop.loop)
+        self.services.dispatcher = self.dispatcher
+
+        self.mic = MicCapture(lambda: peek().audio.input_device)
+        if settings.audio.mic_muted:
+            self.mic.set_muted(True)
+        self.player = Player(lambda: peek().audio.output_device)
+        self.voice_signals = VoiceSignals()
+        self.live = LiveSessionManager(
+            self.loop.loop,
+            GenaiConnector(self.keystore.get, lambda: peek().ai.live_model),
+            self._live_config,
+            self.dispatcher,
+            make_callbacks(self.voice_signals, self.player, self.confirmations.on_user_utterance),
+            has_key=self.keystore.has_key,
+            idle_timeout_s=lambda: peek().ai.idle_timeout_min * 60,
+            always_listening=lambda: peek().audio.always_listening,
+            is_playing=self.player.is_playing,
+            extended_thinking=lambda: is_extended_thinking(peek().ai.live_model),
+        )
+        self.dispatcher.set_model_notifier(self.live.send_text)
+        self.voice = VoiceController(
+            self.live, self.mic, self.player, self.voice_signals, self.settings_store,
+            self.confirmations, self.notify,
+        )
+        self.services.live, self.services.voice = self.live, self.voice
+        self.services.mic, self.services.player = self.mic, self.player
+
+        self.hotkeys = HotkeyManager()
+        self.hotkeys.apply(settings)
+        self.hotkeys.signals.event.connect(self._on_hotkey)
+
+        palette = theme.palette(settings.loadout.theme, settings.loadout.accent)
+        self.console = ConsoleWindow(self.voice, settings.loadout.accent)
+        self.confirm_card = ConfirmCard(self.confirmations)
+        self.confirm_card.apply_palette(palette.surface, palette.border)
+        self.voice.visual.connect(lambda state, _level, text: self.tray.set_state(state, text))
         self._settings_dialog: SettingsDialog | None = None
-        self.settings_store.subscribe(self._on_settings_changed)
+        self.settings_store.subscribe(lambda s: self.ui.call(lambda: self._on_settings_changed(s)))
+        self.keystore.subscribe(lambda has_key: self.ui.call(lambda: self._on_key_changed(has_key)))
+
+    # ----- tools -----------------------------------------------------------------------------
+    def _register_tools(self) -> None:
+        self.registry.register_all(core_tools.tools())
+
+    def _live_config(self, handle: str | None):
+        settings = self.settings_store.get()
+        facts = self.services.memory.session_facts() if self.services.memory else []
+        instruction = system_instruction(settings, facts, datetime.now().astimezone())
+        return build_live_config(settings, self.registry.declarations(settings), instruction,
+                                 handle)
 
     # ----- lifecycle -------------------------------------------------------------------------
     def start(self) -> None:
         self._build_tray_menu()
         self.tray.show()
+        error = self.hotkeys.start()
+        if error:
+            self.notify("Hotkeys unavailable", f"Wisp could not install its keyboard hook: {error}")
         if not self.keystore.has_key():
-            self.tray.notify(
-                "Wisp is running",
-                "Add your Gemini API key in Settings to use voice and AI features.",
-            )
+            self.notify("Wisp is running",
+                        "Add your Gemini API key in Settings to use voice and AI features.")
             if not self.background:
                 self.open_settings("General")
+        elif not self.background:
+            self.console.open()
 
     def quit(self) -> None:
         log.info("Wisp quitting")
+        self.hotkeys.stop()
+        self.live.disconnect()
+        self.mic.close()
+        self.player.close()
+        self.dispatcher.shutdown()
+        self.loop.stop()
         self.tray.hide()
         self.db.close()
         self.qt_app.quit()
 
+    def notify(self, title: str, message: str) -> None:
+        self.ui.call(lambda: self.tray.notify(title, message))
+
     # ----- UI --------------------------------------------------------------------------------
     def _build_tray_menu(self) -> None:
+        settings = self.settings_store.get()
+        self.talk_action = self.tray.add_action(
+            f"Talk ({self.hotkeys.display('push_to_talk')})", self.voice.toggle_talk)
+        self.tray.add_action("Open console", self.console.open)
+        self.mute_action = self.tray.add_action("Mute microphone", self.voice.set_muted, True)
+        self.mute_action.setChecked(settings.audio.mic_muted)
+        self.listen_action = self.tray.add_action("Always listening",
+                                                  self.voice.set_always_listening, True)
+        self.listen_action.setChecked(settings.audio.always_listening)
+        self.tray.add_separator()
         self.tray.add_action("Settings…", lambda: self.open_settings())
         self.tray.add_separator()
         self.tray.add_action("Quit Wisp", self.quit)
-        self.tray.on_click(lambda: self.open_settings())
+        self.tray.on_click(self.console.open)
 
     def settings_pages(self) -> list:
         return [GeneralPage(self.settings_store, self.keystore)]
@@ -71,19 +185,49 @@ class WispApp(QObject):
             self._settings_dialog = SettingsDialog(self.settings_store, self.settings_pages())
         self._settings_dialog.open_page(page)
 
+    def _on_hotkey(self, name: str, kind: str) -> None:
+        log.info("Hotkey %s %s", name, kind)
+        self.voice.on_hotkey(name, kind)
+
     def _apply_theme(self, settings: Settings) -> None:
         palette = theme.palette(settings.loadout.theme, settings.loadout.accent)
         self.qt_app.setStyleSheet(theme.stylesheet(palette))
 
+    def _on_key_changed(self, has_key: bool) -> None:
+        if has_key:
+            self.live.request_reconnect()
+        else:
+            self.live.disconnect()
+
     def _on_settings_changed(self, settings: Settings) -> None:
+        previous, self._last_settings = self._last_settings, settings
         self._apply_theme(settings)
         self.tray.set_accent(settings.loadout.accent)
+        self.console.set_accent(settings.loadout.accent)
+        self.hotkeys.apply(settings)
+        self.talk_action.setText(f"Talk ({self.hotkeys.display('push_to_talk')})")
+        self.mute_action.blockSignals(True)
+        self.mute_action.setChecked(settings.audio.mic_muted)
+        self.mute_action.blockSignals(False)
+        self.listen_action.blockSignals(True)
+        self.listen_action.setChecked(settings.audio.always_listening)
+        self.listen_action.blockSignals(False)
+        if (previous.audio.input_device != settings.audio.input_device
+                or previous.audio.output_device != settings.audio.output_device):
+            self.voice.apply_settings()
+        loadout_changed = any(getattr(previous.loadout, f) != getattr(settings.loadout, f)
+                              for f in RECONNECT_FIELDS)
+        if (loadout_changed or previous.ai.live_model != settings.ai.live_model
+                or previous.ai.language != settings.ai.language
+                or previous.safety.allow_terminal != settings.safety.allow_terminal
+                or previous.safety.allow_raw_input != settings.safety.allow_raw_input):
+            self.live.request_reconnect()
         try:
             if startup.is_enabled() != settings.general.start_with_windows:
                 startup.set_enabled(settings.general.start_with_windows)
         except OSError as exc:
             log.error("Could not change start-up setting: %s", exc)
-            self.tray.notify("Wisp", f"Could not change the start-up setting: {exc}")
+            self.notify("Wisp", f"Could not change the start-up setting: {exc}")
 
 
 def run(argv: list[str]) -> int:
