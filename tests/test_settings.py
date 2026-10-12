@@ -1,0 +1,72 @@
+from __future__ import annotations
+
+import json
+
+import pytest
+
+from wisp.settings import Settings, SettingsStore, validate
+
+
+def test_defaults_are_valid():
+    assert validate(Settings()) == []
+
+
+def test_round_trip(tmp_path):
+    store = SettingsStore(tmp_path / "s.json")
+    store.update(lambda s: setattr(s.ai, "idle_timeout_min", 12))
+    reloaded = SettingsStore(tmp_path / "s.json").get()
+    assert reloaded.ai.idle_timeout_min == 12
+
+
+def test_unknown_keys_and_wrong_types_fall_back(tmp_path):
+    path = tmp_path / "s.json"
+    path.write_text(
+        json.dumps(
+            {
+                "ai": {"idle_timeout_min": "ten", "live_model": "custom-live", "bogus": 1},
+                "audio": {"always_listening": 1},
+                "unknown_section": {"x": 1},
+                "loadout": {"skills": ["apps", 3]},
+            }
+        ),
+        encoding="utf-8",
+    )
+    settings = SettingsStore(path).get()
+    assert settings.ai.idle_timeout_min == 5
+    assert settings.ai.live_model == "custom-live"
+    assert settings.audio.always_listening is False  # int is not accepted as bool
+    assert "apps" in settings.loadout.skills and "terminal" not in settings.loadout.skills
+
+
+def test_corrupt_file_uses_defaults(tmp_path):
+    path = tmp_path / "s.json"
+    path.write_text("{not json", encoding="utf-8")
+    assert SettingsStore(path).get() == Settings()
+
+
+def test_validation_rejects_bad_values(tmp_path):
+    store = SettingsStore(tmp_path / "s.json")
+    settings = store.get()
+    settings.ai.idle_timeout_min = 0
+    settings.loadout.voice = "Nobody"
+    with pytest.raises(ValueError, match="Idle timeout"):
+        store.save(settings)
+    assert not (tmp_path / "s.json").exists()
+
+
+def test_listeners_receive_copy(tmp_path):
+    store = SettingsStore(tmp_path / "s.json")
+    seen = []
+    store.subscribe(seen.append)
+    store.update(lambda s: setattr(s.audio, "mic_muted", True))
+    assert seen and seen[0].audio.mic_muted is True
+    seen[0].audio.mic_muted = False
+    assert store.get().audio.mic_muted is True
+
+
+def test_terminal_and_input_skills_off_by_default():
+    settings = Settings()
+    assert settings.safety.allow_terminal is False
+    assert settings.safety.allow_raw_input is False
+    assert "terminal" not in settings.loadout.skills
+    assert "input" not in settings.loadout.skills

@@ -9,8 +9,9 @@ acceptance step needs real hardware/API key and is listed in `MANUAL_TESTS.md` (
 
 ## Status
 
-- Current phase: 0 — setup
-- Next step: Phase 1 skeleton (tray, settings, secrets)
+- Current phase: 2 — audio, Live session, tool framework, safety layer
+- Next step: verify sounddevice + Live docs details, then write `wisp/audio/*`, `wisp/live/*`,
+  `wisp/tools/*` (registry, dispatcher, safety, confirmations)
 - Environment: Windows 11, Python 3.12.10 venv in `.venv`, Git 2.55, Inno Setup 6.7.3 (per-user,
   `%LOCALAPPDATA%\Programs\Inno Setup 6\ISCC.exe`).
 - Commands: `.venv\Scripts\python -m pytest`, `.venv\Scripts\ruff check src tests`,
@@ -18,8 +19,10 @@ acceptance step needs real hardware/API key and is listed in `MANUAL_TESTS.md` (
 
 ## Phases
 
-- [ ] 0 Setup: docs read, tracking files, repo, venv, ruff, pytest
-- [ ] 1 Skeleton, tray, settings, secrets
+- [x] 0 Setup: docs read, tracking files, repo, venv, ruff, pytest (commit 8f65be6)
+- [x] 1 Skeleton, tray, settings, secrets — `wisp/app.py`, `settings.py`, `keystore.py`,
+  `logging_setup.py`, `db.py`, `startup.py`, `single_instance.py`, `ui/tray.py`, `ui/settings/*`;
+  tests `test_settings.py`, `test_keystore.py`, `test_db_and_startup.py`, `test_settings_ui.py`
 - [ ] 2 Audio + Live session + tool framework + safety layer
 - [ ] 3 F2 computer-control tools
 - [ ] 4 F3 dictation
@@ -127,7 +130,10 @@ acceptance step needs real hardware/API key and is listed in `MANUAL_TESTS.md` (
   day and per week
 
 ### F11 Settings and secrets
-- [ ] F11.1 API key stored with DPAPI, never logged or shown in full
+- [x] F11.1 API key stored with DPAPI, never logged or shown in full — tests
+  `test_keystore.py::test_dpapi_round_trip`, `::test_mask_never_reveals_middle`,
+  `::test_redacting_filter_removes_keys`, `::test_redacting_filter_cleans_tracebacks`; Settings shows
+  only `mask(key)` (`ui/settings/general_page.py`)
 - [ ] F11.2 Key validated with a test call on save
 - [ ] F11.3 README note: UK/EEA/Swiss users need a billing-enabled key
 - [ ] F11.4 Settings: hotkeys with conflict detection, mic + speaker device, idle timeout, start with
