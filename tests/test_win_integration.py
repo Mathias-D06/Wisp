@@ -4,7 +4,10 @@ that the test creates itself (no external apps are opened)."""
 from __future__ import annotations
 
 import io
-import threading
+import json
+import subprocess
+import sys
+from pathlib import Path
 
 import pytest
 
@@ -34,59 +37,30 @@ def probe_window(qtbot):
     window.close()
 
 
-def _in_mta(fn, qtbot) -> dict:
-    result: dict = {}
-
-    def worker() -> None:
-        import pythoncom
-
-        pythoncom.CoInitializeEx(pythoncom.COINIT_MULTITHREADED)
-        try:
-            result["value"] = fn()
-        except Exception as exc:
-            result["error"] = repr(exc)
-
-    thread = threading.Thread(target=worker)
-    thread.start()
-    qtbot.waitUntil(lambda: not thread.is_alive(), timeout=20000)
-    return result
+def _uia_client(hwnd: int, action: str, qtbot) -> dict:
+    """Run the UIA client in a child process while this process keeps pumping Qt events."""
+    probe = Path(__file__).with_name("uia_client_probe.py")
+    proc = subprocess.Popen([sys.executable, str(probe), str(hwnd), action],
+                            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    qtbot.waitUntil(lambda: proc.poll() is not None, timeout=30000)
+    out, err = proc.communicate()
+    assert proc.returncode == 0, err
+    return json.loads(out.strip().splitlines()[-1])
 
 
 def test_uia_click_and_type(probe_window, qtbot):
-    from wisp.winapi.uia import Uia
-
-    hwnd = int(probe_window.winId())
-
-    def run():
-        uia = Uia()
-        names = [e["name"] for e in uia.list_elements(hwnd)]
-        how = uia.click(uia.find(hwnd, "Probe Action"))
-        typed = uia.type_into(uia.find(hwnd, "Probe Field", editable=True), "hello wisp")
-        return names, how, typed
-
-    result = _in_mta(run, qtbot)
-    assert "error" not in result, result.get("error")
-    names, how, typed = result["value"]
-    assert "Probe Action" in names
+    result = _uia_client(int(probe_window.winId()), "click_and_type", qtbot)
+    assert "limit" not in result, result
+    assert "Probe Action" in result["names"]
     qtbot.waitUntil(lambda: probe_window.clicks == [1], timeout=5000)
     qtbot.waitUntil(lambda: probe_window.field.text() == "hello wisp", timeout=5000)
-    assert how in ("invoked", "default action") and typed in ("set", "typed")
+    assert result["how"] in ("invoked", "default action")
+    assert result["typed"] in ("set", "typed")
 
 
 def test_uia_reports_missing_element(probe_window, qtbot):
-    from wisp.winapi.uia import Uia, UiaLimit
-
-    hwnd = int(probe_window.winId())
-
-    def run():
-        try:
-            Uia().find(hwnd, "Nonexistent Fancy Control")
-        except UiaLimit as exc:
-            return str(exc)
-        return "found"
-
-    result = _in_mta(run, qtbot)
-    assert "couldn't find" in result["value"]
+    result = _uia_client(int(probe_window.winId()), "missing", qtbot)
+    assert "couldn't find" in result["limit"]
 
 
 def test_window_bounds_minimize_restore(probe_window, qtbot):

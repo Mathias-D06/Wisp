@@ -136,7 +136,7 @@ def names(rec):
 @pytest.mark.qt
 def test_full_flow_pastes_and_restores(qtbot):
     rec = Recorder()
-    controller, mic, hud, stats = make(rec)
+    controller, mic, _hud, stats = make(rec)
     controller.on_hotkey("dictation", "press")
     assert "dictation" in mic.users
     mic.feed(1.5)
@@ -178,7 +178,7 @@ def test_no_restore_if_clipboard_changed(qtbot):
 @pytest.mark.qt
 def test_short_press_and_cancel_do_nothing(qtbot):
     rec = Recorder()
-    controller, mic, hud, _ = make(rec)
+    controller, mic, _hud, _ = make(rec)
     controller.start()
     mic.feed(0.1)
     controller.stop()
@@ -192,7 +192,7 @@ def test_short_press_and_cancel_do_nothing(qtbot):
 @pytest.mark.qt
 def test_elevated_target_copies_instead(qtbot):
     rec = Recorder(elevated=True)
-    controller, mic, hud, stats = make(rec)
+    controller, mic, hud, _stats = make(rec)
     controller.start()
     mic.feed(1.0)
     controller.stop()

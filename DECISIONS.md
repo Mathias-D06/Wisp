@@ -155,6 +155,14 @@ A small "HUD" pill near the bottom of the active screen shows Dictating / Transc
 It never takes focus or mouse input (`WindowDoesNotAcceptFocus`, `WA_ShowWithoutActivating`,
 `WindowTransparentForInput`), so the caret stays in the target field.
 
+## D-027 UIA integration tests run the client in a child process
+An in-process UIA client (worker thread) driving a Qt window of the same process crashed the test
+run intermittently (0xC0000005 inside Qt's provider). Wisp never automates its own windows
+(`target_window` excludes its own PID), so tests now mirror production: `tests/uia_client_probe.py`
+runs in a separate process on an MTA worker thread. pytest's faulthandler still logs a handled
+first-chance COM error (0x8001010d) raised inside Qt's provider while it serves that call; the
+run passes with exit code 0 (5 consecutive full runs on 2026-10-12).
+
 ## D-022 Secure desktop / lock screen detection
 `OpenInputDesktop(DESKTOP_SWITCHDESKTOP)` fails while the UAC secure desktop, Ctrl+Alt+Del screen
 or lock screen is the input desktop. Wisp uses that only to explain why it cannot act; it never
