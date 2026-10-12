@@ -9,11 +9,11 @@ acceptance step needs real hardware/API key and is listed in `MANUAL_TESTS.md` (
 
 ## Status
 
-- Current phase: 6 — F5 to-dos + F6 scheduler
-- Next step: verify APScheduler 3.x docs (SQLAlchemyJobStore, misfire_grace_time, coalesce,
-  triggers); write `stores/todos.py`, `scheduling/scheduler.py` (+ tasks table), tools
-  `tools/builtin/{todos,schedule}.py`, reminder toasts; UI comes with the Island (phase 7) and
-  Settings → Tasks page.
+- Current phase: 7 — F7 Island
+- Next step: verify media session (winrt Windows.Media.Control), radios, pycaw (volume + devices),
+  Night Light / dark mode registry (UNDOCUMENTED), WMI brightness, SPI wallpaper, power APIs; write
+  `system/{media,controls,wallpaper,power}.py`, clipboard history store/monitor, `ui/island/*`
+  (pill + tabs Controls/Today/Stats/Clipboard/Apps/Wallpaper/Power + music strip).
 - Environment: Windows 11, Python 3.12.10 venv in `.venv`, Git 2.55, Inno Setup 6.7.3 (per-user,
   `%LOCALAPPDATA%\Programs\Inno Setup 6\ISCC.exe`).
 - Commands: `.venv\Scripts\python -m pytest`, `.venv\Scripts\ruff check src tests`,
@@ -35,7 +35,9 @@ acceptance step needs real hardware/API key and is listed in `MANUAL_TESTS.md` (
 - [x] 4 F3 dictation — `dictation.py`, `ai/dictation.py`, `system/clipboard.py`, `ui/hud.py`; tests
   `test_dictation.py`, `test_dictation_request.py`
 - [x] 5 F4 Circle to Ask — `circle.py`, `ui/overlay.py`, `ui/bubble.py`; tests `test_circle.py`
-- [ ] 6 F5 to-dos + F6 scheduler
+- [x] 6 F5 to-dos + F6 scheduler — `stores/todos.py`, `scheduling/*`, `tools/builtin/{todos,schedule}.py`,
+  `ui/settings/routines_page.py`; tests `test_todos.py`, `test_schedule_spec.py`, `test_scheduler.py`,
+  `test_schedule_tools.py`, `test_routines_ui.py`
 - [ ] 7 F7 Island
 - [ ] 8 F8 memory, F9 loadout, F10 stats
 - [ ] 9 F12 hardening
@@ -124,21 +126,30 @@ acceptance step needs real hardware/API key and is listed in `MANUAL_TESTS.md` (
   real second monitor MT-23
 
 ### F5 To-do list
-- [ ] F5.1 Add, complete, delete, list by voice
-- [ ] F5.2 Add, complete, delete, list in UI
-- [ ] F5.3 Optional due time with reminder toast
-- [ ] F5.4 Shown in Island "Today" tab
+- [x] F5.1 Add, complete, delete, list by voice — `tools/builtin/todos.py`, `test_todos.py::test_tools`;
+  MT-25
+- [ ] F5.2 Add, complete, delete, list in UI — Island Today tab (phase 7)
+- [x] F5.3 Due time + reminder toast — `stores/todos.py`, `WispApp._check_reminders`;
+  `test_todos.py::test_reminders_fire_once`, `::test_update_resets_reminder`; MT-25
+- [ ] F5.4 Shown in Island "Today" tab (phase 7)
 
 ### F6 Scheduled tasks and routines
-- [ ] F6.1 One-off jobs
-- [ ] F6.2 Recurring jobs
-- [ ] F6.3 Model emits structured schedule_task; resolved tool calls stored and replayed without model
-- [ ] F6.4 Jobs persist across restarts
-- [ ] F6.5 Missed-job policy defined and documented
-- [ ] F6.6 Toast after each run
-- [ ] F6.7 List, edit, delete by voice
-- [ ] F6.8 List, edit, delete in UI
-- [ ] F6.9 Start with Windows setting
+- [x] F6.1 One-off jobs — `test_schedule_spec.py::test_one_off_amazon_example`,
+  `test_scheduler.py::test_one_off_runs_notifies_and_disables`, `test_schedule_tools.py::test_amazon_one_off`
+- [x] F6.2 Recurring jobs — `test_schedule_spec.py::test_every_morning_at_nine`, `::test_weekdays_and_weekly`,
+  `::test_monthly_and_hourly`, `test_scheduler.py::test_recurring_next_run_unschedule_and_sync`
+- [x] F6.3 Structured schedule_task; resolved calls replayed without model —
+  `test_schedule_tools.py::test_every_morning_routine_stores_resolved_calls`,
+  `::test_model_schedules_routine_then_it_replays_without_model` (fake Live session)
+- [x] F6.4 Persist across restarts — `test_scheduler.py::test_job_persists_and_runs_late_after_restart`; MT-28
+- [x] F6.5 Missed-job policy defined + documented — DECISIONS.md D-029, README;
+  `test_scheduler.py::test_missed_beyond_grace_is_reported`, `::test_grace_policy`
+- [x] F6.6 Toast after each run — `test_scheduler.py::test_one_off_runs_notifies_and_disables`
+  (notification text), `WispApp._execute_task` (✓/✗ per step)
+- [x] F6.7 List, edit, delete by voice — `test_schedule_tools.py::test_prompt_step_list_update_delete_run`,
+  `::test_move_one_off_keeps_date`; MT-27
+- [x] F6.8 List, edit, delete in UI — `ui/settings/routines_page.py`; `test_routines_ui.py` (all)
+- [x] F6.9 Start with Windows setting — `startup.py` + General page; `test_db_and_startup.py::test_run_key_toggle`
 
 ### F7 Island (works without API key)
 - [ ] F7.1 Pill fixed top-centre, always on top, expands on hover or scroll

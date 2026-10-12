@@ -30,6 +30,7 @@ class Services:
     player: Any = None
     app_index: Any = None
     todos: Any = None
+    tasks: Any = None
     memory: Any = None
     scheduler: Any = None
     clipboard: Any = None

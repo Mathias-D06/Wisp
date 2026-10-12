@@ -18,11 +18,38 @@ from PySide6.QtWidgets import QApplication
 OUT = Path(__file__).parent / "out"
 
 
+def _sample_data(wisp_app) -> None:
+    """Fill a throwaway data folder with realistic items for screenshots."""
+    from datetime import datetime, timedelta
+
+    from wisp.scheduling.spec import Schedule
+
+    services = wisp_app.services
+    now = datetime.now().astimezone()
+    services.scheduler.start()
+    tasks = [
+        ("Morning apps", Schedule(repeat="weekdays", time="09:00"),
+         [{"tool": "open_app", "args": {"name": "Unity Hub"}},
+          {"tool": "open_app", "args": {"name": "Spotify"}}]),
+        ("Gift wrap search", Schedule(repeat="none", at=(now + timedelta(days=29)).replace(
+            hour=11, minute=0).isoformat(timespec="minutes")),
+         [{"tool": "web_search", "args": {"query": "gift wraps", "site": "amazon"}}]),
+        ("Weekly review", Schedule(repeat="weekly", time="17:30", days=["fri"]),
+         [{"prompt": "Summarise my open to-dos"}]),
+    ]
+    for title, schedule, steps in tasks:
+        services.scheduler.schedule(services.tasks.add(title, schedule, steps))
+    services.todos.add("Call the dentist", due_at=now.replace(hour=15, minute=0))
+    services.todos.add("Buy gift wrap")
+    services.todos.add("Send invoice to Ana", due_at=now + timedelta(days=1))
+
+
 def render_settings(app: QApplication) -> None:
     from wisp import paths
     from wisp.app import WispApp
 
     wisp_app = WispApp(app, background=True)
+    _sample_data(wisp_app)
     for page in wisp_app.settings_pages():
         from wisp.ui.settings.dialog import SettingsDialog
 

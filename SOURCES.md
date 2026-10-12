@@ -94,6 +94,16 @@ from `.venv`. Dates are when checked.
 | test `test_circle.py::test_real_screens_grab_at_physical_resolution` | on this PC every screen's grab is geometry × devicePixelRatio | 2026-10-12 |
 | test `test_circle.py::test_map_to_pixmap_*` | mapping at 100/125/150/200 % and for a monitor left of the primary | 2026-10-12 |
 
+## To-dos and scheduler (phase 6)
+
+| URL | Confirmed | Checked |
+|---|---|---|
+| https://apscheduler.readthedocs.io/en/3.x/userguide.html | BackgroundScheduler; SQLAlchemyJobStore(url=); explicit job id + replace_existing for persistent stores; picklable args; misfire_grace_time + coalesce semantics; job stores must not be shared between schedulers; add_listener | 2026-10-12 |
+| https://apscheduler.readthedocs.io/en/3.x/modules/triggers/cron.html | CronTrigger fields; day_of_week 0/mon = Monday in 3.x | 2026-10-12 |
+| installed `apscheduler/schedulers/base.py`, `executors/base.py`, `events.py` | `add_job` accepts "package.module:callable"; missed runs raise `JobExecutionEvent(EVENT_JOB_MISSED, …, scheduled_run_time)`; `misfire_grace_time` must be positive or None | 2026-10-12 |
+| spike `spikes/apscheduler_persistence.py` | with SQLAlchemy 2.1: jobs survive restart; within grace → runs late; beyond grace → EVENT_JOB_MISSED | 2026-10-12 |
+| tests `test_scheduler.py` | same behaviour through `TaskScheduler` (late run, missed report, sync after job loss) | 2026-10-12 |
+
 ## Dependencies (PyPI JSON API, checked 2026-10-12)
 
 | Package | Version | Released | Licence | Note |

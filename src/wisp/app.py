@@ -6,7 +6,7 @@ import logging
 import sys
 from datetime import datetime
 
-from PySide6.QtCore import QObject
+from PySide6.QtCore import QObject, QTimer
 from PySide6.QtWidgets import QApplication, QMessageBox, QWidget
 
 from wisp import paths, startup
@@ -23,17 +23,23 @@ from wisp.live.connector import GenaiConnector
 from wisp.live.session import LiveSessionManager
 from wisp.logging_setup import configure as configure_logging
 from wisp.loop import LoopThread
+from wisp.scheduling.scheduler import TaskScheduler
+from wisp.scheduling.tasks import TaskStore
 from wisp.services import Services
 from wisp.settings import Settings, SettingsStore
 from wisp.single_instance import SingleInstance
 from wisp.stores.action_log import ActionLog
 from wisp.stores.stats import Stats
+from wisp.stores.todos import TodoStore
 from wisp.system import clipboard
 from wisp.system.app_index import AppIndex
+from wisp.tools.base import Origin
 from wisp.tools.builtin import apps as apps_tools
 from wisp.tools.builtin import core as core_tools
 from wisp.tools.builtin import files as files_tools
+from wisp.tools.builtin import schedule as schedule_tools
 from wisp.tools.builtin import screen as screen_tools
+from wisp.tools.builtin import todos as todo_tools
 from wisp.tools.builtin import ui as ui_tools
 from wisp.tools.builtin import web as web_tools
 from wisp.tools.builtin import windows as windows_tools
@@ -49,6 +55,7 @@ from wisp.ui.console import ConsoleWindow
 from wisp.ui.hud import Hud
 from wisp.ui.settings.dialog import SettingsDialog
 from wisp.ui.settings.general_page import GeneralPage
+from wisp.ui.settings.routines_page import RoutinesPage
 from wisp.ui.tray import Tray
 from wisp.voice import VoiceController, VoiceSignals, make_callbacks
 from wisp.winapi import input as winput
@@ -88,6 +95,12 @@ class WispApp(QObject):
             action_log=ActionLog(self.db, self.redactor.redact),
             stats=Stats(self.db, lambda: peek().general.typing_wpm),
             app_index=AppIndex(self.db),
+            todos=TodoStore(self.db),
+            tasks=TaskStore(self.db),
+        )
+        self.services.scheduler = TaskScheduler(
+            self.services.tasks, f"sqlite:///{paths.jobs_database_file()}", peek,
+            self._execute_task, self.notify,
         )
         self._register_tools()
         self.dispatcher = Dispatcher(
@@ -147,8 +160,43 @@ class WispApp(QObject):
     # ----- tools -----------------------------------------------------------------------------
     def _register_tools(self) -> None:
         for module in (core_tools, apps_tools, windows_tools, web_tools, screen_tools, ui_tools,
-                       files_tools):
+                       files_tools, todo_tools):
             self.registry.register_all(module.tools())
+        self.registry.register_all(schedule_tools.tools(self.registry))
+
+    # ----- scheduled tasks and reminders -------------------------------------------------------
+    def _execute_task(self, task) -> tuple[bool, str]:
+        """Replay a task's stored tool calls (runs on a scheduler thread)."""
+        lines: list[str] = []
+        all_ok = True
+        for step in task.steps:
+            if "tool" in step:
+                tool = self.registry.get(step["tool"])
+                label = tool.describe(step["args"]) if tool else step["tool"]
+                try:
+                    result = self.dispatcher.dispatch_threadsafe(
+                        step["tool"], step["args"], Origin.SCHEDULE, timeout=720)
+                except Exception as exc:
+                    result = {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
+                ok = bool(result.get("ok"))
+                lines.append(f"{'✓' if ok else '✗'} {label}"
+                             + ("" if ok else f" — {result.get('error', 'failed')}"))
+            else:
+                ok = self.keystore.has_key()
+                if ok:
+                    self.live.send_text(f"[Wisp notice] Scheduled task '{task.title}': "
+                                        f"{step['prompt']}")
+                lines.append(f"{'✓' if ok else '✗'} asked Wisp: {step['prompt'][:80]}"
+                             + ("" if ok else " — needs an API key"))
+            all_ok = all_ok and ok
+        self.services.stats.record("routine")
+        return all_ok, "\n".join(lines)
+
+    def _check_reminders(self) -> None:
+        for todo in self.services.todos.due_reminders():
+            self.services.todos.mark_reminded(todo.id)
+            when = todo.due_at.strftime("%H:%M") if todo.due_at else ""
+            self.notify("Reminder", f"{todo.text} (due {when})")
 
     def _dictation_deps(self) -> DictationDeps:
         peek = self.settings_store.peek
@@ -183,6 +231,15 @@ class WispApp(QObject):
         self._build_tray_menu()
         self.tray.show()
         self.services.app_index.refresh_in_background()
+        try:
+            self.services.scheduler.start()
+        except Exception as exc:
+            log.exception("Scheduler failed to start")
+            self.notify("Scheduled tasks unavailable", f"The scheduler could not start: {exc}")
+        self._reminder_timer = QTimer(self)
+        self._reminder_timer.timeout.connect(self._check_reminders)
+        self._reminder_timer.start(20_000)
+        QTimer.singleShot(3000, self._check_reminders)
         error = self.hotkeys.start()
         if error:
             self.notify("Hotkeys unavailable", f"Wisp could not install its keyboard hook: {error}")
@@ -196,6 +253,7 @@ class WispApp(QObject):
 
     def quit(self) -> None:
         log.info("Wisp quitting")
+        self.services.scheduler.shutdown()
         self.hotkeys.stop()
         self.live.disconnect()
         self.mic.close()
@@ -227,7 +285,10 @@ class WispApp(QObject):
         self.tray.on_click(self.console.open)
 
     def settings_pages(self) -> list:
-        return [GeneralPage(self.settings_store, self.keystore)]
+        return [
+            GeneralPage(self.settings_store, self.keystore),
+            RoutinesPage(self.services.tasks, self.services.scheduler),
+        ]
 
     def open_settings(self, page: str | None = None) -> None:
         if self._settings_dialog is None:

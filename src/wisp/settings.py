@@ -172,6 +172,10 @@ def validate(settings: Settings) -> list[str]:
         problems.append("Typing speed must be between 10 and 200 words per minute.")
     if not 100 <= settings.hotkeys.hold_ms <= 2000:
         problems.append("Hotkey hold time must be between 100 and 2000 ms.")
+    if not 0 <= settings.scheduler.one_off_grace_hours <= 168:
+        problems.append("Missed one-off task grace must be 0-168 hours.")
+    if not 0 <= settings.scheduler.recurring_grace_minutes <= 1440:
+        problems.append("Missed repeating task grace must be 0-1440 minutes.")
     if settings.loadout.voice not in VOICES:
         problems.append(f"Unknown voice {settings.loadout.voice!r}.")
     if not re.fullmatch(r"(www\.)?amazon\.[a-z]{2,3}(\.[a-z]{2})?", settings.general.amazon_domain):

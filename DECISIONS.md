@@ -179,6 +179,28 @@ Gap: how the gesture, the question and the image reach the model. Decisions:
 * Overlays never take keyboard focus (`WindowDoesNotAcceptFocus`), so a cancelled gesture
   (Ctrl+Shift+T etc.) still reaches the user's app.
 
+## D-029 Scheduled tasks: stored resolved tool calls, missed-run policy
+* The model converts speech into one structured `schedule_task` call: title, timing
+  (`when` ISO 8601 local, `repeat` none/daily/weekdays/weekly/monthly/hourly, `time`, `days`,
+  `day_of_month`) and `steps`, each a concrete tool call (`tool` + `args_json`). Steps are
+  validated against the real tool schemas when created and replayed later through the dispatcher
+  with `Origin.SCHEDULE` — no model call. A `prompt` step exists for work that needs the model at
+  run time. Gap: tool arguments vary per tool, and the documented schema subset has no free-form
+  objects, so step arguments travel as a JSON string.
+* A routine containing a confirm-tier step needs confirmation when it is created, and that step
+  still needs a click on the card each time it runs (scheduled steps never use auto-approval;
+  unanswered cards skip the step after 10 minutes).
+* Missed-run policy: one-off tasks run late if Wisp starts within 12 h of the time, else they are
+  reported ("Missed while Wisp was closed") and switched off; repeating tasks run once if the
+  last occurrence was missed by < 60 min (APScheduler coalescing), older ones are skipped and
+  reported. Both values are in settings.json → scheduler. After every run a notification lists
+  each step with ✓/✗.
+* To-do reminders use a 20-second timer instead of APScheduler (they are rows, not jobs);
+  overdue reminders fire once at start-up.
+* APScheduler 3.x (not 4.x pre-release) with SQLAlchemyJobStore in `jobs.sqlite3`; the job
+  stores only `wisp.scheduling.runner:run_scheduled_task(task_id)`. On start the job store is
+  synced with the `tasks` table (missing jobs re-created).
+
 ## D-022 Secure desktop / lock screen detection
 `OpenInputDesktop(DESKTOP_SWITCHDESKTOP)` fails while the UAC secure desktop, Ctrl+Alt+Del screen
 or lock screen is the input desktop. Wisp uses that only to explain why it cannot act; it never

@@ -50,6 +50,15 @@ General, paste your key and click **Save and test** (expect "Key works…").
 | MT-23 | With two monitors (or Settings → Display scale 150 %), repeat MT-22 on the second monitor. | The answer is about the circled content (correct crop on that monitor). |
 | MT-24 | In a browser hold Ctrl+Shift for half a second, then press T (reopen tab). | The overlay disappears and the closed tab reopens; nothing is sent. |
 
+## F5/F6 To-dos and routines
+
+| ID | Steps | Expected |
+|---|---|---|
+| MT-25 | Say "add a to-do to call the bank in 2 minutes". Wait 2 minutes. | Wisp confirms; a "Reminder" notification appears at the time; the to-do shows in the Island's Today tab. Say "mark call the bank as done" → it disappears from Today. |
+| MT-26 | Say "every day at <time two minutes from now>, open Notepad and Calculator". | Settings → Routines lists it with the next run; at the time both apps open and a "Routine done" notification lists two ✓ steps. |
+| MT-27 | Say "search Amazon for gift wraps on 10 November at 11am", then "what routines do I have?", then "move the gift wrap search to 3pm", then "delete the gift wrap search" (say yes). | Each step is reflected in Settings → Routines; delete asks first. |
+| MT-28 | Create a routine for 2 minutes from now, quit Wisp (tray → Quit), wait 3 minutes, start Wisp. | The routine runs once on start ("ran late" within the 12 h grace) and a notification says what was done. |
+
 ## Hotkeys
 
 | ID | Steps | Expected |
