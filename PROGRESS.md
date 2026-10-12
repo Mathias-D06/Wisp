@@ -9,10 +9,11 @@ acceptance step needs real hardware/API key and is listed in `MANUAL_TESTS.md` (
 
 ## Status
 
-- Current phase: 5 — F4 Circle to Ask
-- Next step: write `wisp/ui/overlay.py` (one transparent overlay per QScreen, freehand loop),
-  `wisp/circle.py` (hotkey "circle": grab screens before showing overlays, stream question audio to
-  the Live session, crop loop bbox in physical pixels, send JPEG + activity_end, show answer bubble).
+- Current phase: 6 — F5 to-dos + F6 scheduler
+- Next step: verify APScheduler 3.x docs (SQLAlchemyJobStore, misfire_grace_time, coalesce,
+  triggers); write `stores/todos.py`, `scheduling/scheduler.py` (+ tasks table), tools
+  `tools/builtin/{todos,schedule}.py`, reminder toasts; UI comes with the Island (phase 7) and
+  Settings → Tasks page.
 - Environment: Windows 11, Python 3.12.10 venv in `.venv`, Git 2.55, Inno Setup 6.7.3 (per-user,
   `%LOCALAPPDATA%\Programs\Inno Setup 6\ISCC.exe`).
 - Commands: `.venv\Scripts\python -m pytest`, `.venv\Scripts\ruff check src tests`,
@@ -33,7 +34,7 @@ acceptance step needs real hardware/API key and is listed in `MANUAL_TESTS.md` (
   `test_f2_tools.py`, `test_win_integration.py`
 - [x] 4 F3 dictation — `dictation.py`, `ai/dictation.py`, `system/clipboard.py`, `ui/hud.py`; tests
   `test_dictation.py`, `test_dictation_request.py`
-- [ ] 5 F4 Circle to Ask
+- [x] 5 F4 Circle to Ask — `circle.py`, `ui/overlay.py`, `ui/bubble.py`; tests `test_circle.py`
 - [ ] 6 F5 to-dos + F6 scheduler
 - [ ] 7 F7 Island
 - [ ] 8 F8 memory, F9 loadout, F10 stats
@@ -109,12 +110,18 @@ acceptance step needs real hardware/API key and is listed in `MANUAL_TESTS.md` (
 - [x] F3.7 Words dictated → Stats — `test_dictation.py::test_full_flow_pastes_and_restores` (stats event)
 
 ### F4 Circle to Ask
-- [ ] F4.1 Hold Ctrl+Shift (configurable) shows full-screen transparent overlay
-- [ ] F4.2 Freehand loop drawn while speaking
-- [ ] F4.3 On release: crop loop bounding box, send image + question
-- [ ] F4.4 Answer aloud plus short text bubble
-- [ ] F4.5 No interference with normal Ctrl+Shift+key shortcuts
-- [ ] F4.6 Works across multiple monitors and display scaling
+- [x] F4.1 Hold Ctrl+Shift shows full-screen overlay (one per screen) — `ui/overlay.py`, `circle.py`;
+  `test_circle.py::test_push_to_talk_flow_sends_image_before_closing_turn`; MT-22
+- [x] F4.2 Freehand loop while speaking — `test_circle.py::test_overlay_crop_uses_physical_pixels`
+  (real mouse events), question audio streamed during the gesture (same flow test)
+- [x] F4.3 Crop bbox, send image + question — `test_circle.py::test_overlay_crop_uses_physical_pixels`,
+  `::test_push_to_talk_flow_sends_image_before_closing_turn`, `::test_always_listening_buffers_and_replays_question`
+- [x] F4.4 Answer aloud + text bubble — `ui/bubble.py`; bubble updates in the flow test; MT-22
+- [x] F4.5 No interference with Ctrl+Shift+key — `test_circle.py::test_other_key_cancels`,
+  `test_hotkeys.py::test_other_key_while_active_cancels`; overlays never take focus; MT-24
+- [~] F4.6 Multi-monitor + scaling — `test_circle.py::test_map_to_pixmap_scales`,
+  `::test_map_to_pixmap_secondary_monitor_left_of_primary`, `::test_real_screens_grab_at_physical_resolution`;
+  real second monitor MT-23
 
 ### F5 To-do list
 - [ ] F5.1 Add, complete, delete, list by voice

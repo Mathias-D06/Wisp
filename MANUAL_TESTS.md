@@ -42,6 +42,14 @@ General, paste your key and click **Save and test** (expect "Key works…").
 | MT-20 | Win+V (clipboard history). | The dictated text is **not** in Windows clipboard history. |
 | MT-21 | Hold Ctrl+Win briefly (< 0.2 s) and release; then press Ctrl+Win+D. | Nothing is recorded for the tap; Ctrl+Win+D creates a virtual desktop as usual (remove it with Ctrl+Win+F4). |
 
+## F4 Circle to Ask
+
+| ID | Steps | Expected |
+|---|---|---|
+| MT-22 | Open a web page with a chart or a word you don't know. Hold **Ctrl+Shift**, drag a loop around it with the left mouse button while asking "what is this?", release. | Screen dims with your loop drawn; after release Wisp answers aloud and a bubble with the same text appears beside the loop. |
+| MT-23 | With two monitors (or Settings → Display scale 150 %), repeat MT-22 on the second monitor. | The answer is about the circled content (correct crop on that monitor). |
+| MT-24 | In a browser hold Ctrl+Shift for half a second, then press T (reopen tab). | The overlay disappears and the closed tab reopens; nothing is sent. |
+
 ## Hotkeys
 
 | ID | Steps | Expected |

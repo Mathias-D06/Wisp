@@ -163,6 +163,22 @@ runs in a separate process on an MTA worker thread. pytest's faulthandler still 
 first-chance COM error (0x8001010d) raised inside Qt's provider while it serves that call; the
 run passes with exit code 0 (5 consecutive full runs on 2026-10-12).
 
+## D-028 Circle to Ask mechanics
+Gap: how the gesture, the question and the image reach the model. Decisions:
+* One overlay per QScreen, showing that screen's frozen `grabWindow(0)` screenshot (taken before
+  any overlay appears, so the crop is exactly what the user circled). Crop rect = logical bbox ×
+  (pixmap size ÷ screen geometry) on that screen — independent of DPI and monitor layout.
+* The user must draw a loop (left-drag) while holding the chord; releasing without a loop cancels.
+* Push-to-talk mode: the question streams live inside activity_start/activity_end; on release the
+  JPEG crop is sent as a realtime frame and activity_end follows 300 ms later (realtime streams
+  are concurrent, so the image gets a head start). Always-listening mode: the live mic stream is
+  paused and the question is buffered, then replayed after the image, followed by
+  audio_stream_end (otherwise server VAD might answer before the image arrives).
+* The system instruction tells the model that such an image is the circled area. The answer is
+  spoken and shown in a bubble beside the loop (output transcription), hidden 12 s after the turn.
+* Overlays never take keyboard focus (`WindowDoesNotAcceptFocus`), so a cancelled gesture
+  (Ctrl+Shift+T etc.) still reaches the user's app.
+
 ## D-022 Secure desktop / lock screen detection
 `OpenInputDesktop(DESKTOP_SWITCHDESKTOP)` fails while the UAC secure desktop, Ctrl+Alt+Del screen
 or lock screen is the input desktop. Wisp uses that only to explain why it cannot act; it never

@@ -58,7 +58,42 @@ def render_console(app: QApplication) -> None:
     wisp_app.quit()
 
 
-RENDERERS = {"settings": render_settings, "console": render_console}
+def render_circle(app: QApplication) -> None:
+    from PySide6.QtCore import QPointF, QRect
+    from PySide6.QtGui import QColor, QLinearGradient, QPainter, QPixmap
+
+    from wisp.ui.bubble import AnswerBubble
+    from wisp.ui.overlay import CircleOverlay
+
+    class Screen:
+        def geometry(self):
+            return QRect(0, 0, 900, 500)
+
+    shot = QPixmap(900, 500)
+    painter = QPainter(shot)
+    gradient = QLinearGradient(0, 0, 900, 500)
+    gradient.setColorAt(0, QColor("#dfe7f5"))
+    gradient.setColorAt(1, QColor("#f8f1e4"))
+    painter.fillRect(shot.rect(), gradient)
+    painter.setPen(QColor("#333"))
+    painter.drawText(QRect(380, 210, 300, 60), 0, "Quarterly revenue: 4.2M")
+    painter.end()
+    overlay = CircleOverlay(Screen(), shot, "#7c5cff")
+    import math
+
+    loop = [QPointF(520 + 150 * math.cos(t / 20 * math.tau), 235 + 45 * math.sin(t / 20 * math.tau))
+            for t in range(21)]
+    overlay.strokes = [loop]
+    overlay.resize(900, 500)
+    overlay.grab().save(str(OUT / "circle_overlay.png"))
+    bubble = AnswerBubble()
+    bubble.show_at(QRect(370, 190, 300, 90),
+                   "That's the quarterly revenue figure: 4.2 million, up from last quarter.")
+    app.processEvents()
+    bubble.grab().save(str(OUT / "answer_bubble.png"))
+
+
+RENDERERS = {"settings": render_settings, "console": render_console, "circle": render_circle}
 
 
 def main() -> None:

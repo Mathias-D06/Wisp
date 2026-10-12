@@ -85,6 +85,15 @@ from `.venv`. Dates are when checked.
 | https://mhammond.github.io/pywin32/win32clipboard__SetClipboardData_meth.html, __GetClipboardDataHandle_meth.html | SetClipboardData copies a buffer into new global memory; GetClipboardDataHandle returns the data handle (read with GetGlobalMemory) | 2026-10-12 |
 | tests `test_dictation.py::test_real_clipboard_round_trip`, `::test_real_paste_into_focused_field` (opt-in, run 2026-10-12) | byte-exact restore incl. a custom format; exclusion markers detected; real Ctrl+V pastes into a focused field | 2026-10-12 |
 
+## Circle to Ask (phase 5)
+
+| URL | Confirmed | Checked |
+|---|---|---|
+| https://doc.qt.io/qt-6/qscreen.html | `grabWindow(0)` grabs the entire screen; returned pixmap may be larger than requested on high-DPI screens; coordinates in device-independent pixels | 2026-10-12 |
+| https://doc.qt.io/qt-6/highdpi.html | (see phase 3) per-monitor V2, logical screen geometry, islands of screens | 2026-10-12 |
+| test `test_circle.py::test_real_screens_grab_at_physical_resolution` | on this PC every screen's grab is geometry × devicePixelRatio | 2026-10-12 |
+| test `test_circle.py::test_map_to_pixmap_*` | mapping at 100/125/150/200 % and for a monitor left of the primary | 2026-10-12 |
+
 ## Dependencies (PyPI JSON API, checked 2026-10-12)
 
 | Package | Version | Released | Licence | Note |

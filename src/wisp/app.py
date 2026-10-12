@@ -13,6 +13,7 @@ from wisp import paths, startup
 from wisp.ai import dictation as dictation_ai
 from wisp.audio.capture import MicCapture
 from wisp.audio.playback import Player
+from wisp.circle import CircleController
 from wisp.db import Database
 from wisp.dictation import DictationController, DictationDeps
 from wisp.hotkeys.manager import HotkeyManager
@@ -42,6 +43,7 @@ from wisp.tools.registry import ToolRegistry
 from wisp.tools.safety import SafetyPolicy, TaintTracker
 from wisp.ui import theme
 from wisp.ui.bridge import UiInvoker
+from wisp.ui.bubble import AnswerBubble
 from wisp.ui.confirm_card import ConfirmCard
 from wisp.ui.console import ConsoleWindow
 from wisp.ui.hud import Hud
@@ -129,8 +131,11 @@ class WispApp(QObject):
         self.hud = Hud(settings.loadout.accent)
         self.dictation = DictationController(self._dictation_deps(), self.mic, self.hud,
                                              self.services.stats, self.notify)
-
         palette = theme.palette(settings.loadout.theme, settings.loadout.accent)
+        self.bubble = AnswerBubble(palette.surface, palette.border)
+        self.circle = CircleController(self.voice, self.live, self.mic, self.hud, self.bubble,
+                                       self.keystore.has_key, lambda: peek().loadout.accent)
+
         self.console = ConsoleWindow(self.voice, settings.loadout.accent)
         self.confirm_card = ConfirmCard(self.confirmations)
         self.confirm_card.apply_palette(palette.surface, palette.border)
@@ -233,6 +238,7 @@ class WispApp(QObject):
         log.info("Hotkey %s %s", name, kind)
         self.voice.on_hotkey(name, kind)
         self.dictation.on_hotkey(name, kind)
+        self.circle.on_hotkey(name, kind)
 
     def _apply_theme(self, settings: Settings) -> None:
         palette = theme.palette(settings.loadout.theme, settings.loadout.accent)

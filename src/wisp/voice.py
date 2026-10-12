@@ -63,6 +63,7 @@ class VoiceController(QObject):
         self.live_state = LiveState.IDLE.value
         self.live_detail = ""
         self.always_listening = settings_store.get().audio.always_listening
+        self._always_suspended = False
         settings_store.subscribe(self._on_settings)
         signals.state.connect(self._on_state)
         signals.user_text.connect(lambda text, final: self.transcript.emit("user", text, final))
@@ -175,8 +176,14 @@ class VoiceController(QObject):
         self.mic.subscribe("always", self._always_chunk)
         self.live.connect()
 
+    def suspend_always(self, suspended: bool) -> None:
+        """Pause always-listening streaming (Circle to Ask buffers its question instead)."""
+        self._always_suspended = suspended
+
     def _always_chunk(self, chunk: bytes) -> None:
         # Called on the mic thread. Wake an idle session when the user starts speaking.
+        if self._always_suspended:
+            return
         if self.live.state == LiveState.IDLE and self.mic.level > WAKE_LEVEL:
             self.live.connect()
             self.live.push_audio(self.mic.preroll())
