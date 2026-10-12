@@ -4,6 +4,10 @@ import sys
 
 import pytest
 
+if sys.platform == "win32":
+    # Same as the app: comtypes must first be imported on the main thread (see winapi/uia.py).
+    import comtypes.client  # noqa: F401
+
 
 @pytest.fixture(autouse=True)
 def isolated_data_dir(tmp_path, monkeypatch):

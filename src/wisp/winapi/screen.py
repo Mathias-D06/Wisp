@@ -1,0 +1,88 @@
+"""Screen capture with mss, downscaled to keep image tokens low.
+
+Coordinates are physical pixels: Qt makes the process Per-Monitor-V2 DPI aware
+(doc.qt.io/qt-6/highdpi.html) and mss also requests per-monitor awareness (mss/windows/gdi.py).
+"""
+
+from __future__ import annotations
+
+import ctypes
+import io
+from ctypes import wintypes
+from dataclasses import dataclass
+
+from PIL import Image
+
+MAX_EDGE = 1280
+JPEG_QUALITY = 72
+
+_user32 = ctypes.WinDLL("user32", use_last_error=True)
+_user32.GetCursorPos.argtypes = [ctypes.POINTER(wintypes.POINT)]
+
+
+@dataclass
+class Capture:
+    jpeg: bytes
+    width: int
+    height: int
+    region: tuple[int, int, int, int]  # left, top, right, bottom (physical px)
+
+
+def encode(image: Image.Image, max_edge: int = MAX_EDGE, quality: int = JPEG_QUALITY) -> bytes:
+    image = image.convert("RGB")
+    image.thumbnail((max_edge, max_edge), Image.Resampling.LANCZOS)
+    buffer = io.BytesIO()
+    image.save(buffer, format="JPEG", quality=quality, optimize=True)
+    return buffer.getvalue()
+
+
+def grab(region: tuple[int, int, int, int]) -> Image.Image:
+    from mss import MSS
+
+    left, top, right, bottom = region
+    with MSS() as sct:
+        shot = sct.grab({"left": left, "top": top, "width": right - left,
+                         "height": bottom - top})
+        return Image.frombytes("RGB", shot.size, shot.rgb)
+
+
+def monitors() -> list[tuple[int, int, int, int]]:
+    from mss import MSS
+
+    with MSS() as sct:
+        return [(m["left"], m["top"], m["left"] + m["width"], m["top"] + m["height"])
+                for m in sct.monitors[1:]]
+
+
+def cursor_position() -> tuple[int, int]:
+    point = wintypes.POINT()
+    _user32.GetCursorPos(ctypes.byref(point))
+    return point.x, point.y
+
+
+def monitor_at(x: int, y: int) -> tuple[int, int, int, int]:
+    screens = monitors()
+    for left, top, right, bottom in screens:
+        if left <= x < right and top <= y < bottom:
+            return left, top, right, bottom
+    return screens[0]
+
+
+def clamp_to_screens(region: tuple[int, int, int, int]) -> tuple[int, int, int, int] | None:
+    left, top, right, bottom = region
+    screens = monitors()
+    v_left = min(s[0] for s in screens)
+    v_top = min(s[1] for s in screens)
+    v_right = max(s[2] for s in screens)
+    v_bottom = max(s[3] for s in screens)
+    clamped = (max(left, v_left), max(top, v_top), min(right, v_right), min(bottom, v_bottom))
+    if clamped[2] - clamped[0] < 8 or clamped[3] - clamped[1] < 8:
+        return None
+    return clamped
+
+
+def capture(region: tuple[int, int, int, int], max_edge: int = MAX_EDGE) -> Capture:
+    image = grab(region)
+    jpeg = encode(image, max_edge)
+    width, height = image.size
+    return Capture(jpeg, width, height, region)

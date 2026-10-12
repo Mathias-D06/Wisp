@@ -21,6 +21,18 @@ General, paste your key and click **Save and test** (expect "Key works…").
 | MT-08 | Settings → General → idle timeout 1 min. Ask "My favourite colour is teal." Wait 90 s. Ask "What's my favourite colour?" | Log shows "Idle — will reconnect when you talk"; the answer is teal (session resumed). |
 | MT-09 | (background, 30 min) Every ~5 min ask "What time is it?" and once "open Notepad". At the end ask "What was the first thing I asked you today?" | Correct answer; log shows several "GoAway received" followed by "Live state ready" with no "error" state. |
 
+## F2 Computer control (clean Windows 11)
+
+| ID | Steps | Expected |
+|---|---|---|
+| MT-11 | Say "open Spotify" (install it first if needed); then "open notepad". | Spotify opens; Notepad opens. Saying "open visual studio" with two VS apps installed makes Wisp ask which one. |
+| MT-12 | With a web page visible, say "What's on my screen?" | A correct one-or-two-sentence description of the page. |
+| MT-13 | Say "search YouTube for lofi beats". | Default browser opens YouTube results for "lofi beats". |
+| MT-14 | Open Windows Settings → System. Say "click the Display button" ("click the Settings button" in an app that has one). | The named element is clicked. |
+| MT-15 | In Notepad with unsaved text say "close Notepad". | Confirmation card appears; say "yes" → Notepad asks to save (Wisp never discards work). Say "no" instead → nothing happens. |
+| MT-16 | Create `Desktop\wisp-test.txt`, say "delete wisp-test.txt from my desktop". | Card asks first; after "yes" the file is in the Recycle Bin (restorable). |
+| MT-17 | Run Task Manager as administrator, say "click the Processes tab in Task Manager". | Wisp explains that Windows blocks controlling admin windows; nothing is clicked. |
+
 ## Hotkeys
 
 | ID | Steps | Expected |

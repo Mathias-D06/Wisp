@@ -90,3 +90,45 @@ jobs in `jobs.sqlite3`.
 * Model audio that arrives while the user holds push-to-talk is dropped (barge-in).
 * Always-listening mode: an idle session is woken by mic level and the last 0.5 s of audio is
   replayed. Headphones are recommended (documented echo/self-interruption gotcha).
+
+## D-016 UNDOCUMENTED: AttachThreadInput fallback for switching windows
+`SetForegroundWindow` is restricted (documented conditions). If it fails, Wisp briefly attaches
+its thread input to the foreground thread and retries; that this lifts the restriction is not
+documented. Isolated in `winapi/windows.activate`. Failure mode: Windows flashes the taskbar
+button and the tool reports that it could not bring the window forward.
+
+## D-017 Screenshots reach the model as a realtime video frame
+Gap: the Live docs do not document images inside function responses (only generateContent
+does). Decision: `look_at_screen` captures the monitor (or active window) with mss, downscales
+to ≤1280 px JPEG q72, sends it with `send_realtime_input(video=…)` (documented, "JPEG ≤1 fps"),
+waits 0.3 s, then returns a short text result. `turnCoverage` defaults to including all video on
+Gemini 3.1+ models (ai.google.dev/api/live). Verify with MT-12.
+
+## D-018 App index = Apps folder + Start Menu shortcuts
+Decision: enumerate `shell:::{4234d49b-0245-4df3-b780-3893943456e1}` through Shell.Application
+(documented on learn.microsoft.com "Find the AUMID"), plus `.lnk` files under both Start Menu
+Programs folders; launch with the item's default verb (`FolderItem.InvokeVerb`). Fallback when
+ParseName fails: `os.startfile("shell:AppsFolder\<AUMID>")`, which relies on the UNDOCUMENTED
+`shell:AppsFolder` launch path. Matching uses rapidfuzz; only an exact name skips the
+"which one did you mean?" question.
+
+## D-019 What counts as untrusted text
+Window titles, UI element names, recent/search file names and screenshots are untrusted (any web
+page or document can set them), so those tools taint the session (D-012).
+
+## D-020 Risky clicks and typing escalate in code
+`click_element` becomes confirm-tier when the target's name contains words such as send, submit,
+buy, pay, order, delete, post, OK, yes, allow, install, sign out (list in `tools/builtin/ui.py`);
+`type_into_field` with `submit=true` is confirm-tier; opening executables/scripts/shortcuts is
+confirm-tier. Purchases are therefore never one step from a model decision.
+
+## D-021 comtypes must be imported on the main thread
+comtypes calls CoInitializeEx(STA) on import in the importing thread; importing first in an MTA
+worker raises RPC_E_CHANGED_MODE. `winapi/uia.py` imports it at start-up (main thread); tool
+workers initialise COM as MTA (UIA docs recommend non-UI threads for clients).
+
+## D-022 Secure desktop / lock screen detection
+`OpenInputDesktop(DESKTOP_SWITCHDESKTOP)` fails while the UAC secure desktop, Ctrl+Alt+Del screen
+or lock screen is the input desktop. Wisp uses that only to explain why it cannot act; it never
+tries to interact with those screens. Elevated windows are detected with `TokenElevation` and
+reported as a UIPI limit rather than worked around.

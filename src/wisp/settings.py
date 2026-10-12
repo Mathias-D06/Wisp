@@ -12,6 +12,7 @@ import dataclasses
 import json
 import logging
 import os
+import re
 import threading
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -54,6 +55,7 @@ class GeneralSettings:
     show_island: bool = True
     clipboard_history_size: int = 50
     typing_wpm: int = 40
+    amazon_domain: str = "www.amazon.com"
 
 
 @dataclass
@@ -172,6 +174,8 @@ def validate(settings: Settings) -> list[str]:
         problems.append("Hotkey hold time must be between 100 and 2000 ms.")
     if settings.loadout.voice not in VOICES:
         problems.append(f"Unknown voice {settings.loadout.voice!r}.")
+    if not re.fullmatch(r"(www\.)?amazon\.[a-z]{2,3}(\.[a-z]{2})?", settings.general.amazon_domain):
+        problems.append("Amazon site must look like www.amazon.co.uk.")
     if not settings.ai.live_model.strip():
         problems.append("Live model name cannot be empty.")
     if not settings.ai.text_model.strip():

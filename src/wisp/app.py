@@ -25,7 +25,14 @@ from wisp.settings import Settings, SettingsStore
 from wisp.single_instance import SingleInstance
 from wisp.stores.action_log import ActionLog
 from wisp.stores.stats import Stats
+from wisp.system.app_index import AppIndex
+from wisp.tools.builtin import apps as apps_tools
 from wisp.tools.builtin import core as core_tools
+from wisp.tools.builtin import files as files_tools
+from wisp.tools.builtin import screen as screen_tools
+from wisp.tools.builtin import ui as ui_tools
+from wisp.tools.builtin import web as web_tools
+from wisp.tools.builtin import windows as windows_tools
 from wisp.tools.confirm import ConfirmationManager
 from wisp.tools.dispatcher import Dispatcher
 from wisp.tools.registry import ToolRegistry
@@ -72,6 +79,7 @@ class WispApp(QObject):
             registry=self.registry,
             action_log=ActionLog(self.db, self.redactor.redact),
             stats=Stats(self.db, lambda: peek().general.typing_wpm),
+            app_index=AppIndex(self.db),
         )
         self._register_tools()
         self.dispatcher = Dispatcher(
@@ -121,7 +129,9 @@ class WispApp(QObject):
 
     # ----- tools -----------------------------------------------------------------------------
     def _register_tools(self) -> None:
-        self.registry.register_all(core_tools.tools())
+        for module in (core_tools, apps_tools, windows_tools, web_tools, screen_tools, ui_tools,
+                       files_tools):
+            self.registry.register_all(module.tools())
 
     def _live_config(self, handle: str | None):
         settings = self.settings_store.get()
@@ -134,6 +144,7 @@ class WispApp(QObject):
     def start(self) -> None:
         self._build_tray_menu()
         self.tray.show()
+        self.services.app_index.refresh_in_background()
         error = self.hotkeys.start()
         if error:
             self.notify("Hotkeys unavailable", f"Wisp could not install its keyboard hook: {error}")

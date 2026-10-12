@@ -113,7 +113,7 @@ def test_cancel_drops_turn(qtbot, tmp_path):
 
 
 def test_no_key_prompts_to_add_key(qtbot, tmp_path):
-    voice, live, mic, _, _, messages = make(tmp_path, key=False)
+    voice, live, _mic, _, _, messages = make(tmp_path, key=False)
     voice.ptt_press()
     voice.send_text("hello")
     assert "begin_turn" not in names(live) and "send_text" not in names(live)

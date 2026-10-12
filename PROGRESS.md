@@ -9,10 +9,10 @@ acceptance step needs real hardware/API key and is listed in `MANUAL_TESTS.md` (
 
 ## Status
 
-- Current phase: 3 — F2 computer-control tools
-- Next step: verify Get-StartApps / shell:AppsFolder launch, window APIs, mss, UIA COM docs; then
-  write `wisp/services/app_index.py`, `wisp/tools/builtin/{apps,windows,web,screen,ui,files}.py`
-  and register them in `WispApp._register_tools`.
+- Current phase: 4 — F3 dictation
+- Next step: verify Gemini audio-understanding docs (inline WAV, model, thinking level) and
+  clipboard APIs (exclusion formats); write `wisp/dictation.py` (record on Ctrl+Win hold, clean via
+  generate_content, paste with Ctrl+V, restore clipboard) and wire hotkey "dictation".
 - Environment: Windows 11, Python 3.12.10 venv in `.venv`, Git 2.55, Inno Setup 6.7.3 (per-user,
   `%LOCALAPPDATA%\Programs\Inno Setup 6\ISCC.exe`).
 - Commands: `.venv\Scripts\python -m pytest`, `.venv\Scripts\ruff check src tests`,
@@ -28,7 +28,9 @@ acceptance step needs real hardware/API key and is listed in `MANUAL_TESTS.md` (
   `hotkeys/*`, `winapi/input.py`, `voice.py`, `ui/{console,orb,confirm_card,bridge}.py`; tests
   `test_live_session.py` (fake server), `test_dispatcher.py`, `test_tools_core.py`,
   `test_hotkeys.py`, `test_voice.py`, `test_audio_and_config.py`, `test_audio_devices.py`
-- [ ] 3 F2 computer-control tools
+- [x] 3 F2 computer-control tools — `system/app_index.py`, `winapi/{windows,screen,uia,files}.py`,
+  `tools/builtin/{apps,windows,web,screen,ui,files}.py`; tests `test_app_index.py`,
+  `test_f2_tools.py`, `test_win_integration.py`
 - [ ] 4 F3 dictation
 - [ ] 5 F4 Circle to Ask
 - [ ] 6 F5 to-dos + F6 scheduler
@@ -72,15 +74,22 @@ acceptance step needs real hardware/API key and is listed in `MANUAL_TESTS.md` (
   real run MT-07
 
 ### F2 Computer-control tools
-- [ ] F2.1 open_app with fuzzy match over Start Menu shortcuts + Store apps index
-- [ ] F2.2 close / switch / minimise windows
-- [ ] F2.3 web_search on Google, YouTube, Amazon in default browser
-- [ ] F2.4 look_at_screen (screen or active window)
-- [ ] F2.5 UI Automation: list elements, click by name, type into field, scroll
-- [ ] F2.6 Open files/folders, find recent files
-- [ ] F2.7 Delete goes to Recycle Bin only and requires confirmation
-- [ ] F2.A Accept: "open Spotify", "search YouTube for lofi beats", "what's on my screen?",
-  "click the Settings button" on clean Windows 11
+- [x] F2.1 open_app fuzzy over Start Menu + Store apps — `system/app_index.py`,
+  `test_app_index.py` (all, incl. `test_real_apps_folder_enumerates`), `spikes/apps_folder.py`
+- [x] F2.2 close / switch / minimise windows — `tools/builtin/windows.py`, `winapi/windows.py`;
+  `test_win_integration.py::test_window_bounds_minimize_restore`; close is confirm-tier; MT-15
+- [x] F2.3 web_search Google/YouTube/Amazon — `test_f2_tools.py::test_search_urls`,
+  `::test_web_search_opens_default_browser`; MT-13
+- [x] F2.4 look_at_screen — `tools/builtin/screen.py`; capture tested in
+  `test_win_integration.py::test_screen_capture_of_window`; model side MT-12
+- [x] F2.5 UIA list/click/type/scroll — `winapi/uia.py`, `tools/builtin/ui.py`;
+  `test_win_integration.py::test_uia_click_and_type`, `::test_uia_reports_missing_element`;
+  risk escalation `test_f2_tools.py::test_risky_click_names`; MT-14
+- [x] F2.6 Open files/folders, recent files — `tools/builtin/files.py`;
+  `test_f2_tools.py::test_resolve_known_folders`, `::test_recent_and_search_do_not_crash`
+- [x] F2.7 Delete → Recycle Bin only + confirmation — `test_f2_tools.py::test_real_recycle` (opt-in,
+  passed 2026-10-12), `::test_protected_paths`, `::test_delete_tool_metadata`; MT-16
+- [~] F2.A Accept on clean Windows 11 — MT-11, MT-12, MT-13, MT-14 (needs your API key + machine)
 
 ### F3 Dictation
 - [ ] F3.1 Hold Ctrl+Win (configurable) records; release sends audio to Gemini

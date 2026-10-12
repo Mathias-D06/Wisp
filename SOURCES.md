@@ -51,6 +51,25 @@ from `.venv`. Dates are when checked.
 | https://learn.microsoft.com/en-us/windows/win32/inputdev/virtual-key-codes | all VK values used; 0xE8 is "Unassigned" | 2026-10-12 |
 | spike `spikes/hook_probe.py` | on this PC the hook installs, sees injected keys, ignores keys tagged with Wisp's dwExtraInfo signature; `sizeof(INPUT)` = 40 on x64 | 2026-10-12 |
 
+## Computer-control tools (phase 3)
+
+| URL | Confirmed | Checked |
+|---|---|---|
+| https://learn.microsoft.com/en-us/powershell/module/startlayout/get-startapps | Start-menu apps have Name + AppID (AUMID) | 2026-10-12 |
+| https://learn.microsoft.com/en-us/windows/configuration/store/find-aumid | Apps folder `shell:::{4234d49b-0245-4df3-b780-3893943456e1}` via Shell.Application; item `path` = AUMID | 2026-10-12 |
+| spike `spikes/apps_folder.py` | 195 apps (53 Store) in 1.3 s; `Folder.ParseName(AUMID)` round-trips; verbs include Open | 2026-10-12 |
+| https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-setforegroundwindow | foreground restrictions; failing call flashes the taskbar | 2026-10-12 |
+| https://learn.microsoft.com/en-us/windows/win32/api/dwmapi/ne-dwmapi-dwmwindowattribute | `DWMWA_EXTENDED_FRAME_BOUNDS` (9, screen-space RECT), `DWMWA_CLOAKED` (14) | 2026-10-12 |
+| https://learn.microsoft.com/en-us/windows/win32/api/winnt/ns-winnt-token_elevation | `TokenIsElevated` | 2026-10-12 |
+| https://doc.qt.io/qt-6/highdpi.html | Qt 6 is Per-Monitor DPI Aware V2 by default; QScreen geometry is device-independent; QImage/QPixmap physical; screens can form "islands" | 2026-10-12 |
+| https://github.com/BoboTiG/python-mss + installed `mss/windows/gdi.py` | MIT; `MSS().grab(dict)` → `.rgb`, `.size`; mss calls `SetProcessDpiAwareness(2)` itself | 2026-10-12 |
+| spike `spikes/uia_probe.py` | comtypes generates `UIAutomationClient` from UIAutomationCore.dll; works from an MTA worker; pattern/property/control-type constants (e.g. `UIA_IsControlElementPropertyId` = 30016) | 2026-10-12 |
+| https://learn.microsoft.com/en-us/windows/win32/api/shellapi/ns-shellapi-shfileopstructw | FO_DELETE + FOF_ALLOWUNDO recycles only with fully qualified paths; FOF_WANTNUKEWARNING warns before permanent deletion | 2026-10-12 |
+| https://mhammond.github.io/pywin32/shell__SHFileOperation_meth.html and /SHFILEOPSTRUCT.html | `SHFileOperation((hwnd, wFunc, From, To, flags, NameMappings, ProgressTitle)) -> (result, aborted)` | 2026-10-12 |
+| https://docs.python.org/3/library/webbrowser.html | `webbrowser.open` uses the default browser | 2026-10-12 |
+| test `test_win_integration.py` | real UIA click (Invoke) + type (ValuePattern) on a Qt window; window bounds, minimise/restore; mss capture → JPEG | 2026-10-12 |
+| test `test_f2_tools.py::test_real_recycle` (opt-in, run once) | item lands in the Recycle Bin (`NameSpace(10)`) | 2026-10-12 |
+
 ## Dependencies (PyPI JSON API, checked 2026-10-12)
 
 | Package | Version | Released | Licence | Note |
