@@ -19,6 +19,7 @@ dependencies = [
     "pywin32==312",
     "winrt-runtime==3.2.1",
     "winrt-Windows.Foundation==3.2.1",
+    "winrt-Windows.Foundation.Collections==3.2.1",
     "winrt-Windows.Media.Control==3.2.1",
     "winrt-Windows.Devices.Radios==3.2.1",
     "APScheduler==3.11.3",

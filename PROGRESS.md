@@ -9,24 +9,15 @@ acceptance step needs real hardware/API key and is listed in `MANUAL_TESTS.md` (
 
 ## Status
 
-- Current phase: 7 — F7 Island (code written and wired, runs; NOT yet unit-tested or documented)
-- Done in phase 7 so far: `system/{controls,media,radios,wallpaper,power,clipboard_monitor}.py`,
-  `stores/clipboard_history.py`, `winapi/shell_icons.py` (GetDIBits keeps icon alpha),
-  `tools/builtin/system.py` (volume, brightness, toggle_setting, output_device, media, power,
-  copy_to_clipboard, clipboard_history), `ui/island/*` (pill + 7 tabs + music strip), wired in
-  `app.py`. Rendered and checked visually with `spikes/render_ui.py island`. Read-only probes:
-  `spikes/system_probe.py`, `spikes/winrt_in_loop_thread.py`, `spikes/shell_icon_probe.py`.
-  Install note: `winrt-Windows.Foundation.Collections==3.2.1` was added to the venv — also add it
-  to `pyproject.toml` dependencies.
-- Next steps: (1) add `winrt-Windows.Foundation.Collections==3.2.1` to pyproject; (2) tests for
-  `controls.toggle_night_light_blob`/`parse_night_light` (pure), `media.current_position`,
-  `ClipboardHistory` (dedupe, prune, search), ClipboardMonitor exclusion skip, system tools risk
-  (wifi off / power confirm), Island expand/collapse + tab refresh (qt), PowerTab confirm;
-  (3) DECISIONS D-030 (UNDOCUMENTED: Night Light blob, dark-mode registry write, IPolicyConfig
-  output switch, AttachThreadInput) + SOURCES rows for phase 7 docs already fetched (Radio,
-  GSMTC manager, WmiSetBrightness + ExecMethod_, SetSuspendState, ms-settings URIs, Segoe Fluent
-  Icons, IShellItemImageFactory::GetImage, GetDIBits); (4) MANUAL_TESTS F7 section; (5) tick F7
-  and F5.2/F5.4 in PROGRESS; commit; then phases 8–11.
+- Current phase: 8 — F8 memory, F9 loadout, F10 stats (not started)
+- Phase 7 done (see commit "Phase 7: Island …"): tests `test_system_controls.py`,
+  `test_clipboard_history.py`, `test_island.py`; D-030/D-031; SOURCES phase 7; MT-29…MT-34.
+- Next step: phase 8. F8 memory (remember/recall/forget tools over SQLite, few relevant facts at
+  session start, Settings page), F9 loadout (voice, personality, appearance, skills + gap
+  decision), F10 stats (store + Stats tab already exist: `stores/stats.py`, `ui/island/stats_tab.py`;
+  check per-day/per-week coverage and add tests for `Stats`).
+- Known gap: `README.md` does not exist yet although `pyproject.toml` names it and F6.5 cites it
+  (the policy itself is in D-029). Write it in phase 10 (D.3); `pip install .` needs it.
 - Safety note for automated runs: never toggle the user's Night Light/Wi-Fi/Bluetooth/theme/
   volume/output device in tests on this PC; test write paths with pure functions + manual tests.
 - Environment: Windows 11, Python 3.12.10 venv in `.venv`, Git 2.55, Inno Setup 6.7.3 (per-user,
@@ -53,7 +44,9 @@ acceptance step needs real hardware/API key and is listed in `MANUAL_TESTS.md` (
 - [x] 6 F5 to-dos + F6 scheduler — `stores/todos.py`, `scheduling/*`, `tools/builtin/{todos,schedule}.py`,
   `ui/settings/routines_page.py`; tests `test_todos.py`, `test_schedule_spec.py`, `test_scheduler.py`,
   `test_schedule_tools.py`, `test_routines_ui.py`
-- [ ] 7 F7 Island
+- [x] 7 F7 Island — `system/{controls,media,radios,wallpaper,power,clipboard_monitor}.py`,
+  `stores/clipboard_history.py`, `winapi/shell_icons.py`, `tools/builtin/system.py`, `ui/island/*`;
+  tests `test_system_controls.py`, `test_clipboard_history.py`, `test_island.py`
 - [ ] 8 F8 memory, F9 loadout, F10 stats
 - [ ] 9 F12 hardening
 - [ ] 10 Packaging, installer, CI
@@ -143,10 +136,12 @@ acceptance step needs real hardware/API key and is listed in `MANUAL_TESTS.md` (
 ### F5 To-do list
 - [x] F5.1 Add, complete, delete, list by voice — `tools/builtin/todos.py`, `test_todos.py::test_tools`;
   MT-25
-- [ ] F5.2 Add, complete, delete, list in UI — Island Today tab (phase 7)
+- [x] F5.2 Add, complete, delete, list in UI — `ui/island/today_tab.py`;
+  `test_island.py::test_today_add_complete_delete`; MT-33
 - [x] F5.3 Due time + reminder toast — `stores/todos.py`, `WispApp._check_reminders`;
   `test_todos.py::test_reminders_fire_once`, `::test_update_resets_reminder`; MT-25
-- [ ] F5.4 Shown in Island "Today" tab (phase 7)
+- [x] F5.4 Shown in Island "Today" tab — `test_island.py::test_today_add_complete_delete`,
+  `::test_today_due_time_is_shown`; MT-25, MT-33
 
 ### F6 Scheduled tasks and routines
 - [x] F6.1 One-off jobs — `test_schedule_spec.py::test_one_off_amazon_example`,
@@ -157,7 +152,7 @@ acceptance step needs real hardware/API key and is listed in `MANUAL_TESTS.md` (
   `test_schedule_tools.py::test_every_morning_routine_stores_resolved_calls`,
   `::test_model_schedules_routine_then_it_replays_without_model` (fake Live session)
 - [x] F6.4 Persist across restarts — `test_scheduler.py::test_job_persists_and_runs_late_after_restart`; MT-28
-- [x] F6.5 Missed-job policy defined + documented — DECISIONS.md D-029, README;
+- [x] F6.5 Missed-job policy defined + documented — DECISIONS.md D-029 (README in phase 10);
   `test_scheduler.py::test_missed_beyond_grace_is_reported`, `::test_grace_policy`
 - [x] F6.6 Toast after each run — `test_scheduler.py::test_one_off_runs_notifies_and_disables`
   (notification text), `WispApp._execute_task` (✓/✗ per step)
@@ -167,19 +162,33 @@ acceptance step needs real hardware/API key and is listed in `MANUAL_TESTS.md` (
 - [x] F6.9 Start with Windows setting — `startup.py` + General page; `test_db_and_startup.py::test_run_key_toggle`
 
 ### F7 Island (works without API key)
-- [ ] F7.1 Pill fixed top-centre, always on top, expands on hover or scroll
-- [ ] F7.2 Controls tab: volume, output device, Wi-Fi, Bluetooth, Night Light, dark mode, brightness
-- [ ] F7.3 Today tab (to-dos, upcoming jobs)
-- [ ] F7.4 Stats tab
-- [ ] F7.5 Clipboard tab
-- [ ] F7.6 Apps tab
-- [ ] F7.7 Wallpaper tab
-- [ ] F7.8 Power tab (sleep/restart/shut down with confirmation)
-- [ ] F7.9 Music strip: title, artist, progress, play/pause/next/previous
-- [ ] F7.10 Clipboard history: last N text + image, searchable, re-copy, clear
-- [ ] F7.11 Clipboard skips content marked excluded by password managers
-- [ ] F7.A Accept: with no API key, Island, music strip, app launcher, clipboard history work and AI
-  features show "add your key"
+- [x] F7.1 Pill fixed top-centre, always on top, expands on hover or scroll — `ui/island/island.py`;
+  `test_island.py::test_pill_is_frameless_on_top_and_centred`, `::test_hover_expands_and_leaving_collapses`,
+  `::test_scroll_expands`, `::test_tabs_refresh_when_shown`; D-031
+- [~] F7.2 Controls tab: volume, output device, Wi-Fi, Bluetooth, Night Light, dark mode, brightness —
+  `ui/island/controls_tab.py`, `system/controls.py`, `system/radios.py`; pure/fake tests
+  `test_system_controls.py` (Night Light blob round trip, volume/brightness/output/toggle tools);
+  real writes are not run on this PC (safety rule) → MT-30; UNDOCUMENTED parts D-030
+- [x] F7.3 Today tab (to-dos, upcoming jobs) — `test_island.py::test_today_add_complete_delete`
+- [x] F7.4 Stats tab — `ui/island/stats_tab.py`; `test_island.py::test_stats_tab_shows_today_and_week`
+- [x] F7.5 Clipboard tab — `ui/island/clipboard_tab.py`; store tests `test_clipboard_history.py`; MT-29
+- [x] F7.6 Apps tab — `ui/island/apps_tab.py`; `test_island.py::test_apps_tab_search_and_launch`,
+  `::test_shell_icon_keeps_alpha`; MT-29
+- [x] F7.7 Wallpaper tab — `ui/island/wallpaper_tab.py`, `system/wallpaper.py`;
+  `test_island.py::test_wallpaper_lists_images_recursively`, `::test_wallpaper_rejects_non_images`; MT-34
+- [x] F7.8 Power tab (sleep/restart/shut down with confirmation) — `ui/island/power_tab.py`;
+  `test_island.py::test_power_tab_asks_before_restart_and_logs`, `::test_power_tab_lock_needs_no_question`;
+  voice tool confirm-tier `test_system_controls.py::test_power_actions_except_lock_need_confirmation`; MT-34
+- [x] F7.9 Music strip: title, artist, progress, play/pause/next/previous — `system/media.py`,
+  `ui/island/music.py`; `test_island.py::test_music_strip`, `test_system_controls.py::test_current_position_adds_elapsed_only_while_playing`,
+  `::test_media_tool_status_and_command`; real session `spikes/winrt_in_loop_thread.py`; MT-29
+- [x] F7.10 Clipboard history: last N text + image, searchable, re-copy, clear —
+  `test_clipboard_history.py` (dedupe, prune, literal search, images, clear); re-copy MT-29
+- [x] F7.11 Clipboard skips content marked excluded by password managers —
+  `test_clipboard_history.py::test_monitor_skips_password_manager_content`; marker detection on the real
+  clipboard `test_dictation.py::test_real_clipboard_round_trip`; MT-32
+- [~] F7.A Accept: with no API key, Island, music strip, app launcher, clipboard history work and AI
+  features show "add your key" — `test_island.py::test_status_without_key_and_with_music`; MT-29
 
 ### F8 Memory
 - [ ] F8.1 remember / recall / forget tools backed by SQLite
@@ -235,3 +244,5 @@ acceptance step needs real hardware/API key and is listed in `MANUAL_TESTS.md` (
 
 - 2026-10-12: Phase 0 started. Installed Python 3.12.10 (py install manager), Git, Inno Setup (winget),
   with user approval. Project at `C:\Users\mathi\Documents\Wisp`.
+- 2026-10-13: Phase 7 finished (tests, D-030/D-031, sources, MT-29…MT-34). Added
+  `winrt-Windows.Foundation.Collections` to pyproject; clipboard search now treats % and _ literally.

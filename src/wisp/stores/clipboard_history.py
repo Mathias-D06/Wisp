@@ -70,9 +70,10 @@ class ClipboardHistory:
 
     def items(self, search: str = "", limit: int = 200) -> list[ClipItem]:
         if search:
+            pattern = search.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
             rows = self._db.query(
-                "SELECT * FROM clipboard_items WHERE kind = 'text' AND text LIKE ? "
-                "ORDER BY id DESC LIMIT ?", (f"%{search}%", limit))
+                "SELECT * FROM clipboard_items WHERE kind = 'text' AND text LIKE ? ESCAPE '\\' "
+                "ORDER BY id DESC LIMIT ?", (f"%{pattern}%", limit))
         else:
             rows = self._db.query("SELECT * FROM clipboard_items ORDER BY id DESC LIMIT ?",
                                   (limit,))

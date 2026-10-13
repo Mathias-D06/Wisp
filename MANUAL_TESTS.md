@@ -59,6 +59,17 @@ General, paste your key and click **Save and test** (expect "Key works…").
 | MT-27 | Say "search Amazon for gift wraps on 10 November at 11am", then "what routines do I have?", then "move the gift wrap search to 3pm", then "delete the gift wrap search" (say yes). | Each step is reflected in Settings → Routines; delete asks first. |
 | MT-28 | Create a routine for 2 minutes from now, quit Wisp (tray → Quit), wait 3 minutes, start Wisp. | The routine runs once on start ("ran late" within the 12 h grace) and a notification says what was done. |
 
+## F7 Island (run MT-29 first, before adding a key — or remove it in Settings temporarily)
+
+| ID | Steps | Expected |
+|---|---|---|
+| MT-29 | With **no API key** stored, start Wisp. Hover the pill at the top of the screen; open Apps, search "calc", press Enter; copy two bits of text, open Clipboard; play a song in Spotify or a YouTube tab. Hold Alt+Win. | Pill reads "Island ready · voice needs a key" with an **Add your API key** button. Apps launches Calculator; Clipboard lists both items (click one → pasting gives it back); music strip shows title, artist, moving progress, and ⏮ ⏯ ⏭ work. Alt+Win shows "Add your Gemini API key…". |
+| MT-30 | Controls tab: drag volume, mute/unmute, pick another output device, toggle Wi-Fi, Bluetooth, Night Light, Dark mode; on a laptop drag brightness. | Each change happens in Windows (check the quick-settings flyout). If Night Light/Dark mode/output can't be switched, the chip opens the matching Settings page instead. Restore your settings afterwards. |
+| MT-31 | Say "turn Wi-Fi off". | A confirmation card warns it disconnects Wisp; say "no" → nothing changes. |
+| MT-32 | Open a password manager (e.g. Bitwarden, 1Password, KeePassXC), copy a password; then open the Clipboard tab and search for it. | The password is **not** in the list. Search finds normal items; "Clear all" asks first and empties the list. |
+| MT-33 | Today tab: add "test to-do" with a due time; tick it; add another and delete it. Say "what's on my to-do list?" | Changes show at once; the voice answer matches the tab. "Coming up" lists routines from Settings → Routines. |
+| MT-34 | Power tab: click Restart and choose **No**; click Lock. Wallpaper tab: click a thumbnail. | No restart; the PC locks (unlock again); the wallpaper changes (set it back afterwards). |
+
 ## Hotkeys
 
 | ID | Steps | Expected |

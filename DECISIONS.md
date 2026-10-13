@@ -206,3 +206,45 @@ Gap: how the gesture, the question and the image reach the model. Decisions:
 or lock screen is the input desktop. Wisp uses that only to explain why it cannot act; it never
 tries to interact with those screens. Elevated windows are detected with `TokenElevation` and
 reported as a UIPI limit rather than worked around.
+
+## D-030 UNDOCUMENTED system controls in the Island (F7.2)
+Microsoft documents no API for these, so each is isolated in `system/controls.py`, raises
+`ControlUnavailable(page)` on failure, and the tool/UI then offers the matching `ms-settings:` page.
+* Night Light: rewrites the CloudStore registry blob
+  `…\bluelightreduction.bluelightreductionstate\…\Data` — byte 18 is 0x15 (on) / 0x13 (off),
+  "on" inserts `10 00` at offset 23, bytes 10–14 are a base-128 varint Unix timestamp that is
+  refreshed. Layout verified only against this PC's blob (41 bytes, off); any other layout is
+  refused (`parse_night_light` raises) instead of being written. Verify with MT-30.
+* Dark mode: writes `AppsUseLightTheme` / `SystemUsesLightTheme` under
+  `HKCU\…\Themes\Personalize` and broadcasts `WM_SETTINGCHANGE("ImmersiveColorSet")`. Reading
+  those values is common practice; that writing them switches the theme is not documented.
+* Output device: pycaw's `SetDefaultDevice` uses the undocumented `IPolicyConfig` COM interface.
+* App icons for Store apps use the parsing name `shell:AppsFolder\<AUMID>` (same undocumented
+  path as D-018); the icon call itself (`IShellItemImageFactory::GetImage`) is documented.
+* Switching windows still relies on D-016 (AttachThreadInput).
+Documented and used as such: volume (Core Audio via pycaw), brightness (WMI
+`WmiMonitorBrightness(Methods)`, built-in panels only), Wi-Fi/Bluetooth
+(`Windows.Devices.Radios`), media (`GlobalSystemMediaTransportControlsSessionManager`), sleep
+(`SetSuspendState` + `SE_SHUTDOWN_NAME`), restart/shut down (`shutdown /r|/s /t 0`), lock
+(`LockWorkStation`), wallpaper (`SystemParametersInfoW`).
+
+## D-031 Island behaviour
+Gap: the brief gives the tabs but not the interaction details. Decisions:
+* The pill (340×56) sits top-centre of the primary screen's work area, frameless, always on top,
+  `Tool` window (no taskbar button) shown without activation. Hover for 140 ms or a wheel
+  scroll expands it (680×560); it collapses 650 ms after the pointer leaves, unless a menu or
+  dialog is open or a search box inside it has text. Tabs refresh when shown.
+* Collapsed status priority: voice state (listening/thinking/speaking) → now playing → "voice
+  needs a key" when no key is stored → voice status. Settings → General hides the Island.
+* Media is polled once a second on the core asyncio loop (one code path for session changes,
+  track changes and the progress bar; the media properties are fetched again only when the
+  session changes or a command was sent). The position is extrapolated from the timeline
+  snapshot (stamped with LastUpdatedTime) while playing.
+* Clipboard history keeps the last 50 items (5–500 in settings.json), text ≤ 100 000 chars and
+  PNG images ≤ 8 MB, deduplicated by SHA-256 (a re-copy moves to the top). Content carrying
+  ExcludeClipboardContentFromMonitorProcessing or CanIncludeInClipboardHistory=0 is never read
+  beyond the markers. The `clipboard_history` tool output is untrusted (D-012) and not
+  schedulable; `copy_to_clipboard` asks when the session is tainted.
+* Turning Wi-Fi off by voice is confirm-tier (it also cuts Wisp's own connection); sleep,
+  restart and shut down are confirm-tier by voice and ask with a dialog in the Power tab; lock
+  does not ask.

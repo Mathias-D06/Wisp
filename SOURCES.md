@@ -116,7 +116,7 @@ from `.venv`. Dates are when checked.
 | comtypes | 1.4.17 | 2026-09-21 | MIT | UI Automation + Core Audio COM |
 | pycaw | 20260927 | 2026-09-26 | MIT | volume |
 | pywin32 | 312 | 2026-06-04 | PSF | DPAPI, Win32 |
-| winrt-runtime / -Windows.Foundation / -Windows.Media.Control / -Windows.Devices.Radios | 3.2.1 | 2025-06-06 | MIT | pywinrt; only Python projection of WinRT; last release 16 months old — acceptable, isolated behind interfaces |
+| winrt-runtime / -Windows.Foundation / -Windows.Foundation.Collections / -Windows.Media.Control / -Windows.Devices.Radios | 3.2.1 | 2025-06-06 | MIT | pywinrt; only Python projection of WinRT; last release 16 months old — acceptable, isolated behind interfaces |
 | APScheduler | 3.11.3 | 2026-06-28 | MIT | 3.x API (4.x not used) |
 | SQLAlchemy | 2.1.4 | 2026-10-07 | MIT | APScheduler SQLAlchemyJobStore |
 | rapidfuzz | 3.14.6 | 2026-08-30 | MIT | fuzzy app matching |
@@ -124,3 +124,26 @@ from `.venv`. Dates are when checked.
 | pyinstaller | 6.22.3 | 2026-09-12 | GPLv2+ with bootloader exception | build tool only |
 | ruff 0.17.0, pytest 9.1.1, pytest-asyncio 1.4.0, pytest-qt 4.5.0 | | | MIT / Apache-2.0 | dev only |
 | Not used: pynput (LGPLv3; replaced by ctypes hook), uiautomation (last release 2025-08; replaced by comtypes + documented UIA COM API), pywinauto (last release 2025-01) | | | | |
+
+## Island and system controls (phase 7)
+
+| URL | Confirmed | Checked |
+|---|---|---|
+| https://learn.microsoft.com/en-us/uwp/api/windows.devices.radios.radio | `Radio.RequestAccessAsync` before control; `GetRadiosAsync`; `SetStateAsync(RadioState)` returns `RadioAccessStatus`; `Kind` WiFi/Bluetooth; hardware switch or policy can deny | 2026-10-12 |
+| https://learn.microsoft.com/en-us/uwp/api/windows.media.control.globalsystemmediatransportcontrolssessionmanager | `RequestAsync`, `GetCurrentSession`; session `TryGetMediaPropertiesAsync` (Title, Artist), `GetTimelineProperties` (StartTime, EndTime, Position, LastUpdatedTime), `GetPlaybackInfo().PlaybackStatus`, `TryTogglePlayPauseAsync`, `TryPlayAsync`, `TryPauseAsync`, `TrySkipNextAsync`, `TrySkipPreviousAsync`, `SourceAppUserModelId` | 2026-10-12 |
+| spike `spikes/winrt_in_loop_thread.py` | GSMTC and Radios coroutines work from an unpackaged desktop process when awaited on Wisp's asyncio thread | 2026-10-12 |
+| check on this PC | `Radio.get_radios_async()` returns an `IVectorView` projected by `winrt-Windows.Foundation.Collections` (hence the dependency) | 2026-10-13 |
+| https://learn.microsoft.com/en-us/windows/win32/wmicoreprov/wmisetbrightness-method-in-class-wmimonitorbrightnessmethods | `WmiMonitorBrightnessMethods.WmiSetBrightness(Timeout, Brightness)` in `root\WMI`; `WmiMonitorBrightness.CurrentBrightness`; only displays that support it (built-in panels) | 2026-10-12 |
+| https://learn.microsoft.com/en-us/windows/win32/wmisdk/swbemobject-execmethod- | `SWbemObject.ExecMethod_(name, InParameters)` with `Methods_(name).InParameters.SpawnInstance_()` | 2026-10-12 |
+| https://learn.microsoft.com/en-us/windows/win32/api/powrprof/nf-powrprof-setsuspendstate | `SetSuspendState(bHibernate, bForce, bWakeupEventsDisabled)`; caller needs `SE_SHUTDOWN_NAME` | 2026-10-12 |
+| https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/shutdown | `shutdown /r` restart, `/s` shut down, `/t 0` no delay | 2026-10-12 |
+| https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-lockworkstation | `LockWorkStation()` returns nonzero on success (asynchronous) | 2026-10-12 |
+| https://learn.microsoft.com/en-us/windows/apps/develop/launch/launch-settings-app | `ms-settings:nightlight`, `:colors`, `:network-wifi`, `:bluetooth`, `:sound`, `:display` | 2026-10-12 |
+| https://learn.microsoft.com/en-us/windows/apps/design/style/segoe-fluent-icons-font | Segoe Fluent Icons code points (Win 11); Segoe MDL2 Assets on Win 10 | 2026-10-12 |
+| https://learn.microsoft.com/en-us/windows/win32/api/shobjidl_core/nf-shobjidl_core-ishellitemimagefactory-getimage | `GetImage(SIZE, SIIGBF, HBITMAP*)`; `SIIGBF_ICONONLY`; caller frees the HBITMAP with `DeleteObject` | 2026-10-12 |
+| https://learn.microsoft.com/en-us/windows/win32/api/wingdi/nf-wingdi-getdibits | `GetDIBits` with a `BITMAPINFOHEADER` (negative height = top-down, 32 bpp) copies the bits including alpha | 2026-10-12 |
+| spike `spikes/shell_icon_probe.py`, test `test_island.py::test_shell_icon_keeps_alpha` | IID `{bcc18b79-…}` registered; icons for a Store app and a desktop app; transparent corners kept | 2026-10-13 |
+| https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-systemparametersinfow | `SPI_GETDESKWALLPAPER` (0x73), `SPI_SETDESKWALLPAPER` (0x14) with `SPIF_UPDATEINIFILE \| SPIF_SENDWININICHANGE` | 2026-10-12 |
+| https://learn.microsoft.com/en-us/windows/win32/dataxchg/clipboard-formats | (see phase 4) exclusion markers honoured by clipboard history | 2026-10-12 |
+| https://doc.qt.io/qt-6/qclipboard.html | `dataChanged` signal; `setText`, `setImage`, `image()` | 2026-10-12 |
+| spike `spikes/system_probe.py` (read-only) | volume/mute, output devices, brightness (none on a desktop monitor), radios, dark mode and Night Light blob read on this PC | 2026-10-12 |
