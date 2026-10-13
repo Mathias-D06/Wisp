@@ -169,3 +169,17 @@ from `.venv`. Dates are when checked.
 | https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-sendinput | (see phase 2) UIPI silently blocks input to higher-integrity windows — Wisp checks elevation first and explains | 2026-10-12 |
 | https://docs.python.org/3/library/threading.html#threading.excepthook | args `exc_type`, `exc_value`, `exc_traceback`, `thread`; `SystemExit` ignored by default | 2026-10-13 |
 | https://docs.python.org/3/library/sys.html#sys.excepthook | called with (type, value, traceback) for uncaught exceptions | 2026-10-13 |
+
+## Packaging (phase 10)
+
+| URL | Confirmed | Checked |
+|---|---|---|
+| https://pyinstaller.org/en/stable/spec-files.html | the spec is executed as Python; `Analysis`/`PYZ`/`EXE(exclude_binaries=True)`/`COLLECT` one-folder layout; `SPECPATH` is the spec's folder. Filtering `a.binaries`/`a.datas` is only implied by the docs; the build output confirms it (no `opengl32sw.dll`, no `translations`) | 2026-10-13 |
+| https://pyinstaller.org/en/stable/hooks.html | `collect_submodules`, `copy_metadata` | 2026-10-13 |
+| build log + `--self-check` of `dist/Wisp/Wisp.exe` | all 12 checks pass frozen; the comtypes wrapper is bundled from `comtypes.gen`; the `%TEMP%\comtypes_cache\Wisp-312` folder is created empty (comtypes `_find_gen_dir` for frozen apps, read in the installed `comtypes/client/_code_cache.py`) | 2026-10-13 |
+| installed `sounddevice.py` | on x64 Windows it loads `_sounddevice_data/portaudio-binaries/libportaudio64bit.dll` (or `-asio` with `SD_ENABLE_ASIO`) | 2026-10-13 |
+| https://jrsoftware.org/ishelp/topic_consts.htm | `{autopf}` maps to `{userpf}` and `{autoprograms}` to `{userprograms}` in non-administrative mode; `{userappdata}`; `{%NAME}` environment constants | 2026-10-13 |
+| https://jrsoftware.org/ishelp/topic_isxfunc_suppressiblemsgbox.htm | returns *Default* when message boxes are suppressed | 2026-10-13 |
+| silent install/uninstall on this PC (PROGRESS log) | install: files, Start-menu shortcut, uninstall entry, Run value; the Run command line starts Wisp; uninstall removes all of these plus a Run value written by the app; user data kept | 2026-10-13 |
+| https://ai.google.dev/gemini-api/terms | Unpaid Services: content may be used to improve products and human reviewers may read it; Paid Services: not used that way; EEA, Switzerland and UK: Paid Services only; users must be 18+ | 2026-10-13 |
+| https://docs.github.com/en/actions | `runs-on: windows-latest`; `actions/checkout`, `actions/setup-python` (pip cache), `actions/upload-artifact` | 2026-10-13 |

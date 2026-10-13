@@ -91,6 +91,15 @@ General, paste your key and click **Save and test** (expect "Key works…").
 | MT-44 | Open Notepad and say "in 2 minutes, click the File menu in Notepad". Lock the PC (Win+L) before it runs; unlock after 3 minutes. | The routine's notification shows ✗ with "Windows is showing a secure screen…"; Wisp did not interact with the lock screen. |
 | MT-45 | Settings → Safety → tick "Close a window…", Apply. Say "close Notepad" (with unsaved text). Then say "what's on my screen?" followed by "close Calculator". | The first close happens without a card (Notepad still asks to save); the second asks first because the screen was just read. |
 
+## Installer
+
+| ID | Steps | Expected |
+|---|---|---|
+| MT-46 | Run `WispSetup-<version>.exe` and keep the defaults. | No administrator prompt. Wisp installs to `%LOCALAPPDATA%\Programs\Wisp`, appears in the Start menu, and starts with Settings → General open (no key yet). |
+| MT-47 | Sign out of Windows and sign back in. | The Wisp orb appears in the tray and the Island at the top, with no window opening. |
+| MT-48 | With Wisp running, run the installer again. | Setup asks you to close Wisp first, then upgrades in place; settings and memories are kept. |
+| MT-49 | Settings → Apps → Wisp → Uninstall; answer **Yes** to "Also delete your Wisp data". Reinstall, set a key, uninstall again and answer **No**. | First time: `%LOCALAPPDATA%\Programs\Wisp`, the Start-menu entry, the start-at-sign-in entry (Task Manager → Startup apps) and `%APPDATA%\Wisp` are gone. Second time: the program is gone but `%APPDATA%\Wisp` remains. |
+
 ## Hotkeys
 
 | ID | Steps | Expected |

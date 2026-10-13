@@ -9,19 +9,14 @@ acceptance step needs real hardware/API key and is listed in `MANUAL_TESTS.md` (
 
 ## Status
 
-- Current phase: 10 — packaging, installer, CI (not started)
-- Phase 9 done: `tools/builtin/{terminal,raw_input}.py`, `winapi/processes.py`, `window_at`,
-  `ui/settings/{safety,hotkeys_audio,action_log}_page.py`, NEVER_AUTO_APPROVE, action-log
-  pruning, crash hooks; tests `test_hardening.py`, `test_safety_settings_ui.py`, voice
-  always-listening test; D-034…D-036; MT-39…MT-45.
-- Next step: phase 10. PyInstaller onedir spec (assets, winrt/comtypes hidden imports, version
-  info), Inno Setup script (per-user install, Start-menu shortcut, optional start with Windows,
-  clean uninstall incl. Run key; keep `%APPDATA%\Wisp` unless the user ticks "remove data"),
-  GitHub Actions on windows-latest (ruff + pytest + PyInstaller exe artefact), README (F11.3
-  UK/EEA/Swiss billing note, safety model section referenced by `tools/safety.py`, missed-run
-  policy, manual tests), D.2 stub/placeholder grep.
-- Known gap: `README.md` does not exist yet although `pyproject.toml` names it and F6.5 cites it
-  (the policy itself is in D-029). Write it in phase 10 (D.3); `pip install .` needs it.
+- Current phase: 11 — final audit (not started)
+- Phase 10 done: `packaging/{wisp.spec,build.py,installer.iss,launcher.py,make_icon.py,notices.py,wisp.ico}`,
+  `wisp/selfcheck.py` (`--self-check`, `--version`), `.github/workflows/ci.yml`, `README.md`;
+  tests `test_packaging.py`; D-037; MT-46…MT-49. Build: `.venv\Scripts\python packaging\build.py`.
+- Next step: phase 11 final audit. Re-read the brief's requirements against PROGRESS evidence;
+  trim MANUAL_TESTS into a ~20-minute core run (T.3: it now has 49 cases) with the rest marked
+  optional; check every DECISIONS/SOURCES reference in code still holds; fresh-clone build;
+  final report (D.4). Push to GitHub to run CI for real (no remote yet).
 - Safety note for automated runs: never toggle the user's Night Light/Wi-Fi/Bluetooth/theme/
   volume/output device in tests on this PC; test write paths with pure functions + manual tests.
 - Environment: Windows 11, Python 3.12.10 venv in `.venv`, Git 2.55, Inno Setup 6.7.3 (per-user,
@@ -57,7 +52,8 @@ acceptance step needs real hardware/API key and is listed in `MANUAL_TESTS.md` (
 - [x] 9 F12 hardening — `tools/builtin/{terminal,raw_input}.py`, `winapi/processes.py`,
   `ui/settings/{safety,hotkeys_audio,action_log}_page.py`; tests `test_hardening.py`,
   `test_safety_settings_ui.py`
-- [ ] 10 Packaging, installer, CI
+- [x] 10 Packaging, installer, CI — `packaging/*`, `wisp/selfcheck.py`, `.github/workflows/ci.yml`,
+  `README.md`; tests `test_packaging.py`
 - [ ] 11 Final audit
 
 ## Acceptance criteria
@@ -160,7 +156,7 @@ acceptance step needs real hardware/API key and is listed in `MANUAL_TESTS.md` (
   `test_schedule_tools.py::test_every_morning_routine_stores_resolved_calls`,
   `::test_model_schedules_routine_then_it_replays_without_model` (fake Live session)
 - [x] F6.4 Persist across restarts — `test_scheduler.py::test_job_persists_and_runs_late_after_restart`; MT-28
-- [x] F6.5 Missed-job policy defined + documented — DECISIONS.md D-029 (README in phase 10);
+- [x] F6.5 Missed-job policy defined + documented — DECISIONS.md D-029, README "Scheduled tasks";
   `test_scheduler.py::test_missed_beyond_grace_is_reported`, `::test_grace_policy`
 - [x] F6.6 Toast after each run — `test_scheduler.py::test_one_off_runs_notifies_and_disables`
   (notification text), `WispApp._execute_task` (✓/✗ per step)
@@ -233,7 +229,8 @@ acceptance step needs real hardware/API key and is listed in `MANUAL_TESTS.md` (
 - [x] F11.2 Key validated with a test call on save — `general_page._test_and_save` (`models.get` for both
   models); `test_safety_settings_ui.py::test_key_is_tested_before_saving`,
   `test_settings_ui.py::test_bad_key_is_rejected_before_network`
-- [ ] F11.3 README note: UK/EEA/Swiss users need a billing-enabled key
+- [x] F11.3 README note: UK/EEA/Swiss users need a billing-enabled key — README "Your Gemini API key"
+  (checked against ai.google.dev/gemini-api/terms); also in Settings → General and key-test errors
 - [x] F11.4 Settings: hotkeys with conflict detection, mic + speaker device, idle timeout, start with
   Windows, risky-tool toggles, model name, language — General (key, models, language, idle, start-up),
   Hotkeys and audio, Safety pages; `test_safety_settings_ui.py::test_hotkeys_live_conflicts_and_audio`,
@@ -263,14 +260,27 @@ acceptance step needs real hardware/API key and is listed in `MANUAL_TESTS.md` (
   MT-17, MT-43, MT-44
 
 ### Testing, packaging, definition of done
-- [ ] T.1 Unit tests: dispatcher, safety tiers, scheduler parsing + persistence, memory, clipboard store,
-  settings (Windows-only tests marked)
-- [ ] T.2 Integration tests with fake Live session replaying scripted tool calls
+- [x] T.1 Unit tests: dispatcher, safety tiers, scheduler parsing + persistence, memory, clipboard store,
+  settings (Windows-only tests marked) — `test_dispatcher.py`, `test_tools_core.py`, `test_hardening.py`,
+  `test_schedule_spec.py`, `test_scheduler.py`, `test_memory.py`, `test_clipboard_history.py`, `test_settings.py`;
+  `windows` marker skips Windows-only tests elsewhere (conftest)
+- [x] T.2 Integration tests with fake Live session replaying scripted tool calls — `tests/fakes.py`
+  (FakeLiveServer), `test_live_session.py`, `test_schedule_tools.py::test_model_schedules_routine_then_it_replays_without_model`
 - [ ] T.3 MANUAL_TESTS.md runnable in ~20 minutes
-- [ ] T.4 GitHub Actions on windows-latest: lint + tests + PyInstaller exe
-- [ ] D.1 Installer installs, launches at login, uninstalls cleanly
-- [ ] D.2 Stub/placeholder grep returns nothing
-- [ ] D.3 README complete
+- [~] T.4 GitHub Actions on windows-latest: lint + tests + PyInstaller exe — `.github/workflows/ci.yml`
+  (ruff, pytest, Inno Setup, `build.py` incl. frozen self-check, artefacts). Not yet run on GitHub (no
+  remote); every step ran green in a fresh venv from a clean copy on 2026-10-13 (310 passed, build +
+  self-check + installer ok). Hosted runners have no audio devices (those tests skip; the self-check marks
+  audio optional)
+- [x] D.1 Installer installs, launches at login, uninstalls cleanly — `packaging/installer.iss`; silent
+  install/uninstall on this PC 2026-10-13 (files, shortcut, uninstall entry, Run value; the Run command
+  started Wisp; uninstall removed everything incl. an app-written Run value; user data kept);
+  `test_packaging.py::test_installer_agrees_with_the_app`; real sign-in MT-47
+- [x] D.2 Stub/placeholder grep returns nothing — `\b(TODO|FIXME|XXX|HACK|TBD)\b|NotImplementedError|stub|
+  not implemented|coming soon` over *.py/iss/spec/yml/md/toml: no hits in code (2026-10-13); bare `pass`
+  only in empty exception classes
+- [x] D.3 README complete — `README.md` (install, key + billing/terms, usage, settings, Scheduled tasks,
+  Safety model, privacy and data, troubleshooting, building, notices)
 - [ ] D.4 Final report
 
 ## Log
@@ -282,3 +292,7 @@ acceptance step needs real hardware/API key and is listed in `MANUAL_TESTS.md` (
 - 2026-10-13: Phase 8 finished (memory, loadout page, stats tests, D-032/D-033, MT-35…MT-38).
 - 2026-10-13: Phase 9 finished (Safety/Hotkeys and audio/Action log pages, terminal + raw input,
   anti-cheat guard, crash logging, D-034…D-036, MT-39…MT-45).
+- 2026-10-13: Phase 10 finished. PyInstaller one-folder build (164 MB) passes `--self-check` frozen;
+  installer 54 MB. Silent per-user install/uninstall tested on this PC into %TEMP% (state before/after
+  recorded; nothing left behind, user data kept, dummy data folder removed). CI steps emulated in a
+  fresh venv: all green. Commands: `.venv\Scripts\python packaging\build.py`.

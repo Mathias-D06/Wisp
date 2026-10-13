@@ -1,0 +1,266 @@
+"""``Wisp.exe --self-check [report.json]``: prove that a build (source or PyInstaller bundle) has
+everything it needs — every module imports, Qt plugins, SQLite FTS5, DPAPI, PortAudio, WinRT,
+UI Automation (comtypes code generation), APScheduler's SQLite job store, Pillow/mss, the Gemini
+SDK types and the tool declarations. Nothing touches the network, the user's data folder, audio
+output, settings or the clipboard; data goes to a temporary folder.
+
+Exit code 0 when every required check passes. Optional checks (audio devices, media session)
+may fail on machines without that hardware and are reported only.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import io
+import json
+import os
+import sys
+import tempfile
+import threading
+import time
+import traceback
+from collections.abc import Callable
+from pathlib import Path
+
+CHECKS: list[tuple[str, bool, Callable[[], str]]] = []
+
+
+def check(name: str, required: bool = True):
+    def register(fn: Callable[[], str]) -> Callable[[], str]:
+        CHECKS.append((name, required, fn))
+        return fn
+    return register
+
+
+@check("modules")
+def _modules() -> str:
+    import importlib
+    import pkgutil
+
+    import wisp
+
+    names = sorted(m.name for m in pkgutil.walk_packages(wisp.__path__, "wisp."))
+    for name in names:
+        if name != "wisp.__main__":
+            importlib.import_module(name)
+    if len(names) < 60:
+        raise RuntimeError(f"only {len(names)} modules found")
+    return f"{len(names)} modules imported"
+
+
+@check("qt")
+def _qt() -> str:
+    from PySide6.QtGui import QImage, QImageReader
+    from PySide6.QtWidgets import QApplication
+
+    from wisp.system.clipboard_monitor import image_to_png
+    from wisp.ui.icons import orb_pixmap
+
+    app = QApplication.instance() or QApplication([])
+    formats = {bytes(f).decode() for f in QImageReader.supportedImageFormats()}
+    missing = {"png", "jpg", "jpeg", "bmp", "ico"} - formats
+    if missing:
+        raise RuntimeError(f"Qt image plugins missing: {sorted(missing)}")
+    png = image_to_png(orb_pixmap(64, "#7c5cff").toImage())
+    if QImage.fromData(png, "PNG").isNull():
+        raise RuntimeError("PNG round trip failed")
+    return f"{app.platformName()} platform, image formats ok"
+
+
+@check("sqlite_fts5")
+def _sqlite() -> str:
+    from wisp.db import Database
+    from wisp.stores.memory import MemoryStore
+
+    db = Database(":memory:")
+    store = MemoryStore(db)
+    store.add("Self-check fact about bananas")
+    if not store.search("banana"):
+        raise RuntimeError("FTS5 search returned nothing")
+    import sqlite3
+
+    return f"SQLite {sqlite3.sqlite_version} with FTS5"
+
+
+@check("dpapi")
+def _dpapi() -> str:
+    from wisp.keystore import KeyStore
+
+    store = KeyStore(Path(tempfile.mkdtemp(prefix="wisp-check-")) / "k.bin")
+    secret = "AIza" + "S" * 35
+    store.set(secret)
+    if store.get() != secret:
+        raise RuntimeError("DPAPI round trip mismatch")
+    store.clear()
+    return "encrypt/decrypt ok"
+
+
+@check("portaudio")
+def _portaudio() -> str:
+    import sounddevice as sd
+
+    apis = [api["name"] for api in sd.query_hostapis()]
+    return f"PortAudio {sd.get_portaudio_version()[1]}; host APIs: {', '.join(apis)}"
+
+
+@check("audio_devices", required=False)
+def _audio_devices() -> str:
+    from wisp.audio import devices
+
+    mics, speakers = devices.input_devices(), devices.output_devices()
+    if not mics or not speakers:
+        raise RuntimeError(f"{len(mics)} microphones, {len(speakers)} speakers")
+    return f"{len(mics)} microphones, {len(speakers)} speakers"
+
+
+@check("images")
+def _images() -> str:
+    from PIL import Image
+
+    from wisp.winapi import screen
+
+    jpeg = screen.encode(Image.new("RGB", (2000, 1000), "#336699"))
+    with Image.open(io.BytesIO(jpeg)) as img:
+        size = img.size
+    left, top, *_ = screen.monitors()[0]
+    shot = screen.capture((left, top, left + 16, top + 16))
+    return f"JPEG {size}, screen grab {shot.width}x{shot.height}"
+
+
+@check("winrt")
+def _winrt() -> str:
+    import winrt.windows.devices.radios
+    import winrt.windows.foundation.collections  # noqa: F401
+    import winrt.windows.media.control as mc
+
+    async def manager() -> object:
+        return await mc.GlobalSystemMediaTransportControlsSessionManager.request_async()
+
+    found = asyncio.run(manager())
+    return f"media session manager: {type(found).__name__}"
+
+
+@check("uia")
+def _uia() -> str:
+    from wisp.winapi import uia
+
+    client = uia.Uia.for_thread()
+    root = client.auto.GetRootElement()
+    return f"UI Automation root: {root.CurrentName or root.CurrentClassName}"
+
+
+@check("shell_icons")
+def _icons() -> str:
+    from wisp.ui.island.common import _com_init
+    from wisp.winapi.shell_icons import icon_png
+
+    result: dict[str, object] = {}
+
+    def work() -> None:
+        try:
+            _com_init()
+            result["png"] = icon_png(os.path.join(os.environ["SYSTEMROOT"], "notepad.exe"), 32)
+        except Exception as exc:
+            result["error"] = exc
+
+    worker = threading.Thread(target=work)
+    worker.start()
+    worker.join(30)
+    if "error" in result:
+        raise result["error"]  # type: ignore[misc]
+    if not result.get("png"):
+        raise RuntimeError("no icon")
+    return f"{len(result['png'])} byte PNG"
+
+
+@check("scheduler")
+def _scheduler() -> str:
+    from datetime import datetime, timedelta
+
+    from apscheduler.jobstores.sqlalchemy import SQLAlchemyJobStore
+    from apscheduler.schedulers.background import BackgroundScheduler
+
+    folder = Path(tempfile.mkdtemp(prefix="wisp-check-"))
+    scheduler = BackgroundScheduler(
+        jobstores={"default": SQLAlchemyJobStore(url=f"sqlite:///{folder / 'jobs.sqlite3'}")})
+    scheduler.start(paused=True)
+    try:
+        scheduler.add_job("wisp.scheduling.runner:run_scheduled_task", "date",
+                          run_date=datetime.now().astimezone() + timedelta(days=1),
+                          args=["self-check"], id="self-check")
+        jobs = scheduler.get_jobs()
+        if [j.id for j in jobs] != ["self-check"]:
+            raise RuntimeError("job not stored")
+    finally:
+        scheduler.shutdown(wait=False)
+    return "SQLAlchemy job store ok"
+
+
+@check("gemini_config")
+def _gemini() -> str:
+    import ssl
+    from datetime import datetime
+
+    import certifi
+
+    from wisp.live.config import build_live_config, system_instruction
+    from wisp.settings import Settings
+    from wisp.tools.registry import ToolRegistry
+
+    registry = ToolRegistry()
+    from wisp.tools.builtin import (
+        apps,
+        core,
+        files,
+        memory,
+        raw_input,
+        schedule,
+        screen,
+        system,
+        terminal,
+        todos,
+        ui,
+        web,
+        windows,
+    )
+
+    for module in (core, apps, windows, web, screen, ui, files, todos, memory, system,
+                   terminal, raw_input):
+        registry.register_all(module.tools())
+    registry.register_all(schedule.tools(registry))
+    settings = Settings()
+    instruction = system_instruction(settings, [], datetime.now())
+    config = build_live_config(settings, registry.declarations(settings), instruction, None)
+    ssl.create_default_context(cafile=certifi.where())
+    count = len(config.tools[0].function_declarations)
+    return f"{count} tool declarations; CA bundle {Path(certifi.where()).name}"
+
+
+def run(report: Path | None = None) -> int:
+    os.environ["WISP_DATA_DIR"] = tempfile.mkdtemp(prefix="wisp-check-data-")
+    import comtypes.client  # noqa: F401  (main-thread COM init, as in the app; D-021)
+
+    from wisp import __version__
+
+    results = []
+    ok = True
+    for name, required, fn in CHECKS:
+        started = time.perf_counter()
+        try:
+            detail, passed = fn(), True
+        except Exception as exc:
+            detail = f"{type(exc).__name__}: {exc}"
+            passed = False
+            if os.environ.get("WISP_SELFCHECK_TRACE"):
+                detail += "\n" + traceback.format_exc()
+        ok = ok and (passed or not required)
+        results.append({"check": name, "ok": passed, "required": required, "detail": detail,
+                        "ms": round((time.perf_counter() - started) * 1000)})
+    payload = {"version": __version__, "frozen": bool(getattr(sys, "frozen", False)),
+               "python": sys.version.split()[0], "ok": ok, "checks": results}
+    text = json.dumps(payload, indent=2)
+    if report is not None:
+        report.write_text(text, encoding="utf-8")
+    if sys.stdout is not None:
+        print(text)
+    return 0 if ok else 1
