@@ -772,3 +772,20 @@ Decisions:
   `spikes/idle_cpu.py`; both are logged in PROGRESS.md.
   * Morphs run at 62 fps, with p95 frame time ≤ 18 ms and a paint of 1–2 ms.
 * Idle CPU, measured the same way for both (`spikes/island_idle_cpu.py`: in-process, island visible, 30 s warm-up, then 60 s): the old island (commit 2d0f99c) used 5.99 % of one core; the new one uses 0.44 % with the orb's glow and 0.42 % with Reduce motion, so the glow costs almost nothing. Hidden behind a full-screen app (`spikes/idle_cpu.py`, a separate process): 0.21 %.
+
+## D-048 The application font is sized in points (brief of 2026-10-13, part 4)
+* **The bug.** `python -m wisp` printed "QFont::setPointSize: Point size <= 0 (-1), must be
+  greater than 0".
+  * The application default font was pixel-sized (`ui_font`), and Qt documents that pointSize()
+    "returns -1 if the font size was specified in pixels".
+  * The Today tab's due-time field has a calendar popup (QDateTimeEdit.setCalendarPopup), and
+    its QCalendarWidget copies the default font's point size.
+  * Found by a probe that prints the Python stack for every Qt font warning while it starts Wisp
+    and opens every island tab, the console, every Settings page and the menu.
+* **The fix.** `theme.app_font()` sets the default font with setPointSizeF.
+  * The point size is the pixel token × 72 / the screen's logical DPI. QScreen documents that
+    logical DPI "is used to convert font point sizes to pixel sizes".
+  * On this PC the logical DPI is 96 at 100, 125, 150 and 200 % scaling, and the 9.75 pt font
+    renders at exactly 13 px with the same line height as before.
+* **Pixel-sized fonts stay** for widgets and painters that set their own (`ui_font`: the
+  island's content, the HUD, the overlay). No code copies a point size from them.

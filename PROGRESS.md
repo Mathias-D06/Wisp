@@ -387,6 +387,12 @@ acceptance step needs real hardware/API key and is listed in `MANUAL_TESTS.md` (
   (WindowFromPoint test; MT-71); recordings in `docs/island` (rendered from the widget rather than
   recorded from the screen, D-045; your own recording MT-77); suite green; docs updated
 
+### Brief of 2026-10-13, part 4 (font warning, auto-hide, Calendar, Files & Share)
+- [x] P4.1 No QFont point-size warning: the application font is sized in points (`theme.app_font`), pixel
+  fonts only where widgets/painters set their own — `test_ui_design.py::test_app_font_is_point_sized_and_renders_at_the_body_size`,
+  `::test_calendar_popup_raises_no_point_size_warning_with_the_app_font` (fails with the old font); probe
+  over start-up, every tab, Settings and the menu; same 13 px at 100/125/150/200 %; D-048; MT-78
+
 ### Testing, packaging, definition of done
 - [x] T.1 Unit tests: dispatcher, safety tiers, scheduler parsing + persistence, memory, clipboard store,
   settings (Windows-only tests marked) — `test_dispatcher.py`, `test_tools_core.py`, `test_hardening.py`,

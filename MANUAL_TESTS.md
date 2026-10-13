@@ -169,6 +169,12 @@ it in the background during the extended cases. MT-47 needs a sign-out and sign-
 | MT-76 | Open the island; click **Open in window**. Then Settings → General → untick **Show the Island**, Apply; dictate once, use Circle to Ask once, click the tray icon. Tick it again. | The console opens with the same conversation. With the island off, dictation uses the small bottom pill, the circle answer appears in a bubble beside the loop, notifications come from Windows and the tray click opens the console. |
 | MT-77 | Optional: record the screen while doing MT-65 and MT-67 (Win+Shift+R starts Snipping Tool's screen recording). | Your recording matches the GIFs in `docs/island` (those are rendered from the same widget off-screen). |
 
+## Brief of 2026-10-13, part 4
+
+| ID | Steps | Expected |
+|---|---|---|
+| MT-78 | In a terminal: `.venv\Scripts\python -m wisp`. Open the island's Today tab, tick the due-time icon and open the date's calendar; open every Settings page. Do it at 100 % and 150 % display scaling. | The terminal shows no "QFont::setPointSize" warning. Text looks the same size as before at both scalings. |
+
 ## Hotkeys
 
 | ID | Steps | Expected |

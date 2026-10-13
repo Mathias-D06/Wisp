@@ -423,7 +423,7 @@ class WispApp(QObject):
         """One place applies the design tokens: palette, stylesheet, base font, motion."""
         motion.configure(settings.loadout.reduce_motion)
         palette = theme.palette(settings.loadout.theme, settings.loadout.accent)
-        self.qt_app.setFont(theme.ui_font())
+        self.qt_app.setFont(theme.app_font())  # in points: Qt widgets copy its point size
         self.qt_app.setStyleSheet(theme.stylesheet(palette))
         self.qt_app.setWindowIcon(orb_icon(palette.accent))  # title bars and the taskbar
         theme.set_current(palette)

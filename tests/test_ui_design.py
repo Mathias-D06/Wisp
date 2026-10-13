@@ -348,3 +348,35 @@ def test_chrome_never_fails_and_honours_no_mica(qtbot, monkeypatch):
     chrome.apply(window)  # dark title + corners where supported; never raises
     applied = dwm.style_window(int(window.winId()), dark=True, backdrop=False)
     assert set(applied) == {"dark_title", "rounded", "mica"}
+
+
+# ----- the application font (QFont::setPointSize warning) -------------------------------------
+def test_app_font_is_point_sized_and_renders_at_the_body_size(qapp):
+    from PySide6.QtGui import QFontInfo
+
+    font = theme.app_font()
+    assert font.pointSizeF() > 0 and font.pixelSize() == -1  # sized in points
+    assert QFontInfo(font).pixelSize() == theme.BODY  # the same text size as ui_font(BODY)
+    assert QFontInfo(theme.ui_font()).pixelSize() == theme.BODY
+
+
+def test_calendar_popup_raises_no_point_size_warning_with_the_app_font(qtbot):
+    """QDateTimeEdit's calendar popup copies the default font's point size; a pixel-sized
+    default made it pass -1 to QFont::setPointSize."""
+    from PySide6.QtCore import qInstallMessageHandler
+    from PySide6.QtWidgets import QApplication, QDateTimeEdit
+
+    app = QApplication.instance()
+    previous_font = app.font()
+    messages = []
+    previous = qInstallMessageHandler(lambda _mode, _context, text: messages.append(text))
+    try:
+        app.setFont(theme.app_font())
+        edit = QDateTimeEdit()
+        qtbot.addWidget(edit)
+        edit.setCalendarPopup(True)
+        edit.calendarWidget().show()
+        assert not [m for m in messages if "Point size" in m]
+    finally:
+        qInstallMessageHandler(previous)
+        app.setFont(previous_font)

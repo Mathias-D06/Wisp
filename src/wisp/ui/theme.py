@@ -205,10 +205,27 @@ def palette(theme: str, accent: str) -> Palette:
 
 
 def ui_font(size: int = BODY, weight: int = REGULAR) -> QFont:
+    """A pixel-sized font for widgets and painters that set their own font."""
     font = QFont()
     font.setFamilies(families(size))
     font.setPixelSize(size)
     font.setWeight(QFont.Weight(weight))
+    return font
+
+
+def app_font(size: int = BODY) -> QFont:
+    """The application's default font, sized in points. A pixel-sized font reports a point size
+    of -1, and Qt widgets that copy the default font's point size (QCalendarWidget, behind
+    QDateTimeEdit's calendar popup) would pass that on: "QFont::setPointSize: Point size <= 0".
+    The point size comes from the screen's logical DPI (QScreen: "used to convert font point
+    sizes to pixel sizes"), so the text is exactly ``size`` px, as with ui_font."""
+    from PySide6.QtGui import QGuiApplication
+
+    screen = QGuiApplication.primaryScreen() if QGuiApplication.instance() else None
+    dpi = screen.logicalDotsPerInchY() if screen is not None else 96.0
+    font = QFont()
+    font.setFamilies(families(size))
+    font.setPointSizeF(size * 72.0 / (dpi or 96.0))
     return font
 
 

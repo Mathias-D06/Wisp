@@ -237,3 +237,11 @@ from `.venv`. Dates are when checked.
 | `spikes/island_window_probe.py` on this PC | Qt flags give WS_EX_NOACTIVATE \| TOOLWINDOW \| TOPMOST \| LAYERED; showing doesn't change the foreground window; with and without a mask WindowFromPoint beside/below the pill is another window, inside it is the island; the masked pill still draws black; setMask ≈ 0.4 ms; a WindowTransparentForInput window gets WS_EX_TRANSPARENT and is never hit | 2026-10-13 |
 | `spikes/island_focus_probe.py` on this PC | SetForegroundWindow is refused for a test process that received no input (both with Qt's WindowDoesNotAcceptFocus and with WS_EX_NOACTIVATE set directly), so focusing the text box after a real click is manual test MT-70 | 2026-10-13 |
 | `spikes/island_fps.py`, `spikes/idle_cpu.py` on this PC | frame times during morphs and idle CPU; results in PROGRESS.md | 2026-10-13 |
+
+## Brief of 2026-10-13, part 4
+
+| URL | Confirmed | Checked |
+|---|---|---|
+| https://doc.qt.io/qt-6/qfont.html | pointSize()/pointSizeF() return -1 "if the font size was specified in pixels"; setPointSize/F: "The point size must be greater than zero"; setPixelSize "makes the font device dependent" — use setPointSize(F) for device independence | 2026-10-13 |
+| https://doc.qt.io/qt-6/qscreen.html | logicalDotsPerInchY: "This value is used to convert font point sizes to pixel sizes" | 2026-10-13 |
+| probe on this PC (Qt message handler + Python stack) | the warning came from QDateTimeEdit.setCalendarPopup(True) in the Today tab; with the point-sized default font: none at start-up, in any island tab, the console, Settings or the menu; logical DPI 96 at 100/125/150/200 %, 9.75 pt = 13 px with identical line height | 2026-10-13 |
