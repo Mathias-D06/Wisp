@@ -277,9 +277,9 @@ def test_console_toggles_and_composer(console):
 
 
 def test_console_trims_old_rows(console, monkeypatch):
-    from wisp.ui import console as console_module
+    from wisp.ui import chat
 
-    monkeypatch.setattr(console_module, "MAX_ENTRIES", 5)
+    monkeypatch.setattr(chat, "MAX_ENTRIES", 5)
     for n in range(8):
         console.voice.transcript.emit("notice", f"note {n}", True, 0)
     assert len(console._entries) == 5

@@ -54,7 +54,7 @@ class Chip(QPushButton):
         self._tint()
 
     def _tint(self, _palette=None) -> None:
-        p = theme.current()
+        p = theme.palette_for(self)
         self.setIcon(iconset.icon(self._name, p.secondary, disabled=p.muted, checked=p.accent))
 
 

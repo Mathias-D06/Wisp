@@ -32,6 +32,7 @@ HOTKEYS = [
     ("push_to_talk", "Push-to-talk", "Hold to talk to Wisp"),
     ("dictation", "Dictation", "Hold to dictate into the focused text box"),
     ("circle", "Circle to Ask", "Hold, then circle something on screen and ask"),
+    ("island", "Island", "Hold to open or close the Island"),
 ]
 DEFAULT_DEVICE = "System default"
 TEST_SECONDS = 3

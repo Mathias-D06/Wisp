@@ -8,12 +8,20 @@ routines, controls volume and music, and remembers facts you tell it. It also ad
 - **Dictation.** Hold Ctrl+Win, speak, and release. Wisp types clean text (no "um", and
   self-corrections applied) into whatever text box has focus.
 - **Circle to Ask.** Hold Ctrl+Shift, draw a loop around something on screen and ask about it.
-- **The Island.** A small pill at the top of the screen. Hover over it for quick controls, the
-  music player, to-dos, stats, clipboard history, an app launcher, wallpapers and power options.
-  The Island works without an API key.
+- **The Island.** A black pill at the top centre of the screen, like the iPhone's Dynamic
+  Island. It changes shape to show what Wisp is doing: listening (with your voice's waveform),
+  thinking, speaking (the start of the reply), dictating, the music that's playing, a
+  countdown to your next reminder, and short banners when something happens. Two things at
+  once split it into a pill and a small circle. Hover over it (or click it) and it opens into
+  a panel with the conversation and a text box (Chat), quick controls, the music player,
+  to-dos, stats, clipboard history, an app launcher, wallpapers and power options. It never
+  takes the keyboard from the app you're typing in, clicks beside it reach the app
+  underneath, and it hides while a full-screen app or game is in front. The Island works
+  without an API key.
 
 Everything Wisp stores stays on your PC, in `%APPDATA%\Wisp`.
 
+Recordings of the Island's transitions are in [docs/island](docs/island/README.md).
 On Windows 11 22H2 or later, the console and Settings use the Mica backdrop. On Windows 10 they
 use a solid background. Before-and-after screenshots of the UI are in
 [docs/screenshots](docs/screenshots/README.md).
@@ -66,9 +74,12 @@ is **no**.
 | Talk (push-to-talk) | hold **Alt+Win**, or click the orb | Settings → Hotkeys and audio |
 | Dictate into the focused text box | hold **Ctrl+Win** | Settings → Hotkeys and audio |
 | Circle to Ask | hold **Ctrl+Shift** and draw a loop with the left mouse button | Settings → Hotkeys and audio |
-| Type instead of talking | tray → Open console | — |
-| Always listening (no hotkey) | tray or console → Always listening | Settings → Hotkeys and audio |
-| Mute the microphone | tray → Mute microphone | — |
+| Open or close the Island | hover it, click it, scroll down on it, or hold **Ctrl+Alt+Space**; Esc closes it | Settings → Hotkeys and audio |
+| Type instead of talking | the Island's Chat tab (or tray → Open console, or "Open in window") | — |
+| Play or pause music | click the right half of the Island's music pill | — |
+| Dismiss a banner | swipe or scroll up on it (clicking opens what it's about) | — |
+| Always listening (no hotkey) | the ear icon in the Island, the tray or the console | Settings → Hotkeys and audio |
+| Mute the microphone | right-click the Island, or tray → Mute microphone | — |
 
 A hotkey only fires when you hold its keys on their own for 250 ms (adjustable). Normal
 shortcuts that share those keys, such as Ctrl+Win+→ or Ctrl+Shift+T, keep working.
@@ -84,12 +95,13 @@ Things to try:
 
 **Settings** (tray → Settings…):
 
-- **General:** API key, models, language, idle timeout, start with Windows, Island, clipboard
+- **General:** API key, models, language, idle timeout, start with Windows, the Island (show
+  it, which display it sits on, and whether it shrinks to a thin line when idle), clipboard
   history size, typing speed (used for Stats).
 - **Loadout:** the voice (30 Gemini voices), personality (a preset or your own description),
   theme and accent colour, **Reduce motion**, and which skills Wisp may use. Wisp also turns its
   animations off when Windows' Animation effects setting is off.
-- **Hotkeys and audio:** the three hold-to-use hotkeys (clashes are flagged as you type), hold
+- **Hotkeys and audio:** the four hold-to-use hotkeys (clashes are flagged as you type), hold
   time, microphone, speaker and always listening.
 - **Safety:** see [Safety model](#safety-model).
 - **Memories:** everything Wisp remembers. You can search, edit, pin and delete.
@@ -183,6 +195,8 @@ pastes are kept out of both Windows clipboard history and Wisp's.
   different chord in Settings → Hotkeys and audio.
 - **Nothing happens in an administrator window.** Windows doesn't let normal apps control
   elevated apps. Use the app directly.
+- **The Island disappeared.** It hides while a full-screen app, video or game is in front, and
+  comes back when you leave full screen. Check Settings → General → Show the Island.
 - **Windows look wrong (blank or see-through areas).** Set the environment variable
   `WISP_NO_MICA=1` and restart Wisp. Wisp then uses a solid background instead of Mica.
 - **Logs.** Open them from Settings → Action log → Open log folder (`%APPDATA%\Wisp\logs`).

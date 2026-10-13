@@ -9,9 +9,10 @@ acceptance step needs real hardware/API key and is listed in `MANUAL_TESTS.md` (
 
 ## Status
 
-- Current phase: all phases done (0–11), plus the brief of 2026-10-13 (speech fix, part 1; UI polish,
-  part 2). Remaining work needs a person: the MANUAL_TESTS core run (API key + microphone, now including
-  MT-50…MT-63), pushing to GitHub so CI runs, choosing a licence. See FINAL_REPORT.md.
+- Current phase: all phases done (0–11), plus the briefs of 2026-10-13 (speech fix, part 1; UI polish,
+  part 2; Dynamic Island, part 3). Remaining work needs a person: the MANUAL_TESTS core run (API key +
+  microphone, now including MT-50…MT-77), pushing to GitHub so CI runs, choosing a licence. See
+  FINAL_REPORT.md.
 - Safety note for automated runs: never toggle the user's Night Light/Wi-Fi/Bluetooth/theme/
   volume/output device in tests on this PC; test write paths with pure functions + manual tests.
 - Environment: Windows 11, Python 3.12.10 venv in `.venv`, Git 2.55, Inno Setup 6.7.3 (per-user,
@@ -324,6 +325,68 @@ acceptance step needs real hardware/API key and is listed in `MANUAL_TESTS.md` (
   an on-screen capture of the console); no regressions, suite green; sharp at 100/125/150 % in true-scale renders and the icon
   tests; idle CPU logged (U.11). Smoothness on a real display and real scaling: MT-59, MT-62
 
+### Dynamic Island (brief of 2026-10-13, part 3)
+- [x] I.1 One island surface replaces the console window, the old pill, the HUD, the answer bubble and
+  tray toasts: idle, sliver, activity, split, banner, expanded — `ui/island/{island,machine,content,
+  geometry,spring,panel,feedback}.py`, `ui/chat.py`; `test_island_core.py`, `test_island_window.py`; D-045
+- [x] I.2 Priority in one place (voice > banner > timer > music > idle, `machine.TIERS`) —
+  `test_island_core.py::test_priority_order_is_defined_once`,
+  `::test_voice_beats_timer_beats_music_and_split_shows_two`; D-045
+- [~] I.3 Live activities: listening (mic waveform), thinking, speaking (first words, output bars),
+  dictation (level), music (album art, equaliser from IAudioMeterInformation), countdown, short status —
+  `ui/island/content.py`, `system/audio_meter.py`, `system/media.py::read_thumbnail`; stills in
+  `docs/island/stills`; `test_island_window.py::test_speaking_shows_the_first_words_of_the_reply`,
+  `::test_media_art_and_the_panel_strip`, `test_island_core.py::test_countdown_*`. No media session was
+  playing on this PC while this was built, so real album art is MT-66
+- [x] I.4 Split (two activities: pill + detached circle) — `test_island_core.py::test_split_circle_sits_beside_the_pill_and_the_group_is_centred`,
+  `::test_input_region_is_the_visible_shape_only`; `docs/island/split_music_and_voice.gif`
+- [x] I.5 Banners: hold 3 s (longer while hovered), queue one at a time, coalesce, stale ones dropped,
+  click action, swipe/scroll up to dismiss — `test_island_core.py::test_banner_*`, `::test_banners_queue_*`,
+  `::test_hover_holds_a_banner_*`, `::test_stale_banners_are_dropped`, `test_island_window.py::test_swipe_up_*`,
+  `::test_orb_click_talks_and_banner_click_runs_its_action`; `docs/island/banner_routine_done.gif`
+- [x] I.6 Expanded panel: Chat (transcript + text box) first, the existing tabs, now playing, current
+  reply; collapses on leave (0.5 s), Esc, click outside; "Open in window" keeps the console —
+  `test_island_window.py::test_panel_has_chat_first_and_open_in_window`, `::test_esc_collapses_and_dismisses`
+- [x] I.7 Motion: one continuous shape, springs (overshoot when growing, none when shrinking),
+  interruptions retarget from the current size and speed, capsule radius, content fades and scales,
+  panel rows staggered 20 ms — `test_island_core.py::test_spring_*`, `::test_retarget_mid_flight_has_no_jump`,
+  `test_island_window.py::test_expand_springs_*`, `::test_collapse_never_overshoots_and_interrupting_never_jumps`,
+  `::test_radius_stays_a_capsule_while_compact`, `::test_content_fades_and_scales_between_states`; GIFs; D-047
+- [x] I.8 Windows "Animation effects" off or Reduce motion: shape jumps, content crossfades —
+  `test_island_window.py::test_reduce_motion_jumps_the_shape_and_crossfades_content`; MT-60
+- [~] I.9 Window: frameless, translucent, topmost tool window (no taskbar button, no Alt+Tab), never
+  takes focus except a click into a text box, fixed canvas (never resized), input region = the shape,
+  shadow in a click-through window, top centre of the chosen display — `test_island_window.py::test_native_styles_and_the_foreground_is_never_taken`,
+  `::test_canvas_is_fixed_size_at_the_top_centre`, `::test_clicks_beside_the_shape_reach_the_app_underneath`
+  (WindowFromPoint) (passed on this PC; skips while the lock screen is up), `::test_text_box_click_takes_focus_and_collapse_gives_it_back`; probes
+  `spikes/island_window_probe.py`, `spikes/island_focus_probe.py`; D-046. Real typing, clicks, multiple
+  displays and scaling: MT-70, MT-71, MT-74, MT-62
+- [x] I.10 Hidden while a full-screen app or game is in front (SHQueryUserNotificationState + the
+  foreground window covering the island's monitor) — `winapi/fullscreen.py`;
+  `test_island_core.py::test_fullscreen_decision`, `test_island_window.py::test_full_screen_apps_hide_the_island`;
+  on this PC a full-screen window in front (QUNS_BUSY, covering the monitor) was detected; D-046; MT-73
+- [x] I.11 Interaction: hover grows 4 %, hover 300 ms or click expands, scroll down/up, right-click menu
+  (Settings, Mute, Open in window, Quit), music click = play/pause, hotkey Ctrl+Alt+Space, Esc via the
+  keyboard hook — `test_island_window.py::test_hover_*`, `::test_scroll_*`, `::test_right_click_menu`,
+  `::test_compact_music_click_*`, `::test_esc_watch_follows_expansion`; MT-64, MT-72
+- [x] I.12 Services send events to the IslandStateMachine (voice, dictation, Circle to Ask, media,
+  reminders and routines, notifications), with the old HUD/bubble/toasts as fallbacks when the island is
+  off or hidden — `ui/island/feedback.py`, `app.py`; `test_island_window.py::test_feedback_adapter_*`,
+  `::test_circle_answer_*`, `::test_voice_messages_become_banners`, `::test_notifications_*`; MT-69, MT-76
+- [x] I.13 Every island size, spring and timing in the theme tokens (`theme.ISLAND`)
+- [x] I.14 Performance — morphs at 62 fps, p95 frame ≤ 18 ms, worst 23 ms, paint 1–2 ms
+  (`spikes/island_fps.py`, this PC, 2026-10-13); the frame timer runs only while something moves
+  (`test_island_window.py::test_frame_timer_only_runs_while_something_moves`). Idle CPU: 0.44 % of one core while visible and idle with the orb's glow (0.42 % with Reduce motion) against 5.99 % for the old island measured the same way (`spikes/island_idle_cpu.py`: in-process, island visible, 30 s warm-up, 60 s); 0.21 % while hidden behind a full-screen app (`spikes/idle_cpu.py`)
+- [x] I.15 Unit tests: state machine (priorities, interruptions, banner queue, timeouts), springs (settle,
+  retarget without jumps, no overshoot on collapse), click-through region — `test_island_core.py`
+- [x] I.16 MANUAL_TESTS: MT-64…MT-77 (every state and transition, displays, scaling, full screen, focus while
+  typing elsewhere) plus updated MT-01/04/05/07/22/29/53/55/59/60/61; core run step 15
+- [~] I.A Accept: the voice flow is one fluid shape (`docs/island/voice_flow.gif`, morph tests); music +
+  voice splits (GIF, tests); a routine's banner returns to idle by itself (GIF, tests); typing elsewhere never
+  loses focus (native styles + foreground-unchanged test; real typing MT-70); clicks beside reach the app
+  (WindowFromPoint test; MT-71); recordings in `docs/island` (rendered from the widget rather than
+  recorded from the screen, D-045; your own recording MT-77); suite green; docs updated
+
 ### Testing, packaging, definition of done
 - [x] T.1 Unit tests: dispatcher, safety tiers, scheduler parsing + persistence, memory, clipboard store,
   settings (Windows-only tests marked) — `test_dispatcher.py`, `test_tools_core.py`, `test_hardening.py`,
@@ -331,8 +394,8 @@ acceptance step needs real hardware/API key and is listed in `MANUAL_TESTS.md` (
   `windows` marker skips Windows-only tests elsewhere (conftest)
 - [x] T.2 Integration tests with fake Live session replaying scripted tool calls — `tests/fakes.py`
   (FakeLiveServer), `test_live_session.py`, `test_schedule_tools.py::test_model_schedules_routine_then_it_replays_without_model`
-- [x] T.3 MANUAL_TESTS.md runnable in ~20 minutes — "Core run" (15 steps, ~23 min) covering every `[~]`
-  item; the full catalogue (63 cases) is the extended set
+- [x] T.3 MANUAL_TESTS.md runnable in ~20 minutes — "Core run" (16 steps, ~27 min) covering every `[~]`
+  item; the full catalogue (77 cases) is the extended set
 - [~] T.4 GitHub Actions on windows-latest: lint + tests + PyInstaller exe — `.github/workflows/ci.yml`
   (ruff, pytest, Inno Setup, `packaging/build.py` incl. frozen self-check, artefacts). Not yet run on GitHub (no
   remote); every step ran green in a fresh venv from a clean copy on 2026-10-13 (310 passed, build +
@@ -386,3 +449,12 @@ acceptance step needs real hardware/API key and is listed in `MANUAL_TESTS.md` (
   user's loop; theme hooks connected as lambdas outlived their widgets (now bound/child-object connections); the
   transcript's scroll timer had no context object; an Island test depended on where the real pointer rested.
   Idle CPU 6.17 % → 3.28 % (0.29 % with Reduce motion). Screenshots in docs/screenshots. D-042…D-044, MT-57…MT-63.
+- 2026-10-13: Dynamic Island (part 3). One black island replaces the console window, the old pill, the
+  dictation HUD, the answer bubble and tray toasts: idle/sliver/activity/split/banner/expanded, decided by
+  an IslandStateMachine (voice > banner > timer > music > idle); springs (closed-form, retargetable) drive
+  one shape on a fixed canvas; input region = the shape (setMask), shadow in a click-through window,
+  WS_EX_NOACTIVATE (focus only on a click into a text box, given back on collapse), hidden behind
+  full-screen apps (SHQueryUserNotificationState + covering foreground window), Esc via the keyboard hook,
+  hotkey Ctrl+Alt+Space, album art (new dependency winrt-Windows.Storage.Streams 3.2.1) and a real output
+  meter. 62 fps morphs; idle CPU 0.44 % of one core while visible and idle with the orb's glow (0.42 % with Reduce motion) against 5.99 % for the old island measured the same way (`spikes/island_idle_cpu.py`: in-process, island visible, 30 s warm-up, 60 s); 0.21 % while hidden behind a full-screen app (`spikes/idle_cpu.py`). Recordings in docs/island
+  (rendered from the widget). D-045…D-047, MT-64…MT-77.

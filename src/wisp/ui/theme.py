@@ -57,6 +57,63 @@ ICON_SM, ICON_MD = 16, 20
 SHADOW_BLUR, SHADOW_Y = 24, 4  # fits the 10 px margin around frameless popups
 
 
+# ----- the island (D-045) ------------------------------------------------------------------------
+@dataclass(frozen=True)
+class SpringTokens:
+    stiffness: float  # k, with unit mass: angular frequency ω = √k
+    damping_ratio: float  # ζ: < 1 may overshoot, 1 = critically damped (never overshoots)
+
+
+@dataclass(frozen=True)
+class IslandTokens:
+    """Every size, spring and timing of the island, in logical px and milliseconds."""
+
+    top: int = 6  # gap between the screen's top edge and the pill
+    idle: tuple[int, int] = (180, 32)
+    sliver: tuple[int, int] = (120, 5)  # auto-hidden idle pill
+    activity_height: int = 36
+    activity_widths: tuple[tuple[str, int], ...] = (
+        ("listening", 300), ("thinking", 280), ("speaking", 380), ("dictation", 300),
+        ("status", 320), ("music", 300), ("countdown", 280))
+    split_diameter: int = 36  # the detached circle of the split state
+    split_gap: int = 8
+    banner: tuple[int, int] = (400, 76)
+    expanded: tuple[int, int] = (720, 580)
+    expanded_radius: int = 26  # compact shapes are capsules: radius = height / 2
+    hover_scale: float = 1.04
+    shadow_margin: int = 40  # canvas room around the largest shape for the soft shadow
+    shadow_blur: int = 28
+    shadow_alpha: int = 110
+    highlight_alpha: int = 28  # the 1 px inner highlight on the black fill
+    content_scale: float = 0.96  # outgoing content shrinks to this, incoming grows from it
+    expand: SpringTokens = SpringTokens(450.0, 0.82)  # ~1 % overshoot, settles in ~0.45 s
+    collapse: SpringTokens = SpringTokens(600.0, 1.0)  # critically damped, clamped
+    small: SpringTokens = SpringTokens(700.0, 0.9)  # width/height changes under small_px
+    small_px: int = 60
+    content_out_ms: int = 120
+    content_in_ms: int = 180
+    content_delay_ms: int = 40  # incoming content starts slightly after the shape moves
+    row_stagger_ms: int = 20  # expanded panel rows
+    crossfade_ms: int = 100  # replaces springs when motion is off
+    hover_hold_ms: int = 300  # hover this long (or click) to expand
+    collapse_delay_ms: int = 500  # after the pointer leaves the expanded panel
+    banner_hold_ms: int = 3000
+    banner_hover_extra_ms: int = 1500  # banner stays this long after the pointer leaves it
+    banner_max_age_ms: int = 30000  # a queued banner older than this is dropped
+    banner_queue: int = 5
+    autohide_ms: int = 10000  # idle this long → sliver (when enabled in Settings)
+    countdown_window_s: int = 600  # show a countdown for reminders due within 10 minutes
+    idle_frame_ms: int = 125  # the orb's slow glow (8 fps); everything else is 16 ms
+    meter_frame_ms: int = 50  # music equaliser (20 fps)
+    fullscreen_poll_ms: int = 1000
+
+    def activity_width(self, kind: str) -> int:
+        return dict(self.activity_widths).get(kind, 300)
+
+
+ISLAND = IslandTokens()
+
+
 @dataclass(frozen=True)
 class Palette:
     dark: bool
@@ -327,3 +384,17 @@ def set_current(p: Palette) -> None:
     global _current
     _current = p
     signals.changed.emit(p)
+
+
+DARK_SURFACE_PROPERTY = "darkSurface"  # set on the island: it is black in either theme (D-045)
+
+
+def palette_for(widget: QWidget | None) -> Palette:
+    """The palette a widget is drawn with: the app's, or the dark one inside a widget marked
+    with DARK_SURFACE_PROPERTY (the island)."""
+    while widget is not None:
+        if widget.property(DARK_SURFACE_PROPERTY):
+            app = current()
+            return app if app.dark else palette("dark", app.accent)
+        widget = widget.parentWidget()
+    return current()

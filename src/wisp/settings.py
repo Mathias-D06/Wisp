@@ -64,6 +64,9 @@ LANGUAGE_CODES = {
 """Languages offered in Settings, with the BCP-47 code sent as a transcription hint (D-040)."""
 
 
+ISLAND_MONITORS = ("primary", "cursor")
+
+
 def language_code(language: str) -> str | None:
     """BCP-47 code for a language name from the list (None for free text)."""
     return LANGUAGE_CODES.get(language.strip())
@@ -78,6 +81,8 @@ CUSTOM_PERSONALITY_MAX = 600
 class GeneralSettings:
     start_with_windows: bool = False
     show_island: bool = True
+    island_monitor: str = "primary"  # primary | cursor (D-045)
+    island_autohide: bool = False  # shrink the idle island to a sliver after a while
     clipboard_history_size: int = 50
     typing_wpm: int = 40
     amazon_domain: str = "www.amazon.com"
@@ -105,6 +110,7 @@ class HotkeySettings:
     push_to_talk: str = "alt+win"
     dictation: str = "ctrl+win"
     circle: str = "ctrl+shift"
+    island: str = "ctrl+alt+space"  # expand / collapse the island (D-045)
     hold_ms: int = 250
 
 
@@ -203,6 +209,8 @@ def validate(settings: Settings) -> list[str]:
         problems.append("Typing speed must be between 10 and 200 words per minute.")
     if not 100 <= settings.hotkeys.hold_ms <= 2000:
         problems.append("Hotkey hold time must be between 100 and 2000 ms.")
+    if settings.general.island_monitor not in ISLAND_MONITORS:
+        problems.append("The island's monitor must be 'primary' or 'cursor'.")
     if not 0 <= settings.scheduler.one_off_grace_hours <= 168:
         problems.append("Missed one-off task grace must be 0-168 hours.")
     if not 0 <= settings.scheduler.recurring_grace_minutes <= 1440:
@@ -242,6 +250,7 @@ def validate(settings: Settings) -> list[str]:
                 "Push-to-talk": settings.hotkeys.push_to_talk,
                 "Dictation": settings.hotkeys.dictation,
                 "Circle to Ask": settings.hotkeys.circle,
+                "Island": settings.hotkeys.island,
             }
         )
     )

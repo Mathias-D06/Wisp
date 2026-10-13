@@ -1,4 +1,5 @@
-"""Island window (F7.1), music strip (F7.9), Today tab (F5.2/F5.4/F7.3) and Power tab (F7.8)."""
+"""Island tabs: music strip (F7.9), Today (F5.2/F5.4/F7.3), Power (F7.8), Apps, Wallpaper,
+Stats. The island window itself: tests/test_island_window.py (D-045)."""
 
 from __future__ import annotations
 
@@ -7,145 +8,32 @@ from datetime import datetime, timedelta
 from types import SimpleNamespace
 
 import pytest
-from PySide6.QtCore import QObject, QPoint, QPointF, Qt, Signal
-from PySide6.QtGui import QEnterEvent, QGuiApplication
-from PySide6.QtWidgets import QApplication, QMessageBox, QWidget
+from PySide6.QtCore import Qt
+from PySide6.QtWidgets import QApplication, QMessageBox
 
 from wisp.system.media import MediaState
 from wisp.ui import theme
 
 pytestmark = pytest.mark.qt
 
-FAR_AWAY = QPoint(-30000, -30000)
-
-
-class FakeVoice(QObject):
-    visual = Signal(str, float, str)
-
-    def __init__(self):
-        super().__init__()
-        self.toggles = 0
-
-    def toggle_talk(self):
-        self.toggles += 1
-
-
-class CountingTab(QWidget):
-    def __init__(self):
-        super().__init__()
-        self.refreshes = 0
-
-    def refresh(self):
-        self.refreshes += 1
-
-
 @pytest.fixture
 def palette():
     return theme.palette("dark", "#7c5cff")
 
 
-@pytest.fixture
-def island(qtbot, palette, monkeypatch):
-    from wisp.ui.island import island as island_mod
+def test_music_strip(qtbot):
+    from wisp.ui.island.music import MusicStrip
 
-    cursor = SimpleNamespace(at=FAR_AWAY)
-    monkeypatch.setattr(island_mod, "QCursor", SimpleNamespace(pos=lambda: cursor.at))
-    key = {"has": False}
     commands = []
-    tabs = [("Controls", CountingTab()), ("Today", CountingTab())]
-    widget = island_mod.Island(FakeVoice(), palette, "#7c5cff", lambda: key["has"],
-                               commands.append, tabs)
-    qtbot.addWidget(widget)
-    widget.key, widget.commands, widget.cursor = key, commands, cursor
-    return widget
-
-
-def test_pill_is_frameless_on_top_and_centred(island):
-    from wisp.ui.island.island import COLLAPSED, MARGIN
-
-    flags = island.windowFlags()
-    assert flags & Qt.WindowType.WindowStaysOnTopHint
-    assert flags & Qt.WindowType.FramelessWindowHint
-    assert flags & Qt.WindowType.Tool
-    assert island.testAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
-    assert not island.expanded and island.body.isHidden()
-    assert island.size().width() == COLLAPSED[0] + 2 * MARGIN
-    screen = QGuiApplication.primaryScreen().availableGeometry()
-    assert abs(island.geometry().center().x() - screen.center().x()) <= 1
-    assert island.y() <= screen.y() + 2
-
-
-def test_hover_expands_and_leaving_collapses(island, qtbot):
-    from wisp.ui.island.island import EXPANDED, MARGIN
-
-    island.show()
-    QApplication.sendEvent(island, QEnterEvent(QPointF(5, 5), QPointF(5, 5), QPointF(5, 5)))
-    qtbot.waitUntil(lambda: island.expanded, timeout=2000)
-    assert not island.body.isHidden()
-    assert island.size().width() == EXPANDED[0] + 2 * MARGIN
-    screen = QGuiApplication.primaryScreen().availableGeometry()
-    assert abs(island.geometry().center().x() - screen.center().x()) <= 1  # re-centred
-    island.cursor.at = island.geometry().center()
-    island._maybe_collapse()
-    assert island.expanded  # pointer still over the island
-    island.cursor.at = FAR_AWAY
-    island._maybe_collapse()
-    assert not island.expanded
-
-
-def test_scroll_expands(island, qtbot):
-    from PySide6.QtGui import QWheelEvent
-
-    island.show()
-    event = QWheelEvent(QPointF(5, 5), QPointF(5, 5), QPoint(0, 0), QPoint(0, -120),
-                        Qt.MouseButton.NoButton, Qt.KeyboardModifier.NoModifier,
-                        Qt.ScrollPhase.NoScrollPhase, False)
-    QApplication.sendEvent(island, event)
-    assert island.expanded
-
-
-def test_tabs_refresh_when_shown(island):
-    controls, today = (widget for _name, widget in island.tabs)
-    island.expand()
-    assert controls.refreshes == 1
-    island.open_tab("Today")
-    assert island.stack.currentWidget() is today and today.refreshes == 1
-    assert island.tab_group.checkedId() == 1
-    island.tab_group.button(0).click()
-    assert controls.refreshes == 2
-
-
-def test_status_without_key_and_with_music(island):
-    island.update_key_prompt()
-    assert not island.key_prompt.isHidden()
-    assert island.status.toolTip() == "Island ready · voice needs a key"
-    island.show_media(MediaState(True, "Blue in Green", "Miles Davis", "Spotify", True, 30, 337))
-    assert island.status.toolTip() == "♪ Blue in Green — Miles Davis"
-    island.key["has"] = True
-    island.show_media(MediaState())
-    island.update_key_prompt()
-    assert island.key_prompt.isHidden()
-    island.voice.visual.emit("listening", 0.3, "Listening…")
-    assert island.status.toolTip() == "Listening…"
-
-
-def test_orb_click_and_settings_signal(island, qtbot):
-    island.orb.clicked.emit()
-    assert island.voice.toggles == 1
-    with qtbot.waitSignal(island.settings_requested) as blocker:
-        island.key_prompt.click()
-    assert blocker.args == ["General"]
-
-
-def test_music_strip(island):
-    strip = island.music
+    strip = MusicStrip(commands.append)
+    qtbot.addWidget(strip)
     assert not strip.play.isEnabled() and strip.title.text() == "Nothing playing"
     strip.show_state(MediaState(True, "Song", "", "app", True, 61, 200))
     assert strip.play.isEnabled() and strip.time.text() == "1:01 / 3:20"
     assert strip.progress.value() == 305 and strip.artist.isHidden()
     strip.next.click()
     strip.play.click()
-    assert island.commands == ["next", "play_pause"]
+    assert commands == ["next", "play_pause"]
 
 
 # ----- Today tab ---------------------------------------------------------------------------------
@@ -358,7 +246,6 @@ def test_stats_tab_shows_today_and_week(qtbot, db, tmp_path):
 def test_stats_tab_survives_restyling(qtbot, db, tmp_path):
     """Regression: an attribute named ``metric`` shadowed QWidget::metric(), so re-applying the
     app stylesheet (every settings save) raised TypeError inside Qt."""
-    from PySide6.QtWidgets import QApplication
 
     from wisp.settings import SettingsStore
     from wisp.stores.stats import Stats
@@ -381,38 +268,4 @@ def test_stats_tab_survives_restyling(qtbot, db, tmp_path):
     assert errors == []
     assert callable(tab.metric)  # QWidget::metric is no longer shadowed
 
-
-def test_expand_and_collapse_animate_when_motion_is_on(island, qtbot):
-    from wisp.ui import motion
-    from wisp.ui.island.island import COLLAPSED, EXPANDED, MARGIN
-
-    motion.force(True)
-    # The real pointer may rest where the Island appears; its hover timers must not re-expand
-    # or collapse the Island mid-test.
-    island._expand_timer.setInterval(3_600_000)
-    island._collapse_timer.setInterval(3_600_000)
-    island.show()
-    island.expand()
-    assert island.expanded and island.body.isHidden()  # contents appear after the resize
-    assert island._resize_anim is not None
-    qtbot.waitUntil(lambda: island.size().width() == EXPANDED[0] + 2 * MARGIN, timeout=2000)
-    qtbot.waitUntil(lambda: not island.body.isHidden(), timeout=2000)
-    island.collapse()
-    qtbot.waitUntil(lambda: island.size().width() == COLLAPSED[0] + 2 * MARGIN, timeout=2000)
-    screen = QGuiApplication.primaryScreen().availableGeometry()
-    assert abs(island.geometry().center().x() - screen.center().x()) <= 1
-
-
-def test_reduce_motion_jumps_straight_to_the_end(island):
-    from wisp.ui import motion
-    from wisp.ui.island.island import EXPANDED, MARGIN
-
-    motion.force(None)
-    motion.configure(reduce_motion=True)
-    try:
-        island.show()
-        island.expand()
-        assert island.size().width() == EXPANDED[0] + 2 * MARGIN and not island.body.isHidden()
-    finally:
-        motion.configure(reduce_motion=False)
 

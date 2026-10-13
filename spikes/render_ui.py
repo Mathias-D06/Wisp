@@ -26,6 +26,7 @@ if "--dpr" in sys.argv:
     os.environ["QT_SCALE_FACTOR"] = f"{_target / _system:.4f}"
     del sys.argv[sys.argv.index("--dpr"):sys.argv.index("--dpr") + 2]
 
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QApplication
 
 OUT = Path(__file__).parent / "out"
@@ -161,17 +162,19 @@ def render_island(app: QApplication) -> None:
     services.stats.record("routine")
     services.app_index.refresh()
     island = wisp_app.island
+    island._poll.stop()  # no full-screen checks against the real desktop
+    for widget in (island, island.shadow):  # never on screen: no pointer can hover it
+        widget.setAttribute(Qt.WidgetAttribute.WA_DontShowOnScreen)
+    island.enabled = True
     island.show()
     island.show_media(MediaState(True, "Weightless", "Marconi Union", "Spotify", True, 95, 480))
     _pump(app, 0.3)
-    island.collapse()  # the pointer may be over the Island (hover expands it)
-    app.processEvents()
     island.grab().save(str(OUT / "island_collapsed.png"))
     island.expand()
-    for index, (name, _widget) in enumerate(island.tabs):
+    for index, (name, _widget) in enumerate(island.panel.tabs):
         if DOCS and name in PERSONAL_TABS:
             continue
-        island.show_tab(index)
+        island.panel.show_tab(index)
         _pump(app, 2.0 if name in ("Controls", "Apps", "Wallpaper") else 0.4)
         island.grab().save(str(OUT / f"island_{name.lower()}.png"))
     wisp_app.quit()

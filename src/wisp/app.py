@@ -36,6 +36,7 @@ from wisp.stores.stats import Stats
 from wisp.stores.todos import TodoStore
 from wisp.system import clipboard
 from wisp.system.app_index import AppIndex
+from wisp.system.audio_meter import OutputMeter
 from wisp.system.clipboard_monitor import ClipboardMonitor
 from wisp.system.media import MediaWatcher
 from wisp.tools.base import Origin
@@ -67,7 +68,9 @@ from wisp.ui.island.apps_tab import AppsTab
 from wisp.ui.island.clipboard_tab import ClipboardTab
 from wisp.ui.island.common import Background
 from wisp.ui.island.controls_tab import ControlsTab
+from wisp.ui.island.feedback import IslandBubble, IslandFeedback
 from wisp.ui.island.island import Island
+from wisp.ui.island.machine import pick_countdown
 from wisp.ui.island.music import MediaSignals
 from wisp.ui.island.power_tab import PowerTab
 from wisp.ui.island.stats_tab import StatsTab
@@ -170,24 +173,28 @@ class WispApp(QObject):
         self.clipboard_owner = QWidget()  # native window on the Qt thread that owns our writes
         self.clipboard_owner_hwnd = int(self.clipboard_owner.winId())
         self.hud = Hud(settings.loadout.accent)
-        self.dictation = DictationController(self._dictation_deps(), self.mic, self.hud,
-                                             self.services.stats, self.notify)
         palette = theme.palette(settings.loadout.theme, settings.loadout.accent)
         self.bubble = AnswerBubble(palette.surface, palette.border)
-        self.circle = CircleController(self.voice, self.live, self.mic, self.hud, self.bubble,
-                                       self.keystore.has_key, lambda: peek().loadout.accent)
-
         self.console = ConsoleWindow(self.voice, settings.loadout.accent)
+        self._build_island(settings)
+        # Dictation and Circle to Ask report to the island (HUD/bubble when it's off; D-045).
+        self.feedback = IslandFeedback(self.island, self.hud)
+        self.island_bubble = IslandBubble(self.island, self.bubble)
+        self.dictation = DictationController(self._dictation_deps(), self.mic, self.feedback,
+                                             self.services.stats, self.notify)
+        self.circle = CircleController(self.voice, self.live, self.mic, self.feedback,
+                                       self.island_bubble, self.keystore.has_key,
+                                       lambda: peek().loadout.accent)
+
         self.confirm_card = ConfirmCard(self.confirmations)
         self.confirm_card.apply_palette(palette.surface, palette.border)
         self.voice.visual.connect(lambda state, _level, text: self.tray.set_state(state, text))
-        self._build_island(settings, palette)
         self._settings_dialog: SettingsDialog | None = None
         self.settings_store.subscribe(lambda s: self.ui.call(lambda: self._on_settings_changed(s)))
         self.keystore.subscribe(lambda has_key: self.ui.call(lambda: self._on_key_changed(has_key)))
 
     # ----- Island ----------------------------------------------------------------------------
-    def _build_island(self, settings: Settings, palette) -> None:
+    def _build_island(self, settings: Settings) -> None:
         self.background = Background(self.loop.loop)
         self.media_signals = MediaSignals()
         self.media = MediaWatcher(self.loop.loop, self.media_signals.changed.emit)
@@ -195,6 +202,7 @@ class WispApp(QObject):
         self.clipboard_monitor = ClipboardMonitor(self.services.clipboard,
                                                   self.clipboard_owner_hwnd)
         services = self.services
+        palette = theme.palette("dark", settings.loadout.accent)  # the island is always black
         tabs = [
             ("Controls", ControlsTab(self.background, palette)),
             ("Today", TodayTab(services.todos, services.scheduler)),
@@ -204,10 +212,17 @@ class WispApp(QObject):
             ("Wallpaper", WallpaperTab(self.background)),
             ("Power", PowerTab(self.background, palette, services.action_log)),
         ]
-        self.island = Island(self.voice, palette, settings.loadout.accent, self.keystore.has_key,
-                             lambda action: self.media.command(action), tabs)
+        self.island = Island(self.voice, settings.loadout.accent, self.keystore.has_key,
+                             lambda action: self.media.command(action), tabs,
+                             meter=OutputMeter())
+        self.island.configure(settings.general.island_monitor, settings.general.island_autohide)
         self.island.settings_requested.connect(lambda page: self.open_settings(page or None))
+        self.island.console_requested.connect(self.console.open)
+        self.island.quit_requested.connect(self.quit)
         self.media_signals.changed.connect(self.island.show_media)
+        # Esc anywhere collapses the expanded island (the key still reaches the app in front).
+        self.island.machine.subscribe(
+            lambda p: setattr(self.hotkeys.hook, "watch_escape", p.mode == "expanded"))
 
     # ----- tools -----------------------------------------------------------------------------
     def _register_tools(self) -> None:
@@ -246,10 +261,22 @@ class WispApp(QObject):
         return all_ok, "\n".join(lines)
 
     def _check_reminders(self) -> None:
+        self._update_countdown()
         for todo in self.services.todos.due_reminders():
             self.services.todos.mark_reminded(todo.id)
             when = todo.due_at.strftime("%H:%M") if todo.due_at else ""
             self.notify("Reminder", f"{todo.text} (due {when})")
+
+    def _update_countdown(self) -> None:
+        """The island's countdown: the next reminder or routine due within 10 minutes."""
+        items = [(todo.text, todo.due_at) for todo in self.services.todos.list()
+                 if todo.remind and not todo.reminded and todo.due_at]
+        try:
+            items += [(task.title, when) for task, when in self.services.scheduler.upcoming(5)]
+        except Exception as exc:
+            log.info("No upcoming tasks for the countdown: %s", type(exc).__name__)
+        picked = pick_countdown(items, datetime.now().astimezone())
+        self.island.machine.set_countdown(*(picked or (None, None)))
 
     def _dictation_deps(self) -> DictationDeps:
         peek = self.settings_store.peek
@@ -298,8 +325,7 @@ class WispApp(QObject):
         QTimer.singleShot(3000, self._check_reminders)
         self.media.start()
         self.island.update_key_prompt()
-        if self.settings_store.peek().general.show_island:
-            self.island.show()
+        self.island.set_enabled(self.settings_store.peek().general.show_island)
         error = self.hotkeys.start()
         if error:
             self.notify("Hotkeys unavailable", f"Wisp could not install its keyboard hook: {error}")
@@ -309,7 +335,12 @@ class WispApp(QObject):
             if not self.background:
                 self.open_settings("General")
         elif not self.background:
-            self.console.open()
+            if self.island.enabled:
+                talk = self.hotkeys.display("push_to_talk")
+                self.island.machine.post("Wisp is ready", f"Hover here, or hold {talk} to talk",
+                                         "speaking", "accent", action=self.island.expand)
+            else:
+                self.console.open()
 
     def quit(self) -> None:
         log.info("Wisp quitting")
@@ -317,7 +348,7 @@ class WispApp(QObject):
         self.clipboard_monitor.close()
         self.media.stop()
         self.background.shutdown()
-        self.island.hide()
+        self.island.set_enabled(False)
         self.hotkeys.stop()
         self.live.disconnect()
         self.mic.close()
@@ -329,7 +360,15 @@ class WispApp(QObject):
         self.qt_app.quit()
 
     def notify(self, title: str, message: str) -> None:
-        self.ui.call(lambda: self.tray.notify(title, message))
+        self.ui.call(lambda: self._notify(title, message))
+
+    def _notify(self, title: str, message: str) -> None:
+        """Banners in the island; a Windows notification when the island is off or hidden
+        behind a full-screen app (D-045)."""
+        if self.island.enabled and not self.island.machine.hidden:
+            self.island.notify(title, message)
+        else:
+            self.tray.notify(title, message)
 
     # ----- UI --------------------------------------------------------------------------------
     def _build_tray_menu(self) -> None:
@@ -346,7 +385,13 @@ class WispApp(QObject):
         self.tray.add_action("Settings…", lambda: self.open_settings())
         self.tray.add_separator()
         self.tray.add_action("Quit Wisp", self.quit)
-        self.tray.on_click(self.console.open)
+        self.tray.on_click(self._tray_clicked)
+
+    def _tray_clicked(self) -> None:
+        if self.island.enabled and not self.island.machine.hidden:
+            self.island.open_tab("Chat")
+        else:
+            self.console.open()
 
     def settings_pages(self) -> list:
         return [
@@ -369,6 +414,10 @@ class WispApp(QObject):
         self.voice.on_hotkey(name, kind)
         self.dictation.on_hotkey(name, kind)
         self.circle.on_hotkey(name, kind)
+        if name == "island" and kind == "press":
+            self.island.toggle()
+        elif name == "escape":
+            self.island.escape()
 
     def _apply_theme(self, settings: Settings) -> None:
         """One place applies the design tokens: palette, stylesheet, base font, motion."""
@@ -392,12 +441,13 @@ class WispApp(QObject):
         self.tray.set_accent(settings.loadout.accent)
         self.console.set_accent(settings.loadout.accent)
         palette = theme.palette(settings.loadout.theme, settings.loadout.accent)
-        self.island.set_palette(palette)
         self.island.set_accent(settings.loadout.accent)
+        self.island.configure(settings.general.island_monitor, settings.general.island_autohide)
+        self.island.set_enabled(settings.general.show_island)
+        self.island.panel.sync_toggles(settings.audio.mic_muted, settings.audio.always_listening)
         self.confirm_card.apply_palette(palette.surface, palette.border)
-        self.bubble.apply_palette(palette.surface, palette.border)
+        self.island_bubble.apply_palette(palette.surface, palette.border)
         self.hud.accent = settings.loadout.accent
-        self.island.setVisible(settings.general.show_island)
         self.hotkeys.apply(settings)
         self.talk_action.setText(f"Talk ({self.hotkeys.display('push_to_talk')})")
         self.mute_action.blockSignals(True)

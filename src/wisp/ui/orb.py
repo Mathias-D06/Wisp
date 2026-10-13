@@ -63,6 +63,22 @@ def paint_orb(painter: QPainter, size: float, color: QColor, glow: float, scale:
     painter.drawEllipse(center, core, core)
 
 
+def orb_look(state: str, now: float, level: float = 0.0,
+             moving: bool = True) -> tuple[float, float]:
+    """(glow 0–1, core scale) of the orb in ``state`` at time ``now``; ``level`` is the smoothed
+    0–1 sound level. Shared by the Orb widget and the island, which draws the orb itself."""
+    if state == "idle":
+        breath = 0.5 + 0.5 * math.sin(2 * math.pi * now / GLOW_PERIOD_S) if moving else 0.5
+        return 0.25 + 0.2 * breath, 1.0
+    if state in ("listening", "speaking"):
+        level = level if moving else 0.0
+        return 0.45 + 0.5 * level, 1.0 + 0.22 * level
+    if state == "thinking":
+        pulse = 0.5 + 0.5 * math.sin(2 * math.pi * now / PULSE_PERIOD_S) if moving else 0.5
+        return 0.3 + 0.35 * pulse, 1.0 + 0.04 * pulse
+    return 0.0, 0.92  # offline / error: still
+
+
 class Orb(QWidget):
     clicked = Signal()
 
@@ -126,18 +142,8 @@ class Orb(QWidget):
     # ----- drawing -----------------------------------------------------------------------------
     def frame(self, now: float) -> tuple[float, float]:
         """(glow 0–1, core scale) for the current state at time ``now``."""
-        moving = motion.enabled()
         self._smoothed += (min(1.0, self.level * 1.6) - self._smoothed) * 0.35
-        if self.state == "idle":
-            breath = 0.5 + 0.5 * math.sin(2 * math.pi * now / GLOW_PERIOD_S) if moving else 0.5
-            return 0.25 + 0.2 * breath, 1.0
-        if self.state in ("listening", "speaking"):
-            level = self._smoothed if moving else 0.0
-            return 0.45 + 0.5 * level, 1.0 + 0.22 * level
-        if self.state == "thinking":
-            pulse = 0.5 + 0.5 * math.sin(2 * math.pi * now / PULSE_PERIOD_S) if moving else 0.5
-            return 0.3 + 0.35 * pulse, 1.0 + 0.04 * pulse
-        return 0.0, 0.92  # offline / error: still
+        return orb_look(self.state, now, self._smoothed, motion.enabled())
 
     def paintEvent(self, _event) -> None:
         glow, scale = self.frame(time.monotonic())

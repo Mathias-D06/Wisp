@@ -12,7 +12,7 @@ from wisp.settings import Settings
 
 log = logging.getLogger(__name__)
 
-HOTKEY_NAMES = ("push_to_talk", "dictation", "circle")
+HOTKEY_NAMES = ("push_to_talk", "dictation", "circle", "island")
 
 
 class HotkeySignals(QObject):

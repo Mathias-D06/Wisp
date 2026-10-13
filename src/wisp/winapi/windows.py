@@ -271,3 +271,49 @@ def frame_bounds(hwnd: int) -> tuple[int, int, int, int] | None:
     if result != 0:
         return None
     return rect.left, rect.top, rect.right, rect.bottom
+
+
+# ----- the island's window behaviour (D-045) -----------------------------------------------------
+GWL_EXSTYLE = -20
+WS_EX_NOACTIVATE = 0x08000000
+SWP_NOSIZE, SWP_NOMOVE, SWP_NOACTIVATE = 0x0001, 0x0002, 0x0010
+_user32.GetWindowLongPtrW.argtypes = [wintypes.HWND, ctypes.c_int]
+_user32.GetWindowLongPtrW.restype = ctypes.c_ssize_t
+_user32.SetWindowLongPtrW.argtypes = [wintypes.HWND, ctypes.c_int, ctypes.c_ssize_t]
+_user32.SetWindowLongPtrW.restype = ctypes.c_ssize_t
+_user32.SetWindowPos.argtypes = [wintypes.HWND, wintypes.HWND, ctypes.c_int, ctypes.c_int,
+                                 ctypes.c_int, ctypes.c_int, wintypes.UINT]
+_user32.GetAsyncKeyState.argtypes = [ctypes.c_int]
+_user32.GetAsyncKeyState.restype = ctypes.c_short
+
+
+def ex_style(hwnd: int) -> int:
+    return int(_user32.GetWindowLongPtrW(hwnd, GWL_EXSTYLE))
+
+
+def set_no_activate(hwnd: int) -> None:
+    """WS_EX_NOACTIVATE: clicking the window doesn't make it the foreground window (Extended
+    Window Styles, learn.microsoft.com); SetForegroundWindow still can, when allowed."""
+    style = ex_style(hwnd)
+    if not style & WS_EX_NOACTIVATE:
+        _user32.SetWindowLongPtrW(hwnd, GWL_EXSTYLE, style | WS_EX_NOACTIVATE)
+
+
+def set_foreground(hwnd: int) -> bool:
+    """Plain SetForegroundWindow (allowed after the user clicked our window: "the calling
+    process received the last input event"); no fallbacks."""
+    return bool(hwnd) and bool(_user32.SetForegroundWindow(hwnd))
+
+
+def foreground_hwnd() -> int:
+    return int(_user32.GetForegroundWindow() or 0)
+
+
+def place_below(hwnd: int, above: int) -> None:
+    """Put ``hwnd`` directly behind ``above`` in the Z order without activating it."""
+    _user32.SetWindowPos(hwnd, above, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE)
+
+
+def button_down(vk: int) -> bool:
+    """GetAsyncKeyState: the most significant bit is set while the key or button is down."""
+    return _user32.GetAsyncKeyState(vk) < 0

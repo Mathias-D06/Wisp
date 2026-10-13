@@ -24,6 +24,7 @@ HC_ACTION = 0
 WM_KEYDOWN, WM_KEYUP, WM_SYSKEYDOWN, WM_SYSKEYUP = 0x0100, 0x0101, 0x0104, 0x0105
 WM_QUIT = 0x0012
 LLKHF_INJECTED = 0x10
+VK_ESCAPE = 0x1B  # Virtual-Key Codes (learn.microsoft.com)
 
 LRESULT = ctypes.c_ssize_t
 HOOKPROC = ctypes.WINFUNCTYPE(LRESULT, ctypes.c_int, wintypes.WPARAM, wintypes.LPARAM)
@@ -66,6 +67,7 @@ class KeyboardHook:
         self._ready = threading.Event()
         self.error: str | None = None
         self.paused = False
+        self.watch_escape = False  # report Esc (never swallowed) while the island is expanded
 
     def configure(self, chords: dict[str, Chord], hold_ms: int) -> None:
         self._machine = ChordMachine(
@@ -117,6 +119,8 @@ class KeyboardHook:
                 ours = (info.flags & LLKHF_INJECTED) and info.dwExtraInfo == winput.WISP_SIGNATURE
                 if not ours:
                     down = w_param in (WM_KEYDOWN, WM_SYSKEYDOWN)
+                    if down and self.watch_escape and info.vkCode == VK_ESCAPE:
+                        self._emit("escape", "press")
                     if self._machine.key_event(int(info.vkCode), down):
                         return 1
             except Exception:

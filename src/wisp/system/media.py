@@ -12,12 +12,13 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
 log = logging.getLogger(__name__)
 
 POLL_SECONDS = 1.0
+MAX_ART_BYTES = 2_000_000
 
 
 @dataclass(frozen=True)
@@ -29,6 +30,7 @@ class MediaState:
     playing: bool = False
     position: float = 0.0  # seconds
     duration: float = 0.0  # seconds
+    art: bytes = field(default=b"", repr=False)  # thumbnail image (album art), may be empty
 
     @property
     def progress(self) -> float:
@@ -44,6 +46,29 @@ def current_position(position_s: float, last_updated: datetime | None, playing: 
         last_updated = last_updated.replace(tzinfo=UTC)
     elapsed = (now - last_updated).total_seconds()
     return position_s + max(0.0, elapsed)
+
+
+async def read_thumbnail(reference) -> bytes:
+    """The media's thumbnail (an IRandomAccessStreamReference) as image bytes; b"" when there
+    is none, it is too large or it can't be read. OpenReadAsync → DataReader.LoadAsync →
+    ReadBytes (learn.microsoft.com, Windows.Storage.Streams)."""
+    if reference is None:
+        return b""
+    try:
+        import winrt.windows.storage.streams as streams
+
+        stream = await reference.open_read_async()
+        size = int(stream.size)
+        if not 0 < size <= MAX_ART_BYTES:
+            return b""
+        reader = streams.DataReader(stream.get_input_stream_at(0))
+        loaded = await reader.load_async(size)
+        data = bytearray(loaded)
+        reader.read_bytes(data)
+        return bytes(data)
+    except Exception as exc:
+        log.info("No album art: %s", type(exc).__name__)
+        return b""
 
 
 class MediaWatcher:
@@ -80,8 +105,9 @@ class MediaWatcher:
         cached = self._props_cache
         if cached is None or cached[0] is not session or not cached[1]:
             props = await session.try_get_media_properties_async()
-            self._props_cache = (session, props.title or "", props.artist or "")
-        _, title, artist = self._props_cache
+            art = await read_thumbnail(props.thumbnail)
+            self._props_cache = (session, props.title or "", props.artist or "", art)
+        _, title, artist, art = self._props_cache
         info = session.get_playback_info()
         status = mc.GlobalSystemMediaTransportControlsSessionPlaybackStatus
         playing = info.playback_status == status.PLAYING
@@ -90,7 +116,7 @@ class MediaWatcher:
         position = current_position(timeline.position.total_seconds(), timeline.last_updated_time,
                                     playing, datetime.now(UTC))
         return MediaState(True, title, artist, session.source_app_user_model_id or "", playing,
-                          min(position, duration) if duration > 0 else position, duration)
+                          min(position, duration) if duration > 0 else position, duration, art)
 
     async def _run(self) -> None:
         while True:

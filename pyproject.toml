@@ -21,6 +21,7 @@ dependencies = [
     "winrt-Windows.Foundation==3.2.1",
     "winrt-Windows.Foundation.Collections==3.2.1",
     "winrt-Windows.Media.Control==3.2.1",
+    "winrt-Windows.Storage.Streams==3.2.1",
     "winrt-Windows.Devices.Radios==3.2.1",
     "APScheduler==3.11.3",
     "SQLAlchemy==2.1.4",

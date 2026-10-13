@@ -49,7 +49,7 @@ class MessageRow(QFrame):
 
     def set_text(self, text: str, final: bool) -> None:
         self.text, self.final = text, final
-        p = theme.current()
+        p = theme.palette_for(self)
         color = p.muted if self.role == "notice" else (p.text if final else p.secondary)
         self.body.setText(body_html(text + ("" if final else " …"), color))
         if self.icon is not None:

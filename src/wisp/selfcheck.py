@@ -137,8 +137,9 @@ def _images() -> str:
 @check("winrt")
 def _winrt() -> str:
     import winrt.windows.devices.radios
-    import winrt.windows.foundation.collections  # noqa: F401
+    import winrt.windows.foundation.collections
     import winrt.windows.media.control as mc
+    import winrt.windows.storage.streams  # noqa: F401  (album art for the island)
 
     async def manager() -> object:
         return await mc.GlobalSystemMediaTransportControlsSessionManager.request_async()

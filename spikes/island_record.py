@@ -1,0 +1,295 @@
+"""Record the island's transitions for docs/island (D-045).
+
+The real Island widget (inside a real WispApp with a throwaway data folder and sample content) is
+driven through its own event handlers and rendered frame by frame with QWidget.render on a
+simulated clock. Its windows never appear on screen (WA_DontShowOnScreen), so every frame is
+exact, no pointer can disturb it and nothing from this PC's screen can end up in an image. GIFs
+run at 50 fps: 20 ms is the shortest frame delay GIF viewers honour.
+
+Run: .venv\\Scripts\\python spikes\\island_record.py [OUT_DIR] [--stills] [--dpr 1.0]
+"""
+
+from __future__ import annotations
+
+import io
+import math
+import os
+import sys
+import tempfile
+from pathlib import Path
+
+os.environ.setdefault("WISP_DATA_DIR", tempfile.mkdtemp(prefix="wisp-island-"))
+os.environ.setdefault("WISP_NO_MICA", "1")
+_DPR = float(sys.argv[sys.argv.index("--dpr") + 1]) if "--dpr" in sys.argv else 1.0
+# Render at an exact scale whatever this PC's own scaling is (as spikes/render_ui.py --dpr).
+import ctypes  # noqa: E402
+
+ctypes.windll.user32.SetProcessDpiAwarenessContext(ctypes.c_void_p(-4))
+os.environ["QT_SCALE_FACTOR"] = f"{_DPR / (ctypes.windll.user32.GetDpiForSystem() / 96):.4f}"
+
+from PIL import Image  # noqa: E402
+from PySide6.QtCore import QPoint, QRect, Qt  # noqa: E402
+from PySide6.QtGui import QColor, QImage, QLinearGradient, QPainter  # noqa: E402
+from PySide6.QtWidgets import QApplication, QWidget  # noqa: E402
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
+
+FPS = 50
+WALL0 = 1_800_000_000.0
+
+
+class Clock:
+    def __init__(self) -> None:
+        self.now = 1000.0
+
+    def __call__(self) -> float:
+        return self.now
+
+
+class FakeMeter:
+    """A music-like peak level, so the equaliser moves in the recording."""
+
+    def __init__(self, clock: Clock) -> None:
+        self.clock = clock
+
+    def peak(self) -> float:
+        t = self.clock.now
+        return 0.45 + 0.3 * math.sin(t * 7.1) * math.sin(t * 2.3 + 1) + 0.15 * math.sin(t * 17)
+
+
+def sample_art() -> bytes:
+    """A made-up album cover: a soft two-colour gradient."""
+    image = Image.new("RGB", (96, 96))
+    for y in range(96):
+        for x in range(96):
+            image.putpixel((x, y), (40 + x, 60 + y // 2, 150 + (x + y) // 4))
+    buffer = io.BytesIO()
+    image.save(buffer, "PNG")
+    return buffer.getvalue()
+
+
+class Recorder:
+    def __init__(self, out: Path) -> None:
+        from wisp.app import WispApp
+        from wisp.ui import motion
+
+        self.out = out
+        self.app = QApplication.instance() or QApplication(sys.argv[:1])
+        motion.force(True)
+        self.wisp = WispApp(self.app, background=True)
+        self.island = island = self.wisp.island
+        self.clock = Clock()
+        island.clock = self.clock
+        island.wall = lambda: WALL0 + self.clock.now
+        island.machine.clock = self.clock
+        island.meter = FakeMeter(self.clock)
+        island._poll.stop()  # no full-screen checks against the real desktop
+        for timer in (island._hold, island._leave, island._outside, island._deadline):
+            timer.stop()
+        for widget in (island, island.shadow):
+            widget.setAttribute(Qt.WidgetAttribute.WA_DontShowOnScreen)
+        island.enabled = True
+        island.show()
+        island._frame.stop()
+        self.frames: list[Image.Image] = []
+        self.backdrop = self._backdrop()
+        chat = island.panel.chat
+        chat.add("user", "What's on my calendar this afternoon?", True, 1)
+        chat.add("model", "You have a dentist appointment at 3 pm and a call with Ana at 4.",
+                 True)
+
+    def _backdrop(self) -> QImage:
+        size = self.island.size() * self.island.devicePixelRatioF()
+        image = QImage(size, QImage.Format.Format_ARGB32_Premultiplied)
+        image.setDevicePixelRatio(self.island.devicePixelRatioF())
+        painter = QPainter(image)
+        gradient = QLinearGradient(0, 0, self.island.width(), self.island.height())
+        gradient.setColorAt(0.0, QColor("#7a8ba3"))
+        gradient.setColorAt(1.0, QColor("#c9b8a6"))
+        painter.fillRect(QRect(QPoint(0, 0), self.island.size()), gradient)
+        painter.end()
+        return image
+
+    # ----- driving ------------------------------------------------------------------------------
+    def voice(self, state: str, text: str = "", level: float = 0.0) -> None:
+        self.island._on_visual(state, level, text)
+
+    def advance(self, seconds: float, each=None) -> None:
+        for _ in range(max(1, round(seconds * FPS))):
+            self.clock.now += 1 / FPS
+            if each is not None:
+                each(self.clock.now)
+            self.island.machine.update()
+            self.island._tick()
+            self.app.processEvents()
+            self.frames.append(self.capture())
+
+    def capture(self, crop: QRect | None = None) -> Image.Image:
+        island = self.island
+        image = QImage(self.backdrop)
+        painter = QPainter(image)
+        if island.shadow.isVisible():
+            island.shadow.render(painter, QPoint(), renderFlags=QWidget.RenderFlag.DrawChildren)
+        island.render(painter, QPoint(), renderFlags=QWidget.RenderFlag.DrawChildren)
+        painter.end()
+        image = image.convertToFormat(QImage.Format.Format_RGB888)
+        pil = Image.frombuffer("RGB", (image.width(), image.height()),
+                               bytes(image.constBits()), "raw", "RGB", image.bytesPerLine(), 1)
+        return pil.copy()
+
+    def save_gif(self, name: str, height: int | None = None) -> Path:
+        frames = self.frames
+        if height is not None:
+            ratio = self.island.devicePixelRatioF()
+            frames = [f.crop((0, 0, f.width, int(height * ratio))) for f in frames]
+        path = self.out / f"{name}.gif"
+        frames[0].save(path, save_all=True, append_images=frames[1:], duration=1000 // FPS,
+                       loop=0, optimize=True, disposal=1)
+        self.frames = []
+        print(f"saved {path} ({len(frames)} frames)")
+        return path
+
+    def still(self, name: str, height: int | None = None) -> None:
+        frame = self.capture()
+        if height is not None:
+            frame = frame.crop((0, 0, frame.width, int(height * self.island.devicePixelRatioF())))
+        frame.save(self.out / f"{name}.png")
+
+    def settle(self) -> None:
+        self.advance(1.0)
+        self.frames = []
+
+    # ----- the recordings ----------------------------------------------------------------------
+    def voice_flow(self) -> None:
+        """idle → listening → thinking → speaking → idle."""
+        self.settle()
+        self.advance(0.5)
+        self.island._on_transcript("user", "", False, 2)
+        self.voice("listening", "Listening…", 0.2)
+
+        def talk(t):
+            self.voice("listening", "Listening…", 0.25 + 0.2 * abs(math.sin(t * 6.3)))
+
+        self.advance(1.6, talk)
+        self.voice("thinking", "Thinking…")
+        self.advance(1.2)
+        reply = "It's 2:40 pm. Your dentist appointment is in twenty minutes."
+        self.island._on_transcript("model", reply, False, 0)
+
+        def speak(t):
+            self.voice("speaking", "Speaking", 0.3 + 0.25 * abs(math.sin(t * 8.1)))
+
+        self.advance(2.0, speak)
+        self.voice("idle", "Ready")
+        self.advance(1.0)
+        self.save_gif("voice_flow", height=150)
+
+    def split(self) -> None:
+        """Music, then voice while the music plays: the island splits."""
+        from wisp.system.media import MediaState
+
+        self.settle()
+        self.island.show_media(MediaState(True, "Weightless", "Marconi Union", "Spotify", True,
+                                          95, 480, sample_art()))
+        self.advance(1.4)
+        self.voice("listening", "Listening…", 0.3)
+        self.advance(2.0, lambda t: self.voice("listening", "Listening…",
+                                               0.25 + 0.2 * abs(math.sin(t * 6.3))))
+        self.voice("idle", "Ready")
+        self.advance(1.2)
+        self.save_gif("split_music_and_voice", height=150)
+        self.island.show_media(MediaState())
+        self.settle()
+
+    def banner(self) -> None:
+        """A routine finishes: banner, then back to idle by itself."""
+        self.settle()
+        self.advance(0.4)
+        self.island.notify("Routine done: Morning apps", "✓ Opened Unity Hub\n✓ Opened Spotify")
+        self.advance(4.2)
+        self.save_gif("banner_routine_done", height=170)
+
+    def expand_collapse(self) -> None:
+        """Hover (slight grow), hold to expand, then collapse."""
+        self.settle()
+        self.advance(0.3)
+        self.island._set_hover(True)
+        self.advance(0.35)
+        self.island.expand()
+        self.advance(1.4)
+        self.island._set_hover(False)
+        self.island.collapse()
+        self.advance(1.0)
+        self.save_gif("expand_and_collapse")
+
+    def interrupt(self) -> None:
+        """Expanding, interrupted half-way by a collapse: it turns smoothly, no jump."""
+        self.settle()
+        self.advance(0.2)
+        self.island.expand()
+        self.advance(0.16)
+        self.island.collapse()
+        self.advance(0.9)
+        self.save_gif("interrupted_expand")
+
+    def stills(self) -> None:
+        from wisp.system.media import MediaState
+
+        self.settle()
+        self.still("idle", 120)
+        for state, text, level in (("listening", "Listening…", 0.5), ("thinking", "Thinking…", 0),
+                                   ("speaking", "Speaking", 0.5)):
+            self.voice(state, text, level)
+            if state == "speaking":
+                self.island._on_transcript("model", "It's 2:40 pm. Your dentist is at 3.", False)
+            self.settle()
+            self.still(state, 120)
+        self.voice("idle", "Ready")
+        self.island.show_media(MediaState(True, "Weightless", "Marconi Union", "Spotify", True,
+                                          95, 480, sample_art()))
+        self.settle()
+        self.still("music", 120)
+        self.voice("listening", "Listening…", 0.4)
+        self.settle()
+        self.still("split", 120)
+        self.voice("idle", "Ready")
+        self.island.show_media(MediaState())
+        self.island.machine.set_countdown("Call the dentist", WALL0 + self.clock.now + 272)
+        self.settle()
+        self.still("countdown", 120)
+        self.island.machine.set_countdown(None)
+        self.wisp.feedback.show_state("Dictating… release to insert", "success", lambda: 0.4)
+        self.settle()
+        self.still("dictation", 120)
+        self.wisp.feedback.hide_now()
+        self.island.notify("Reminder", "Call the dentist (due 15:00)")
+        self.settle()
+        self.still("banner", 140)
+        self.island.machine.dismiss()
+        self.island.expand()
+        self.settle()
+        self.still("expanded")
+        self.island.collapse()
+        self.settle()
+
+
+def main() -> None:
+    args = [a for a in sys.argv[1:] if not a.startswith("--")]
+    if "--dpr" in sys.argv:
+        args = [a for a in args if a != sys.argv[sys.argv.index("--dpr") + 1]]
+    out = Path(args[0] if args else "spikes/out/island")
+    out.mkdir(parents=True, exist_ok=True)
+    recorder = Recorder(out)
+    if "--stills" in sys.argv:
+        recorder.stills()
+    else:
+        recorder.voice_flow()
+        recorder.split()
+        recorder.banner()
+        recorder.expand_collapse()
+        recorder.interrupt()
+    recorder.wisp.quit()
+
+
+if __name__ == "__main__":
+    main()

@@ -73,6 +73,7 @@ While tainted, every confirm-tier call asks (auto-approve is ignored) and some S
 on the UI (typing, clicking by name, opening URLs) also ask.
 
 ## D-013 Toasts via the tray icon
+*Updated by D-045: notifications are island banners; the tray toast is the fallback when the island is off or hidden by a full-screen app.*
 Gap: the stack lists pywinrt toasts, which need an AppUserModelID registered through a Start-menu
 shortcut for unpackaged apps. Decision: `QSystemTrayIcon.showMessage`, which Windows displays as a
 notification without extra registration. Source: doc.qt.io/qt-6/qsystemtrayicon.html.
@@ -151,6 +152,7 @@ UIPI silently drops SendInput aimed at elevated windows. If the target window is
 leaves the text on the clipboard and asks the user to press Ctrl+V.
 
 ## D-026 Dictation feedback
+*Updated by D-045: dictation reports to the island; this HUD is the fallback when the island is off.*
 A small "HUD" pill near the bottom of the active screen shows Dictating / Transcribing / Inserted.
 It never takes focus or mouse input (`WindowDoesNotAcceptFocus`, `WA_ShowWithoutActivating`,
 `WindowTransparentForInput`), so the caret stays in the target field.
@@ -164,6 +166,7 @@ first-chance COM error (0x8001010d) raised inside Qt's provider while it serves 
 run passes with exit code 0 (5 consecutive full runs on 2026-10-12).
 
 ## D-028 Circle to Ask mechanics
+*Updated by D-045: the answer plays in the island and ends as an "Answer" banner; the bubble beside the loop is the fallback when the island is off.*
 Gap: how the gesture, the question and the image reach the model. Decisions:
 * One overlay per QScreen, showing that screen's frozen `grabWindow(0)` screenshot (taken before
   any overlay appears, so the crop is exactly what the user circled). Crop rect = logical bbox ×
@@ -229,6 +232,7 @@ Documented and used as such: volume (Core Audio via pycaw), brightness (WMI
 (`LockWorkStation`), wallpaper (`SystemParametersInfoW`).
 
 ## D-031 Island behaviour
+*Superseded by D-045…D-047 (the Dynamic Island-style island). The tab, media and clipboard details below still hold.*
 Gap: the brief gives the tabs but not the interaction details. Decisions:
 * The pill (340×56) sits top-centre of the primary screen's work area, frameless, always on top,
   `Tool` window (no taskbar button) shown without activation. Hover for 140 ms or a wheel
@@ -583,3 +587,188 @@ Decisions:
     tree. The numbers are in PROGRESS.md.
 * **Tests.** Tests pin motion off (conftest) unless they test motion itself. Island animation
   tests park the hover timers, because the real pointer may rest where the Island appears.
+
+## D-045 The island replaces the pop-ups (brief of 2026-10-13, part 3)
+* **One surface.** A black, Dynamic Island-style shape at the top centre replaces the console
+  window, the old Island pill, the dictation HUD, the Circle to Ask answer bubble and Wisp's
+  tray notifications. It has six presentations:
+  * **idle:** a 180×32 pill with a small orb;
+  * **sliver:** a thin 120×5 line, used only when auto-hide is on;
+  * **activity:** a wider pill showing one live thing;
+  * **split:** the activity pill plus a detached 36 px circle for a second activity;
+  * **banner:** a 400×76 card for an event;
+  * **expanded:** a 720×580 panel.
+
+  The island is black in either theme, so its content uses the dark palette
+  (`theme.palette_for`).
+* **Activities.** Each activity shows one thing at a glance:
+  * listening: orb plus the live mic waveform;
+  * thinking: orb pulse plus "Thinking…";
+  * speaking: orb, the first words of the reply, and output level bars;
+  * dictation: mic icon, "Dictating…" and a level meter;
+  * Circle to Ask: its prompt, in the dictation style;
+  * a short status, such as "Inserted 12 words";
+  * music: album art plus an equaliser driven by the real output peak meter
+    (IAudioMeterInformation);
+  * countdown: the next reminder or routine due within 10 minutes, as m:ss.
+* **Priority, defined once** (`ui/island/machine.py`, `TIERS`): active voice > banner > timer >
+  music > idle.
+  * Active voice covers listening, thinking, speaking, dictation and Circle to Ask.
+  * When two live activities run at once, the higher one takes the pill and the next one goes
+    in the split circle.
+  * Banners wait in a queue while voice is active and show one at a time. Each holds 3 s, longer
+    while hovered, and gets another 1.5 s after the pointer leaves.
+  * The same title and line already queued is refreshed, not repeated. The queue keeps the
+    newest 5, and banners older than 30 s are dropped.
+  * A banner that active voice interrupts goes back to the front of the queue and starts again
+    afterwards.
+  * The user's own actions win over everything: an expanded island stays expanded (banners
+    wait), and a full-screen app hides the island.
+* **Services send events.**
+  * Voice: orb state, transcript and notices. Errors become a red "Voice problem" banner that
+    retries on click.
+  * Dictation and Circle to Ask use `IslandFeedback` (the HUD's interface) and `IslandBubble`
+    (the answer becomes an "Answer" banner that opens the Chat tab).
+  * Media: now playing and album art.
+  * The reminder timer: the countdown.
+  * `app.notify`: banners with an icon and a tab to open (Reminder → Today, Routine done →
+    Today).
+  * When the island is switched off (Settings → General), or hidden by a full-screen app,
+    everything falls back to the old HUD, the bubble and Windows notifications, so nothing is
+    lost.
+* **Expanded panel.** It holds:
+  * a header: orb, status, API-key prompt, Retry, always listening, mute, "Open in window" and
+    Settings;
+  * now playing with controls;
+  * the tabs: **Chat** first (the transcript and a text box, replacing the console), then
+    Controls, Today, Stats, Clipboard, Apps, Wallpaper and Power.
+
+  The console window stays as a fallback: "Open in window", the tray menu, and when the island
+  is off. Both views share `ui/chat.py`.
+* **Interaction.**
+  * Hover grows the pill 4 %. Hovering for 300 ms, clicking or scrolling down expands it.
+  * Scrolling up on the island's top band collapses it, or dismisses a banner.
+  * In the expanded state, the island collapses 0.5 s after the pointer leaves (unless a text
+    box holds unsent text or a menu is open), on Esc, or on a click outside. Clicks outside are
+    detected with GetAsyncKeyState, polled every 50 ms only while the island is expanded and
+    the pointer is outside.
+  * Clicks on the compact pill:
+    * the orb: talk;
+    * the right half of the music pill: play/pause, without expanding;
+    * a banner: its action, then it is dismissed;
+    * anywhere else: expand.
+  * Swiping up on a banner dismisses it.
+  * Right-click opens a menu: Settings…, Mute microphone, Open in window, Quit Wisp.
+  * A hold hotkey (default Ctrl+Alt+Space, Settings → Hotkeys and audio) toggles the expanded
+    panel.
+  * Esc is reported by the keyboard hook while the island is expanded. It is never swallowed.
+* **What stays separate.** The confirmation card (D-011) stays its own window. It is a safety
+  prompt that must not be queued behind banners or time out with them, and it sits below the
+  compact island. The circle overlay is an input surface, not a pop-up.
+* **Settings.**
+  * General: show the island; which display it uses ("Main display" or "The display with the
+    pointer", followed while idle); and shrinking to a sliver after 10 s idle (off by
+    default).
+  * Hotkeys and audio: the island hotkey.
+* **Tokens.** Every island size, spring constant and timing is in `theme.ISLAND`
+  (IslandTokens).
+* **Recordings.** `docs/island/` holds GIFs rendered from the real widget by
+  `spikes/island_record.py`:
+  * the real Island in a real WispApp with sample data;
+  * driven through its own handlers on a simulated clock at 50 fps;
+  * rendered with QWidget.render while its windows never reach the screen.
+
+  This was chosen over a screen recording, which would also capture whatever is around the
+  island on this PC's screen. MT-77 asks for a real screen recording of your own if you want
+  one.
+* Supersedes the parts of D-013, D-026, D-028 and D-031 that described the tray toasts, the
+  HUD, the answer bubble and the old pill. Those remain as the fallbacks above.
+
+## D-046 Island window behaviour on Windows
+* **Window.**
+  * The window is `Qt::Tool | FramelessWindowHint | WindowStaysOnTopHint` with
+    `WA_TranslucentBackground` and `WA_ShowWithoutActivating`.
+  * WS_EX_NOACTIVATE is set with SetWindowLongPtrW after creation. Per the docs, clicking such a
+    window never makes it the foreground window, and its tool-window style keeps it out of the
+    taskbar and Alt+Tab.
+  * Qt's own `WindowDoesNotAcceptFocus` sets the same style, but Qt then refuses to activate the
+    window (`QWindow::requestActivate`), and the text box must be able to take focus.
+  * The probes confirm WS_EX_NOACTIVATE | TOOLWINDOW | TOPMOST | LAYERED, and that showing the
+    window never changes the foreground window.
+* **Focus.**
+  * The one exception is a click into a text box: the island calls SetForegroundWindow. That is
+    allowed because the calling process received the last input event.
+  * The app that was in front is remembered and gets the foreground back when the island
+    collapses.
+  * The test process itself is refused SetForegroundWindow (it never received input), so the
+    real check is manual: MT-70.
+* **Canvas.** A fixed transparent canvas sized for the largest state plus overshoot and shadow
+  (829×649 logical px). The native window is never resized while the shape morphs, so there is
+  no resize flicker. The shape is a QPainterPath (antialiased rounded rect, plus an ellipse for
+  the split) filled pure black, with a 1 px inner highlight that fades from the top edge.
+* **Click-through.**
+  * The input region is the visible shape, grown 1 px for the antialiased edge. It is set with
+    `QWindow::setMask`, documented as an input hint and implemented with SetWindowRgn.
+  * It is updated whenever the shape moves by half a pixel, which costs 0.4 ms per call on this
+    PC.
+  * Layered windows already let alpha-0 pixels through (Window Features docs). The explicit
+    region also covers antialiased pixels and stays exact during morphs.
+  * A probe and a test confirm with WindowFromPoint that points beside and below the pill
+    belong to other windows, and points inside belong to the island.
+* **Shadow.**
+  * A window region also clips drawing, so the soft shadow lives in a second click-through
+    window (`WindowTransparentForInput` → WS_EX_TRANSPARENT).
+  * It is placed directly behind the island with SetWindowPos(…, SWP_NOACTIVATE).
+  * It draws a nine-slice of one pre-blurred rounded square (Pillow GaussianBlur). Strength
+    rises with the shape's height, so compact pills have none.
+* **Placement.**
+  * Top centre of the chosen display's work area (below a top-docked taskbar).
+  * On a monitor change, `QWindow::setScreen` and a fresh input region at the new device pixel
+    ratio. Qt handles per-monitor DPI.
+* **Full-screen hiding** (`winapi/fullscreen.py`, polled once a second while the island is on).
+  The island hides when either:
+  * SHQueryUserNotificationState reports QUNS_RUNNING_D3D_FULL_SCREEN or
+    QUNS_PRESENTATION_MODE; or
+  * the foreground window covers the island's whole monitor. That means:
+    * its DWM extended frame bounds cover MONITORINFO.rcMonitor of the monitor
+      MonitorFromWindow gives;
+    * it is not maximized (IsZoomed: a maximized window covers the monitor when the taskbar
+      auto-hides);
+    * it is not the desktop, the taskbar or Wisp.
+
+  QUNS_BUSY alone isn't used: the docs don't say which monitor it refers to.
+
+## D-047 Island motion and cost
+* **Springs.**
+  * Width, height and the split circle (diameter and gap) are unit-mass damped springs, stepped
+    with the exact closed-form solution, so the motion is the same at any frame rate.
+  * Retargeting keeps position and velocity, so an interrupted morph turns smoothly from where
+    it is.
+  * Constants: growing uses k=450, ζ=0.82 (about 1 % overshoot, a few pixels). Shrinking uses
+    k=600, ζ=1.0, clamped at the target so it never overshoots. Changes under 60 px use k=700,
+    ζ=0.9.
+  * The corner radius is not a spring: it is min(height/2, 26), so compact shapes are always
+    perfect capsules and the expanded panel settles at 26 px.
+  * Measured: a 548 px expand settles in about 0.45 s, and small morphs in about 0.15 s.
+* **Content.**
+  * Compact content is painted with QPainter, so it can fade and scale while the shape morphs.
+    Outgoing content fades over 120 ms while shrinking to 0.96. Incoming content starts 40 ms
+    later and fades in over 180 ms while growing from 0.96.
+  * The expanded panel morphs as a snapshot (QWidget.grab), whose rows fade in 20 ms apart. The
+    live panel appears once the shape has settled.
+  * Nothing loops while idle except the orb's slow glow.
+* **Motion off** (Windows "Animation effects" off, or Reduce motion): the shape jumps to its
+  target and content crossfades in 100 ms with no scaling. Meters rest at a neutral height.
+* **One frame timer**, at a rate that matches what is moving:
+  * 16 ms while springs or fades run;
+  * 33 ms for voice meters;
+  * 50 ms for the music equaliser;
+  * 250 ms for a countdown;
+  * 125 ms for the idle orb glow (none with motion off);
+  * stopped while the live panel shows or the island is hidden.
+
+  Each frame repaints only the area that changed.
+* **Measured on this PC.** Frame rate is from `spikes/island_fps.py`, idle CPU from
+  `spikes/idle_cpu.py`; both are logged in PROGRESS.md.
+  * Morphs run at 62 fps, with p95 frame time ≤ 18 ms and a paint of 1–2 ms.
+* Idle CPU, measured the same way for both (`spikes/island_idle_cpu.py`: in-process, island visible, 30 s warm-up, then 60 s): the old island (commit 2d0f99c) used 5.99 % of one core; the new one uses 0.44 % with the orb's glow and 0.42 % with Reduce motion, so the glow costs almost nothing. Hidden behind a full-screen app (`spikes/idle_cpu.py`, a separate process): 0.21 %.

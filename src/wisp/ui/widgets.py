@@ -35,7 +35,7 @@ class IconButton(QToolButton):
         self.refresh()
 
     def refresh(self, *_args) -> None:
-        p = theme.current()
+        p = theme.palette_for(self)
         name = self._checked_icon if self.isChecked() and self._checked_icon else self._icon
         color = p.accent if self.isChecked() else p.secondary
         self.setIcon(iconset.icon(name, color, disabled=p.muted))
@@ -81,7 +81,7 @@ class ToggleSwitch(QCheckBox):
         return self.rect().contains(pos)
 
     def paintEvent(self, _event) -> None:
-        p = theme.current()
+        p = theme.palette_for(self)
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         top = (self.height() - self.HEIGHT) / 2
