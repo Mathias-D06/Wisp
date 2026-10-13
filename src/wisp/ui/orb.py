@@ -56,6 +56,11 @@ class Orb(QWidget):
             self.clicked.emit()
         super().mousePressEvent(event)
 
+    def mouseDoubleClickEvent(self, event) -> None:
+        """Qt reports a double-click as a second press; one toggle per double-click is enough
+        (two would start and immediately stop listening)."""
+        event.accept()
+
     def paintEvent(self, _event) -> None:
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)

@@ -32,7 +32,8 @@ def describe_error(exc: BaseException, model: str | None = None) -> str:
     from google.genai import errors
 
     if isinstance(exc, errors.APIError):
-        text = f"{exc.status or ''} {exc.message or ''}".lower()
+        details = exc.details if isinstance(exc.details, str) else ""  # WebSocket close reason
+        text = f"{exc.status or ''} {exc.message or ''} {details}".lower()
         if "api_key_invalid" in text or "api key not valid" in text:
             return "Google rejected this API key. Check it at https://aistudio.google.com/api-keys."
         if "billing" in text or "location is not supported" in text:

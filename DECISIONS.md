@@ -381,3 +381,80 @@ Decisions:
   example after a cancel or a reconnect), Wisp sends 32 ms of silence.
 * A connection the server closes now shows its reason (the close reason, or "no reason given")
   instead of "None".
+
+## D-039 What reaches Gemini: microphone format, speech gate, pre-roll, debug audio
+Problem (first real test, 2026-10-13): "what time is it" appeared as "¿Qué?" and "我才没睡。", and
+Wisp answered in those languages. Investigation:
+* The pipeline sent correctly labelled audio: int16, mono, 16 kHz, `audio/pcm;rate=16000`,
+  through MME. But the turns were very short. The microphone was open for 221 ms (the orb treated
+  a double-click as two clicks) and 81 ms (a quick click on "Hold to talk").
+* A probe through Wisp's own session with the user's key showed the cause. 4 s of silence was
+  transcribed as "¿Qué tal?" and faint hiss as "¿Qué?", with a Spanish reply. The same session
+  transcribed 10 clear English phrases perfectly. Gemini's transcriber invents short
+  foreign-language phrases when given silence or near-silence.
+* The user's microphone is a 4-channel array ("Microphone Array (AMD Audio Device)", 44.1 kHz
+  shared format). Wisp had asked Windows to downmix it to mono. Silent or reference channels in
+  such arrays lower the level, which makes near-silence more likely.
+
+Decisions:
+* **Capture in the device's native format** (rate, up to 8 channels, float32) when the device
+  supports it, and convert in Wisp (`audio/convert.py`):
+  - average only the *active* channels (within 10 dB of the loudest, using smoothed power);
+  - apply a Blackman windowed-sinc low-pass at 7 kHz;
+  - interpolate to 16 kHz, keeping filter and interpolation state between chunks;
+  - convert float to int16 with clipping.
+
+  If the native format is refused, Wisp falls back to asking Windows for 16 kHz mono int16
+  (D-007). The format used is logged, and after 1 s of audio so is the level of each channel.
+* **Speech gate.** A push-to-talk turn opens only once a 32 ms frame reaches −45 dBFS (quiet
+  rooms sit around −60) and 0.2 s of audio has arrived. Everything held back is then sent in
+  order.
+  - A turn with no speech is dropped with "Wisp didn't hear any speech…".
+  - A tap is dropped with "too short…".
+  - Silent dictation is never sent.
+  - A turn carrying an image (Circle to Ask) is always sent.
+* **Pre-roll.** The chord machine now reports `arm` (keys down) and `disarm` (it won't fire).
+  On `arm` the push-to-talk hotkey opens the microphone, and on `press` it sends the last
+  300 ms, so the first word spoken during the 250 ms hold isn't lost. Only push-to-talk does
+  this: Ctrl+Win and Ctrl+Shift are part of common shortcuts, and opening the mic for them would
+  flash Windows' microphone indicator constantly.
+* **Clicks.**
+  - The console's Talk button works as hold-to-talk, or click to start and click again to send.
+    A press shorter than 350 ms counts as a click.
+  - The orb ignores Qt's double-click event and debounces toggles within 400 ms.
+* **Debug audio.** Settings → Hotkeys and audio → "Save the audio sent to Gemini" writes the
+  exact bytes of each voice turn, recorded where they are sent and including any safety
+  silence, plus each dictation clip. The files are WAVs in `%APPDATA%\Wisp\debug`, and the newest
+  20 are kept.
+* **Test microphone** in the same page records 3 s, reports level, peak, device format,
+  per-channel levels and whether speech was heard, and saves the clip.
+
+## D-040 Language lock
+* The docs (live-api/capabilities) say native-audio models "automatically choose the
+  appropriate language and don't support explicitly setting the language code". The supported
+  control is the system instruction.
+* Wisp's instruction now says: the user speaks <language>; always understand and reply in it,
+  even if the audio is unclear (then ask, in that language, to repeat); switch only when the user
+  explicitly asks.
+* The API reference documents `AudioTranscriptionConfig.languageCodes` as "BCP-47 language codes
+  providing hints about the languages present in the audio". Wisp sends the code (e.g. `en-GB`)
+  for input and output transcription. The capabilities page adds that the transcription language
+  is inferred from the model's response, so locking the reply language also steadies the
+  transcript.
+* The setting's default is **English (UK)**, and the list offers English (UK), English (US) and
+  16 other languages with codes. A free-text language gets the instruction only.
+* Saved settings with the old plain "English" (the only English option before) load as English
+  (UK).
+* Dictation is told that the speaker normally speaks <language> and to use its spelling, but to
+  keep another language if one is clearly spoken.
+
+## D-041 Voice errors and the transcript
+* **Error text.** A closed connection's reason (`APIError.details` for WebSocket closes) is used
+  for classification and shown to the user. A bad key gives "Google rejected this API key…";
+  anything else gives "Gemini closed the voice session (<reason>)…". The log line has the
+  exception type, code, status, message and details.
+* **Retry.** After a voice error the console shows a Retry button. Nothing silently switches to
+  another mode.
+* **Transcript.** The user's words for a turn are one row keyed by the turn number, updated in
+  place even when transcription chunks arrive after Wisp has started answering. Typed text is
+  its own row. Confirmation evidence (`user_final`, D-011) is unchanged.

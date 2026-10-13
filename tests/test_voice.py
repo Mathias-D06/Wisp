@@ -52,8 +52,8 @@ class FakeMic:
     def set_muted(self, muted):
         self.muted = muted
 
-    def preroll(self):
-        return b""
+    def preroll(self, ms=None):
+        return b"pre" if ms else b""
 
 
 class FakePlayer:
@@ -89,7 +89,8 @@ def names(live):
 def test_push_to_talk_round_trip(qtbot, tmp_path):
     voice, live, mic, player, _, _ = make(tmp_path)
     voice.on_hotkey("push_to_talk", "press")
-    assert names(live) == ["begin_turn"] and "voice" in mic.users and "voice" in mic.subs
+    assert names(live) == ["begin_turn", "push_audio"]  # pre-roll from the arming time
+    assert "voice" in mic.users and "voice" in mic.subs
     assert player.cleared == 1  # barge-in
     assert voice.compute_visual()[0] == "listening"
     voice.on_hotkey("push_to_talk", "release")
@@ -103,15 +104,53 @@ def test_push_to_talk_round_trip(qtbot, tmp_path):
 def test_orb_click_toggles(qtbot, tmp_path):
     voice, live, *_ = make(tmp_path)
     voice.toggle_talk()
+    voice.toggle_talk()  # a double-click: the second click is ignored
+    assert names(live) == ["begin_turn"]
+    voice._orb_at -= 1.0  # a separate click later
     voice.toggle_talk()
     assert names(live) == ["begin_turn", "end_turn"]
+
+
+def test_talk_button_click_or_hold(qtbot, tmp_path, monkeypatch):
+    from wisp import voice as voice_module
+
+    clock = {"t": 100.0}
+    monkeypatch.setattr(voice_module.time, "monotonic", lambda: clock["t"])
+    voice, live, _mic, _, _, messages = make(tmp_path)
+    voice.talk_pressed()  # click: press and release quickly → keeps listening
+    clock["t"] += 0.1
+    voice.talk_released()
+    assert names(live) == ["begin_turn"] and voice.talking
+    assert "click Talk again" in messages[-1]
+    clock["t"] += 3
+    voice.talk_pressed()  # second click sends
+    voice.talk_released()
+    assert names(live) == ["begin_turn", "end_turn"] and not voice.talking
+    voice.talk_pressed()  # hold: press, speak, release → sends on release
+    clock["t"] += 2
+    voice.talk_released()
+    assert names(live) == ["begin_turn", "end_turn", "begin_turn", "end_turn"]
+
+
+def test_push_to_talk_hotkey_opens_mic_on_arm_and_sends_preroll(qtbot, tmp_path):
+    voice, live, mic, *_ = make(tmp_path)
+    voice.on_hotkey("push_to_talk", "arm")
+    assert "ptt-arm" in mic.users and names(live) == []
+    voice.on_hotkey("push_to_talk", "disarm")  # e.g. Win+Alt+R: nothing sent, mic closed
+    assert not mic.users and names(live) == []
+    voice.on_hotkey("push_to_talk", "arm")
+    voice.on_hotkey("push_to_talk", "press")
+    assert names(live) == ["begin_turn", "push_audio"] and live.calls[1][1] == b"pre"
+    assert mic.users == {"voice"}
+    voice.on_hotkey("push_to_talk", "release")
+    assert names(live)[-1] == "end_turn" and not mic.users
 
 
 def test_cancel_drops_turn(qtbot, tmp_path):
     voice, live, mic, *_ = make(tmp_path)
     voice.on_hotkey("push_to_talk", "press")
     voice.on_hotkey("push_to_talk", "cancel")
-    assert names(live) == ["begin_turn", "cancel_turn"] and not mic.users
+    assert names(live) == ["begin_turn", "push_audio", "cancel_turn"] and not mic.users
 
 
 def test_no_key_prompts_to_add_key(qtbot, tmp_path):
@@ -170,7 +209,7 @@ def test_always_listening_follows_settings_from_any_source(qtbot, tmp_path):
 
 
 def test_too_short_turn_shows_a_hint(qtbot, tmp_path):
-    from wisp.voice import TOO_SHORT_MESSAGE, VoiceController, VoiceSignals, make_callbacks
+    from wisp.voice import DROPPED_MESSAGES, VoiceController, VoiceSignals, make_callbacks
 
     signals = VoiceSignals()
     voice = VoiceController(FakeLive(), FakeMic(), FakePlayer(), signals,
@@ -179,5 +218,9 @@ def test_too_short_turn_shows_a_hint(qtbot, tmp_path):
     messages: list[str] = []
     voice.message.connect(messages.append)
     player = SimpleNamespace(feed=lambda pcm: None, clear=lambda: None)
-    make_callbacks(signals, player, lambda text: None).turn_too_short()
-    qtbot.waitUntil(lambda: messages == [TOO_SHORT_MESSAGE], timeout=1000)
+    callbacks = make_callbacks(signals, player, lambda text: None)
+    callbacks.turn_dropped("short")
+    callbacks.turn_dropped("silent")
+    qtbot.waitUntil(lambda: messages == [DROPPED_MESSAGES["short"], DROPPED_MESSAGES["silent"]],
+                    timeout=1000)
+    assert "Test microphone" in DROPPED_MESSAGES["silent"]

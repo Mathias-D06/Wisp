@@ -9,6 +9,8 @@ import pytest
 from google.genai import errors
 
 from tests.fakes import (
+    SILENT_CHUNK,
+    SPEECH_CHUNK,
     DirectUi,
     FakeLiveServer,
     audio_msg,
@@ -46,7 +48,8 @@ class Recorder:
         self.user_final: list[str] = []
         self.model_final: list[str] = []
         self.tools: list[tuple[str, str]] = []
-        self.too_short = 0
+        self.dropped: list[str] = []
+        self.user_rows: list[tuple[int, str, bool]] = []
         self.playing = False
 
     def callbacks(self) -> LiveCallbacks:
@@ -57,8 +60,6 @@ class Recorder:
         def on_interrupt():
             self.interrupts += 1
 
-        def on_too_short():
-            self.too_short += 1
 
         return LiveCallbacks(
             state=lambda s, d: self.states.append((s, d)),
@@ -67,7 +68,8 @@ class Recorder:
             user_final=self.user_final.append,
             model_text=model_text,
             tool_activity=lambda n, s: self.tools.append((n, s)),
-            turn_too_short=on_too_short,
+            turn_dropped=self.dropped.append,
+            user_text=lambda turn, text, final: self.user_rows.append((turn, text, final)),
         )
 
 
@@ -361,7 +363,7 @@ async def test_tap_sends_nothing_and_hints(env):
     env.manager.begin_turn()
     speak(env.manager, chunks=2)  # 64 ms: an accidental tap
     env.manager.end_turn()
-    await until(lambda: env.rec.too_short == 1)
+    await until(lambda: env.rec.dropped == ["short"])
     await asyncio.sleep(0.1)
     assert "activity_start" not in env.server.current.kinds()
     assert "audio" not in env.server.current.kinds()
@@ -380,7 +382,7 @@ async def test_turn_opens_once_enough_audio_arrived(env):
     await until(lambda: env.server.current.kinds().count("audio") == 7)
     env.manager.end_turn()
     await until(lambda: env.server.current.kinds()[-1:] == ["activity_end"])
-    assert env.rec.too_short == 0
+    assert env.rec.dropped == []
 
 
 async def test_short_turn_with_image_is_sent_with_silence(env):
@@ -396,7 +398,7 @@ async def test_short_turn_with_image_is_sent_with_silence(env):
     assert kinds == ["activity_start", "audio", "activity_end"]
     silence = next(v for k, v in env.server.current.sent if k == "audio")
     assert silence.data == session_module.SILENT_CHUNK
-    assert "video" in env.server.current.kinds() and env.rec.too_short == 0
+    assert "video" in env.server.current.kinds() and env.rec.dropped == []
 
 
 async def test_cancel_before_open_sends_nothing(env):
@@ -406,7 +408,7 @@ async def test_cancel_before_open_sends_nothing(env):
     speak(env.manager, chunks=3)
     env.manager.cancel_turn()
     await asyncio.sleep(0.1)
-    assert env.server.current.kinds() == [] and env.rec.too_short == 0
+    assert env.server.current.kinds() == [] and env.rec.dropped == []
     assert not env.manager.turn_active
 
 
@@ -424,7 +426,7 @@ async def test_sender_never_sends_an_empty_activity(env):
     assert session.sent == ["activity_start", "audio", "activity_end"]
     session.sent.clear()
     await env.manager._send_item(session, 1, "activity_start", None)
-    await env.manager._send_item(session, 1, "audio", b"\x01\x00" * 512)
+    await env.manager._send_item(session, 1, "audio", SPEECH_CHUNK)
     await env.manager._send_item(session, 1, "activity_end", None)
     assert session.sent == ["activity_start", "audio", "activity_end"]  # no extra silence
 
@@ -433,5 +435,73 @@ def test_precondition_close_reason_is_shown():
     exc = errors.APIError(1007, "Precondition check failed.")
     kind, message = classify_error(exc, used_handle=False)
     assert kind == "fatal"
-    assert "Precondition check failed." in message and "None" not in message
+    assert "Precondition check failed" in message and "None" not in message
     assert classify_error(exc, used_handle=True)[0] == "resume"
+
+
+async def test_silent_turn_is_not_sent_and_explained(env):
+    """Silence makes the transcriber invent phrases in random languages ("¿Qué?"), so a turn
+    without speech never reaches Gemini (D-039)."""
+    env.manager.connect()
+    await until(lambda: env.manager.state == LiveState.READY)
+    env.manager.begin_turn()
+    for _ in range(40):  # 1.3 s of silence
+        env.manager.push_audio(SILENT_CHUNK)
+    env.manager.end_turn()
+    await until(lambda: env.rec.dropped == ["silent"])
+    await asyncio.sleep(0.1)
+    assert env.server.current.kinds() == []
+
+
+async def test_speech_after_a_pause_sends_everything_in_order(env):
+    env.manager.connect()
+    await until(lambda: env.manager.state == LiveState.READY)
+    env.manager.begin_turn()
+    for _ in range(5):
+        env.manager.push_audio(SILENT_CHUNK)  # the user pauses before speaking
+    await asyncio.sleep(0.1)
+    assert env.server.current.kinds() == []
+    speak(env.manager, chunks=7)
+    env.manager.end_turn()
+    await until(lambda: "activity_end" in env.server.current.kinds())
+    audio = [v.data for k, v in env.server.current.sent if k == "audio"]
+    assert audio == [SILENT_CHUNK] * 5 + [SPEECH_CHUNK] * 7
+
+
+async def test_user_words_stay_on_one_row_per_turn(env):
+    def rule(session, kind, value):
+        if kind != "activity_end":
+            return None
+        return [transcript_msg(user="What time"), transcript_msg(model="It's"),
+                transcript_msg(user=" is it?"), transcript_msg(model="It's 3 pm."),
+                turn_complete()]
+
+    env.server.rules.append(rule)
+    env.manager.begin_turn()
+    speak(env.manager)
+    env.manager.end_turn()
+    await until(lambda: any(final for _, _, final in env.rec.user_rows))
+    turns = {turn for turn, _, _ in env.rec.user_rows}
+    assert turns == {1}  # late words after the answer started still belong to turn 1
+    assert env.rec.user_rows[-1] == (1, "What time is it?", True)
+    env.rec.user_rows.clear()
+    env.manager.begin_turn()
+    speak(env.manager)
+    env.manager.end_turn()
+    await until(lambda: any(final for _, _, final in env.rec.user_rows))
+    assert {turn for turn, _, _ in env.rec.user_rows} == {2}
+
+
+def test_error_detail_lists_type_code_and_reason():
+    from wisp.live.session import error_detail
+
+    detail = error_detail(errors.APIError(1008, "API key not valid. Please pass a valid API key."))
+    assert detail.startswith("APIError") and "code=1008" in detail and "API key not valid" in detail
+
+
+def test_bad_key_close_reason_gives_the_key_message():
+    """Observed against the real API (2026-10-13): a bad key closes the Live socket with 1007
+    and the reason "API key not valid. Please pass a valid API key."."""
+    exc = errors.APIError(1007, "API key not valid. Please pass a valid API key.")
+    kind, message = classify_error(exc, used_handle=False)
+    assert kind == "fatal" and message.startswith("Google rejected this API key")

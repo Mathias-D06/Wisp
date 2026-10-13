@@ -3,7 +3,7 @@
 Run on a real Windows 10/11 PC with a microphone and speakers or headphones. Record pass/fail
 per step and report any failure with the matching lines from `%APPDATA%\Wisp\logs\wisp.log`.
 
-## Core run (about 20 minutes)
+## Core run (about 20–25 minutes)
 
 These steps check, on real hardware, what automated tests can't: the acceptance items marked
 `[~]` in PROGRESS.md, plus install and uninstall. Do them in this order; the timers started in
@@ -15,7 +15,7 @@ step 4 run while you do the rest. Each step points to a case in the catalogue be
 | 2 | MT-29 | Island, music strip, app launcher and clipboard history work with **no key** (F7.A). | 3 |
 | 3 | — | Settings → General: paste your key, **Save and test** → "Key works…" (F11.2). | 1 |
 | 4 | MT-25, MT-26 | Start a to-do reminder and a routine for 2–3 minutes from now; check them in step 11. | 1 |
-| 5 | MT-01, MT-03, MT-05 | Push-to-talk, barge-in, typed text (F1). | 2 |
+| 5 | MT-50, MT-01, MT-03, MT-05 | Microphone test (speech heard, WAV sounds right); push-to-talk, barge-in, typed text (F1, D-039). | 3 |
 | 6 | MT-11, MT-12, MT-14, MT-15 | Open apps, describe the screen, click by name, close with confirmation (F2.A). | 4 |
 | 7 | MT-18, MT-20, MT-10 | Dictation into Notepad, not in Win+V history, Start menu stays shut (F3.2, F3.6). | 2 |
 | 8 | MT-22 | Circle to Ask; on a second or scaled monitor if you have one (MT-23, F4.6). | 1 |
@@ -23,7 +23,7 @@ step 4 run while you do the rest. Each step points to a case in the catalogue be
 | 10 | MT-07 | Network drop and recovery (F1.B). | 1.5 |
 | 11 | MT-25, MT-26 (results) | The reminder and routine fired with notifications. | 0.5 |
 | 12 | MT-35 | A memory survives a restart. | 1.5 |
-| 13 | MT-40 | Terminal is off by default (F12.3). | 0.5 |
+| 13 | MT-40, MT-55 | Terminal is off by default (F12.3); a bad key shows a clear error and Retry (D-041). | 1.5 |
 | 14 | MT-49 (answer **No**) | Uninstall is clean and keeps your data (D.1). | 1 |
 
 **Extended (optional):** every other case below. MT-09 is the 30-minute conversation (F1.A); run
@@ -123,6 +123,18 @@ it in the background during the extended cases. MT-47 needs a sign-out and sign-
 | MT-47 | Sign out of Windows and sign back in. | The Wisp orb appears in the tray and the Island at the top, with no window opening. |
 | MT-48 | With Wisp running, run the installer again. | Setup asks you to close Wisp first, then upgrades in place; settings and memories are kept. |
 | MT-49 | Settings → Apps → Wisp → Uninstall; answer **Yes** to "Also delete your Wisp data". Reinstall, set a key, uninstall again and answer **No**. | First time: `%LOCALAPPDATA%\Programs\Wisp`, the Start-menu entry, the start-at-sign-in entry (Task Manager → Startup apps) and `%APPDATA%\Wisp` are gone. Second time: the program is gone but `%APPDATA%\Wisp` remains. |
+
+## Speech recognition (D-039…D-041)
+
+| ID | Steps | Expected |
+|---|---|---|
+| MT-50 | Settings → Hotkeys and audio → **Test microphone**; say a short sentence during the 3 s. Click **Open folder** and play the newest `mic-test-….wav`. | The result starts "Speech heard" and shows a level around −20 to −35 dBFS, the device format and per-channel levels. The WAV sounds like you: normal speed and pitch, not chipmunked, slowed down or noisy. |
+| MT-51 | Tick **Save the audio sent to Gemini**, Apply. Hold **Alt+Win** and say, one turn each: "What time is it?", "Open Spotify", "Search YouTube for lofi beats", "Add a to-do to call the bank at 3 pm", "What's on my to-do list?", "Turn the volume down a little", "Pause the music", "Remember that my sister's birthday is the 3rd of May", "What's the weather like for a walk today?", "Close Notepad". | 10/10 appear in the console as one "You:" line each, in English, and are answered in English. Each `voice-….wav` in the debug folder sounds normal. Untick the setting afterwards. |
+| MT-52 | Press **Alt+Win** and start saying "what time is it" at the same moment, without waiting. Open the newest `voice-….wav`. | The recording starts with "what"; the first word isn't cut off. |
+| MT-53 | Tap Alt+Win quickly; in the console click **Talk** once, say "what time is it", click **Talk** again; then double-click the orb, speak, click the orb once. | The tap sends nothing (no hint either, because a quick chord tap never fires). The Talk click starts listening ("click Talk again to send") and the second click sends. The double-click starts listening only once (it doesn't start and stop at once). |
+| MT-54 | Mute the microphone with your laptop's mute key (or cover it and stay silent), hold Alt+Win for 2 s and release. | "Wisp didn't hear any speech, so nothing was sent…" appears; no "¿Qué?"-style reply. Unmute afterwards. |
+| MT-55 | Settings → General: note your key, paste `AIzaInvalidKeyForTesting0000000000000000`, click **Save without test**. Hold Alt+Win and speak. Then put your real key back with **Save and test**. | The console shows "Google rejected this API key…" (never "None") and a **Retry** button. The log has a line with the exception type, code and reason. After restoring the key, Retry or talking works again. |
+| MT-56 | Say "from now on please answer in French", then "what time is it", then "switch back to English". | Wisp switches to French only when asked, and back when asked. |
 
 ## Hotkeys
 

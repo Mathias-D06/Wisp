@@ -12,6 +12,7 @@ from PySide6.QtWidgets import QApplication, QMessageBox, QWidget
 from wisp import paths, startup
 from wisp.ai import dictation as dictation_ai
 from wisp.audio.capture import MicCapture
+from wisp.audio.debug_wav import DebugAudioRecorder, save_pcm
 from wisp.audio.playback import Player
 from wisp.circle import CircleController
 from wisp.db import Database
@@ -151,6 +152,7 @@ class WispApp(QObject):
             always_listening=lambda: peek().audio.always_listening,
             is_playing=self.player.is_playing,
             extended_thinking=lambda: is_extended_thinking(peek().ai.live_model),
+            debug_audio=DebugAudioRecorder(lambda: peek().audio.save_debug_audio),
         )
         self.dispatcher.set_model_notifier(self.live.send_text)
         self.voice = VoiceController(
@@ -267,6 +269,8 @@ class WispApp(QObject):
             activate=win.activate,
             target_is_elevated=lambda w: win.is_process_elevated(w.pid)
             and not win.self_elevated(),
+            save_debug=lambda pcm: (save_pcm("dictation", pcm)
+                                    if peek().audio.save_debug_audio else None),
         )
 
     def _live_config(self, handle: str | None):
@@ -347,7 +351,7 @@ class WispApp(QObject):
         return [
             GeneralPage(self.settings_store, self.keystore),
             LoadoutPage(self.registry),
-            HotkeysAudioPage(),
+            HotkeysAudioPage(self.mic),
             SafetyPage(self.registry),  # after Loadout: it may tick the terminal/input skills
             MemoriesPage(self.services.memory),
             RoutinesPage(self.services.tasks, self.services.scheduler),
@@ -360,7 +364,7 @@ class WispApp(QObject):
         self._settings_dialog.open_page(page)
 
     def _on_hotkey(self, name: str, kind: str) -> None:
-        log.info("Hotkey %s %s", name, kind)
+        (log.debug if kind in ("arm", "disarm") else log.info)("Hotkey %s %s", name, kind)
         self.voice.on_hotkey(name, kind)
         self.dictation.on_hotkey(name, kind)
         self.circle.on_hotkey(name, kind)

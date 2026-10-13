@@ -16,7 +16,7 @@ HOTKEY_NAMES = ("push_to_talk", "dictation", "circle")
 
 
 class HotkeySignals(QObject):
-    event = Signal(str, str)  # (hotkey name, "press" | "release" | "cancel")
+    event = Signal(str, str)  # (name, "arm" | "disarm" | "press" | "release" | "cancel")
 
 
 class HotkeyManager:

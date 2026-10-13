@@ -101,7 +101,7 @@ def test_real_screens_grab_at_physical_resolution(qtbot):
 
 # ----- controller -----------------------------------------------------------------------------
 class FakeVoice(QObject):
-    transcript = Signal(str, str, bool)
+    transcript = Signal(str, str, bool, int)
 
     def __init__(self, always=False):
         super().__init__()
@@ -213,8 +213,8 @@ def test_push_to_talk_flow_sends_image_before_closing_turn(qtbot):
     qtbot.waitUntil(lambda: "end_turn" in names(live), timeout=2000)
     assert names(live) == ["begin_turn", "push_audio", "send_image", "end_turn"]
     assert not mic.users and voice.awaiting_reply
-    voice.transcript.emit("model", "That's a bar chart of", False)
-    voice.transcript.emit("model", "That's a bar chart of sales.", True)
+    voice.transcript.emit("model", "That's a bar chart of", False, 0)
+    voice.transcript.emit("model", "That's a bar chart of sales.", True, 0)
     assert bubble.texts[-1] == "That's a bar chart of sales." and bubble.finished == 12.0
 
 

@@ -55,6 +55,20 @@ NEVER_AUTO_APPROVE = frozenset({
 """Tools whose confirmation can never be switched off (irreversible, purchase-capable or blind
 actions; DECISIONS.md D-034). Enforced by validate() and again by the safety policy."""
 
+LANGUAGE_CODES = {
+    "English (UK)": "en-GB", "English (US)": "en-US", "English": "en", "Spanish": "es",
+    "French": "fr", "German": "de", "Italian": "it", "Portuguese": "pt", "Dutch": "nl",
+    "Polish": "pl", "Turkish": "tr", "Hindi": "hi", "Japanese": "ja", "Korean": "ko",
+    "Chinese": "zh", "Arabic": "ar", "Russian": "ru", "Swedish": "sv",
+}
+"""Languages offered in Settings, with the BCP-47 code sent as a transcription hint (D-040)."""
+
+
+def language_code(language: str) -> str | None:
+    """BCP-47 code for a language name from the list (None for free text)."""
+    return LANGUAGE_CODES.get(language.strip())
+
+
 PERSONALITY_PRESETS = ["friendly", "professional", "playful", "minimal", "custom"]
 THEMES = ["system", "dark", "light"]
 CUSTOM_PERSONALITY_MAX = 600
@@ -73,7 +87,7 @@ class GeneralSettings:
 class AISettings:
     live_model: str = "gemini-3.8-live"
     text_model: str = "gemini-3.8-flash"
-    language: str = "English"
+    language: str = "English (UK)"
     idle_timeout_min: int = 5
 
 
@@ -83,6 +97,7 @@ class AudioSettings:
     output_device: str = ""
     always_listening: bool = False
     mic_muted: bool = False
+    save_debug_audio: bool = False
 
 
 @dataclass
@@ -134,7 +149,11 @@ class Settings:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> Settings:
-        return _from_dict(cls, data)
+        settings = _from_dict(cls, data)
+        if settings.ai.language == "English":
+            # The only English option before D-040 (not a choice of variant): use the new default.
+            settings.ai.language = "English (UK)"
+        return settings
 
 
 def _coerce(default: Any, value: Any, path: str) -> Any:
@@ -191,6 +210,8 @@ def validate(settings: Settings) -> list[str]:
         problems.append(f"Unknown voice {settings.loadout.voice!r}.")
     if not re.fullmatch(r"(www\.)?amazon\.[a-z]{2,3}(\.[a-z]{2})?", settings.general.amazon_domain):
         problems.append("Amazon site must look like www.amazon.co.uk.")
+    if not settings.ai.language.strip():
+        problems.append("Language cannot be empty.")
     if not settings.ai.live_model.strip():
         problems.append("Live model name cannot be empty.")
     if not settings.ai.text_model.strip():

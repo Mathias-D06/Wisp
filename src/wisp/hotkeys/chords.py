@@ -176,7 +176,7 @@ class _ChordState:
 
 @dataclass
 class ChordMachine:
-    """Feed raw key events; get press/release/cancel events. Thread-safe."""
+    """Feed raw key events; get arm/disarm/press/release/cancel events. Thread-safe."""
 
     chords: dict[str, Chord]
     hold_ms: int
@@ -229,6 +229,7 @@ class ChordMachine:
             # Another key pressed → spoiled; a chord key released early → just a short tap.
             state.phase = "spoiled" if down else "idle"
             state.arm_id += 1
+            self.emit(name, "disarm")
             if is_chord_key and not down and state.suppressed_key_down:
                 # Quick tap of a chord with a normal key: give the key back to the app.
                 state.suppressed_key_down = False
@@ -253,6 +254,7 @@ class ChordMachine:
         state.arm_id += 1
         arm_id = state.arm_id
         state.suppressed_key_down = state.chord.key_vk == vk
+        self.emit(name, "arm")  # keys are down; "press" follows after hold_ms (or "disarm")
         self.schedule(self.hold_ms / 1000.0, lambda: self._fire(name, arm_id))
         return state.suppressed_key_down
 
@@ -263,6 +265,7 @@ class ChordMachine:
                 return
             if not state.chord.matches(self.pressed):
                 state.phase = "idle"
+                self.emit(name, "disarm")
                 return
             state.phase = "active"
         if state.chord.needs_mask():

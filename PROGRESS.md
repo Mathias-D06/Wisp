@@ -257,6 +257,31 @@ acceptance step needs real hardware/API key and is listed in `MANUAL_TESTS.md` (
   `::test_look_at_screen_refuses_secure_desktop`, `::test_instruction_states_the_limits`, `::test_real_secure_desktop_probe_and_window_at`;
   MT-17, MT-43, MT-44
 
+### Speech recognition fix (brief of 2026-10-13, part 1)
+- [x] S.1 Audio format: native capture + conversion to 16 kHz mono int16, `audio/pcm;rate=16000` —
+  `audio/convert.py`, `audio/capture.py`; `test_audio_convert.py` (48 kHz stereo float32 → length, rate,
+  dtype, frequency, level; dead array channels; anti-aliasing; 44.1 kHz; passthrough),
+  `test_speech_pipeline.py::test_native_4ch_48k_float_capture_reaches_subscribers_as_16k_mono`,
+  `::test_device_refusing_native_format_falls_back_to_16k_mono`; D-039
+- [~] S.2 Debug WAV of exactly what is sent — `audio/debug_wav.py`, Settings switch + Test microphone;
+  `test_speech_pipeline.py::test_session_saves_the_exact_bytes_sent`, `::test_recorder_writes_exactly_what_was_added`,
+  `::test_mic_test_report_in_plain_english`; listening check MT-50, MT-51
+- [x] S.3 Clipped starts: 300 ms pre-roll on push-to-talk arm; activity signals correct; VAD values
+  700/200 ms unchanged — `test_voice.py::test_push_to_talk_hotkey_opens_mic_on_arm_and_sends_preroll`,
+  `test_hotkeys.py::test_arm_and_disarm_events`, `test_live_session.py::test_speech_after_a_pause_sends_everything_in_order`; MT-52
+- [x] S.4 Language lock (default English (UK), firm instruction, `en-GB` transcription hint; docs say native
+  audio has no language code) — `test_speech_pipeline.py::test_default_language_is_english_uk_with_a_firm_rule`,
+  `::test_transcription_gets_a_language_hint`, `::test_old_plain_english_setting_becomes_english_uk`; D-040; MT-56
+- [x] S.5 Real errors, never "None"; Retry — `test_live_session.py::test_precondition_close_reason_is_shown`,
+  `::test_bad_key_close_reason_gives_the_key_message`, `::test_error_detail_lists_type_code_and_reason`;
+  real invalid-key probe 2026-10-13; D-041; MT-55
+- [x] S.6 One "You:" line per turn — `test_live_session.py::test_user_words_stay_on_one_row_per_turn`; D-041
+- [x] S.7 Silence/taps never sent (the cause of "¿Qué?") — `test_live_session.py::test_silent_turn_is_not_sent_and_explained`,
+  `::test_tap_sends_nothing_and_hints`, `test_dictation.py::test_silent_dictation_is_never_sent`,
+  `test_voice.py::test_talk_button_click_or_hold`, `::test_orb_click_toggles`; MT-53, MT-54
+- [~] S.A Accept: 10 English phrases 10/10 on the laptop mic — 10/10 through the full pipeline with
+  synthesised speech in the array's format against the real API (2026-10-13); real mic MT-51
+
 ### Testing, packaging, definition of done
 - [x] T.1 Unit tests: dispatcher, safety tiers, scheduler parsing + persistence, memory, clipboard store,
   settings (Windows-only tests marked) — `test_dispatcher.py`, `test_tools_core.py`, `test_hardening.py`,
@@ -305,3 +330,9 @@ acceptance step needs real hardware/API key and is listed in `MANUAL_TESTS.md` (
   push-to-talk turns open after 0.2 s of audio, taps send nothing (hint), image turns always sent,
   sender adds 32 ms of silence before an empty activity_end; close reason shown. Verified against
   the real API with the app's LiveSessionManager; tests in test_live_session.py (6 new) and test_voice.py.
+- 2026-10-13: Speech fix (part 1). Root cause of "¿Qué?"/"我才没睡。": near-empty or silent turns (orb
+  double-click 221 ms, quick Talk click 81 ms; possibly a quiet 4-channel array downmix) — Gemini's
+  transcriber invents foreign phrases for silence (reproduced with the user's key). Fixed: native-format
+  capture with active-channel downmix + FIR resampling, speech gate, pre-roll, click/hold Talk, orb
+  double-click, language lock (en-GB), debug WAV + mic test, clear errors + Retry, one row per turn.
+  Real-API check: 10/10 English, silence/hiss not sent, invalid key → "Google rejected this API key".

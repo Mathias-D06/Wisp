@@ -6,7 +6,9 @@ visual state current and turns Live session events into UI signals.
 
 from __future__ import annotations
 
+import contextlib
 import logging
+import time
 
 from PySide6.QtCore import QObject, QTimer, Signal
 
@@ -24,33 +26,41 @@ class VoiceSignals(QObject):
     """Thread-safe bridge: emitted from the core loop, delivered on the Qt thread."""
 
     state = Signal(str, str)
-    user_text = Signal(str, bool)
+    user_text = Signal(int, str, bool)  # turn number, text so far, final
     model_text = Signal(str, bool)
     tool = Signal(str, str)
     turn_done = Signal()
     hint = Signal(str)
 
 
-TOO_SHORT_MESSAGE = "Hold the talk key while you speak (that was too short to send)."
+DROPPED_MESSAGES = {
+    "short": "That was too short to send. Hold the talk key or the Talk button while you speak, "
+             "or click Talk once to start and again to send.",
+    "silent": "Wisp didn't hear any speech, so nothing was sent. Check that your microphone isn't "
+              "muted, then try Settings → Hotkeys and audio → Test microphone.",
+}
+PREROLL_MS = 300  # audio from just before push-to-talk activated (the keys' hold time)
+CLICK_MS = 350  # a Talk press shorter than this is a click: keep listening until clicked again
+ORB_DEBOUNCE_MS = 400
 
 
 def make_callbacks(signals: VoiceSignals, player: Player, on_user_final) -> LiveCallbacks:
     return LiveCallbacks(
         state=lambda state, detail: signals.state.emit(state.value, detail),
-        user_text=lambda text, final: signals.user_text.emit(text, final),
+        user_text=lambda turn, text, final: signals.user_text.emit(turn, text, final),
         user_final=on_user_final,
         model_text=lambda text, final: signals.model_text.emit(text, final),
         model_audio=player.feed,
         interrupted=player.clear,
         turn_complete=signals.turn_done.emit,
         tool_activity=lambda name, status: signals.tool.emit(name, status),
-        turn_too_short=lambda: signals.hint.emit(TOO_SHORT_MESSAGE),
+        turn_dropped=lambda reason: signals.hint.emit(DROPPED_MESSAGES[reason]),
     )
 
 
 class VoiceController(QObject):
     visual = Signal(str, float, str)  # orb state, level, status text
-    transcript = Signal(str, str, bool)  # role ("user"/"model"/"notice"), text, final
+    transcript = Signal(str, str, bool, int)  # role (user/model/notice), text, final, turn
     message = Signal(str)  # short user-facing notice (errors, hints)
 
     def __init__(self, live, mic: MicCapture, player: Player, signals: VoiceSignals,
@@ -71,7 +81,12 @@ class VoiceController(QObject):
         self._always_suspended = False
         settings_store.subscribe(self._on_settings)
         signals.state.connect(self._on_state)
-        signals.user_text.connect(lambda text, final: self.transcript.emit("user", text, final))
+        signals.user_text.connect(
+            lambda turn, text, final: self.transcript.emit("user", text, final, turn))
+        self._talk_pressed_at = 0.0
+        self._talk_toggle = False  # Talk was clicked (not held): listening until clicked again
+        self._talk_consumed = False
+        self._orb_at = 0.0
         signals.model_text.connect(self._on_model_text)
         signals.tool.connect(self._on_tool)
         signals.turn_done.connect(self._on_turn_done)
@@ -96,7 +111,7 @@ class VoiceController(QObject):
             self.mic.release("always")
 
     # ----- push-to-talk / orb ------------------------------------------------------------------
-    def ptt_press(self) -> None:
+    def ptt_press(self, preroll: bool = False) -> None:
         if self.talking:
             return
         if self.live_state == LiveState.NO_KEY.value or not self.live.has_key():
@@ -112,9 +127,17 @@ class VoiceController(QObject):
         self.awaiting_reply = False
         self.player.clear()
         self.live.begin_turn()
+        if preroll:
+            # Words spoken while the keys were still arming (hold time) are sent too.
+            recent = self.mic.preroll(PREROLL_MS)
+            if recent:
+                self.live.push_audio(recent)
         self.mic.subscribe("voice", self.live.push_audio)
+        self.mic.release("ptt-arm")
 
     def ptt_release(self) -> None:
+        self._talk_toggle = False
+        self.mic.release("ptt-arm")
         if not self.talking:
             return
         self.talking = False
@@ -124,6 +147,8 @@ class VoiceController(QObject):
         self.awaiting_reply = True
 
     def ptt_cancel(self) -> None:
+        self._talk_toggle = False
+        self.mic.release("ptt-arm")
         if not self.talking:
             return
         self.talking = False
@@ -132,17 +157,56 @@ class VoiceController(QObject):
         self.live.cancel_turn()
 
     def toggle_talk(self) -> None:
-        """Orb click: start talking, or stop and send; clicking while it speaks interrupts."""
+        """Orb click: start talking, or stop and send; clicking while it speaks interrupts.
+        A second click within ORB_DEBOUNCE_MS (a double-click) is ignored."""
+        now = time.monotonic()
+        if (now - self._orb_at) * 1000 < ORB_DEBOUNCE_MS:
+            return
+        self._orb_at = now
         if self.talking:
             self.ptt_release()
         else:
             self.ptt_press()
 
+    def talk_pressed(self) -> None:
+        """Console Talk button: hold to talk, or click to start and click again to send."""
+        if self.talking and self._talk_toggle:
+            self._talk_toggle = False
+            self._talk_consumed = True
+            self.ptt_release()
+            return
+        self._talk_consumed = False
+        self._talk_pressed_at = time.monotonic()
+        self.ptt_press()
+
+    def talk_released(self) -> None:
+        if self._talk_consumed or not self.talking:
+            self._talk_consumed = False
+            return
+        if (time.monotonic() - self._talk_pressed_at) * 1000 < CLICK_MS:
+            self._talk_toggle = True
+            self._tell("Listening — click Talk again to send.")
+            return
+        self.ptt_release()
+
+    def retry(self) -> None:
+        """Try the voice connection again after an error."""
+        self._tell("Reconnecting to Gemini…")
+        self.live.connect()
+
     def on_hotkey(self, name: str, kind: str) -> None:
         if name != "push_to_talk":
             return
-        if kind == "press":
-            self.ptt_press()
+        if kind == "arm":
+            # Keys are down but not yet held long enough: open the mic so the pre-roll holds
+            # the first words. Nothing is sent unless "press" follows.
+            if not self.talking and not self.mic.muted and self.live.has_key():
+                with contextlib.suppress(MicError):  # "press" reports the problem
+                    self.mic.acquire("ptt-arm")
+        elif kind == "disarm":
+            self.mic.release("ptt-arm")
+        elif kind == "press":
+            self.ptt_press(preroll=True)
         elif kind == "release":
             self.ptt_release()
         elif kind == "cancel":
@@ -156,7 +220,7 @@ class VoiceController(QObject):
         if not self.live.has_key():
             self._tell(NO_KEY_MESSAGE)
             return
-        self.transcript.emit("user", text, True)
+        self.transcript.emit("user", text, True, 0)
         self.confirmations.on_user_utterance(text)
         self.player.clear()
         self.live.send_text(text)
@@ -213,7 +277,7 @@ class VoiceController(QObject):
 
     def _on_model_text(self, text: str, final: bool) -> None:
         self.awaiting_reply = False
-        self.transcript.emit("model", text, final)
+        self.transcript.emit("model", text, final, 0)
 
     def _on_tool(self, name: str, status: str) -> None:
         self.tools_running += 1 if status == "start" else -1
@@ -225,7 +289,7 @@ class VoiceController(QObject):
     def _tell(self, text: str) -> None:
         log.info("Voice notice: %s", text)
         self.message.emit(text)
-        self.transcript.emit("notice", text, True)
+        self.transcript.emit("notice", text, True, 0)
 
     def _refresh_visual(self) -> None:
         state, level, text = self.compute_visual()

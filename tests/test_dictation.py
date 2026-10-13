@@ -35,8 +35,11 @@ def test_wav_header():
 def test_prompt_mentions_self_corrections():
     prompt = system_prompt("English")
     assert "meet at nine... no, ten" in prompt and "meet at 10" in prompt
-    assert "usually English" in prompt
+    assert "normally speaks English" in prompt and "spelling conventions" in prompt
     assert word_count("Meet at 10, okay?") == 4
+
+
+SPEECH = (3000).to_bytes(2, "little", signed=True)  # -21 dBFS
 
 
 # ----- controller ---------------------------------------------------------------------------
@@ -60,7 +63,7 @@ class FakeMic:
         self.subs.pop(name, None)
 
     def feed(self, seconds):
-        self.subs["dictation"](b"\x00\x00" * int(16000 * seconds))
+        self.subs["dictation"](SPEECH * int(16000 * seconds))
 
 
 class FakeHud:
@@ -218,6 +221,20 @@ def test_empty_transcript(qtbot):
     controller.stop()
     qtbot.waitUntil(lambda: "No speech heard" in hud.messages, timeout=3000)
     assert "set_text" not in names(rec) and stats.events == []
+
+
+
+def test_silent_dictation_is_never_sent(qtbot):
+    """Silence makes the model invent text; it must never be pasted (D-039)."""
+    from wisp.dictation import SILENT_MESSAGE
+
+    rec = Recorder()
+    controller, mic, hud, stats = make(rec)
+    controller.start()
+    mic.subs["dictation"](b"\x00\x00" * 32000)  # 2 s of silence
+    controller.stop()
+    assert SILENT_MESSAGE in hud.messages
+    assert "transcribe" not in names(rec) and stats.events == []
 
 
 # ----- real clipboard and paste (opt-in: they touch your clipboard / send Ctrl+V) -----------

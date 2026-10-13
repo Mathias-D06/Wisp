@@ -20,6 +20,7 @@ from PySide6.QtCore import QObject, QTimer, Signal
 from wisp.ai.dictation import word_count
 from wisp.ai.gemini import NO_KEY_MESSAGE, describe_error
 from wisp.audio.capture import MicError
+from wisp.audio.convert import has_speech
 
 log = logging.getLogger(__name__)
 
@@ -28,6 +29,9 @@ MAX_SECONDS = 300
 RESTORE_DELAY_MS = 600
 MODIFIER_WAIT_MS = 1500
 BYTES_PER_SECOND = 32000  # 16 kHz * 2 bytes
+
+
+SILENT_MESSAGE = "Didn't hear any speech — check your microphone (Settings → Hotkeys and audio)."
 
 
 @dataclass
@@ -45,6 +49,7 @@ class DictationDeps:
     foreground: Callable[[], Any]
     activate: Callable[[int], bool]
     target_is_elevated: Callable[[Any], bool]
+    save_debug: Callable[[bytes], None] = lambda pcm: None
     extra: dict = field(default_factory=dict)
 
 
@@ -123,6 +128,12 @@ class DictationController(QObject):
             self.hud.hide_now()
             self.state.emit("idle")
             return
+        if not has_speech(audio):
+            # Silence makes the model invent text; never paste that (D-039).
+            self.hud.flash(SILENT_MESSAGE, 3500, "#6b7280")
+            self.state.emit("idle")
+            return
+        self.deps.save_debug(audio)
         self._token += 1
         token = self._token
         self.hud.show_state("Transcribing…", "#facc15")

@@ -1,8 +1,13 @@
 """Microphone capture: opened on demand, shared by voice, dictation and Circle to Ask.
 
+The stream opens in the device's own format when it supports it (native rate and channel count,
+float32) and ``MicConverter`` turns that into 16 kHz mono int16 — so Wisp, not Windows, decides
+how a multi-channel microphone array is mixed (D-039). Devices that refuse their native format
+fall back to asking Windows for 16 kHz mono int16 directly (D-007).
+
 The PortAudio callback only copies bytes into a queue (it must never block); a delivery thread
-fans chunks out to subscribers. A short pre-roll keeps the last ~0.5 s so words spoken while a
-hold-hotkey is still arming are not lost.
+converts and fans chunks out to subscribers. A pre-roll keeps the last ~0.5 s so the words
+spoken while the push-to-talk keys are still arming are sent too.
 """
 
 from __future__ import annotations
@@ -16,13 +21,15 @@ from collections.abc import Callable
 import numpy as np
 
 from wisp.audio import INPUT_RATE
+from wisp.audio.convert import MicConverter, rms_dbfs
 from wisp.audio.devices import resolve
-from wisp.audio.resample import Resampler
 
 log = logging.getLogger(__name__)
 
-CHUNK_FRAMES = 512  # 32 ms at 16 kHz
+CHUNK_MS = 32
 PREROLL_CHUNKS = 16  # ~0.5 s
+MAX_CHANNELS = 8
+LEVEL_LOG_AFTER_S = 1.0
 
 MIC_HELP = (
     "Microphone unavailable. Check that a mic is connected and that Windows Settings → "
@@ -41,7 +48,10 @@ class MicCapture:
         self._users: set[str] = set()
         self._subscribers: dict[str, Callable[[bytes], None]] = {}
         self._stream = None
-        self._resampler: Resampler | None = None
+        self._converter: MicConverter | None = None
+        self.format_description = ""
+        self._converted_bytes = 0
+        self._levels_logged = False
         self._queue: queue.SimpleQueue[bytes | None] = queue.SimpleQueue()
         self._preroll: collections.deque[bytes] = collections.deque(maxlen=PREROLL_CHUNKS)
         self._muted = False
@@ -93,9 +103,19 @@ class MicCapture:
         with self._lock:
             self._subscribers.pop(name, None)
 
-    def preroll(self) -> bytes:
+    def preroll(self, ms: int | None = None) -> bytes:
+        """The most recent captured audio (16 kHz mono int16); all of it, or the last ``ms``."""
         with self._lock:
-            return b"".join(self._preroll)
+            data = b"".join(self._preroll)
+        if ms is not None:
+            keep = INPUT_RATE * 2 * ms // 1000
+            data = data[-keep:] if keep else b""
+        return data
+
+    def channel_levels(self) -> list[float]:
+        """Level of each device channel (dBFS) while the stream is open, for diagnostics."""
+        converter = self._converter
+        return converter.channel_levels() if converter is not None else []
 
     def reopen(self) -> None:
         """Re-open on a new device after the setting changes."""
@@ -111,35 +131,58 @@ class MicCapture:
         self._queue.put(None)
 
     # ----- stream handling -------------------------------------------------------------------
+    def _formats(self, device) -> list[tuple[int, int, str]]:
+        """Formats to try: the device's native one first, then 16 kHz mono (Windows converts)."""
+        import sounddevice as sd
+
+        info = sd.query_devices(device if device is not None else sd.default.device[0])
+        native_rate = int(info["default_samplerate"])
+        native_channels = max(1, min(int(info["max_input_channels"]), MAX_CHANNELS))
+        candidates = [(native_rate, native_channels, "float32"), (INPUT_RATE, 1, "int16"),
+                      (native_rate, 1, "int16")]
+        usable = []
+        for rate, channels, dtype in dict.fromkeys(candidates):
+            try:
+                sd.check_input_settings(device=device, samplerate=rate, channels=channels,
+                                        dtype=dtype)
+            except Exception:
+                continue
+            usable.append((rate, channels, dtype))
+        return usable
+
     def _open_stream(self) -> None:
         import sounddevice as sd
 
         device = resolve(self._device_name(), "input")
-        rate = INPUT_RATE
         try:
-            sd.check_input_settings(device=device, samplerate=INPUT_RATE, channels=1, dtype="int16")
-        except Exception:
-            info = sd.query_devices(device if device is not None else sd.default.device[0])
-            rate = int(info["default_samplerate"])
-            log.info("Mic rejects 16 kHz; capturing at %d Hz and resampling", rate)
-        self._resampler = Resampler(rate, INPUT_RATE)
-        frames = int(CHUNK_FRAMES * rate / INPUT_RATE)
-        try:
-            stream = sd.RawInputStream(
-                samplerate=rate,
-                blocksize=frames,
-                device=device,
-                channels=1,
-                dtype="int16",
-                callback=self._callback,
-            )
-            stream.start()
+            formats = self._formats(device)
         except Exception as exc:
-            log.error("Opening microphone failed: %s", exc)
+            log.error("Querying the microphone failed: %s", exc)
             raise MicError(MIC_HELP) from exc
-        self._stream = stream
-        self._preroll.clear()
-        log.info("Microphone opened (device=%s, %d Hz)", device, rate)
+        last_error: Exception | None = None
+        for rate, channels, dtype in formats:
+            frames = max(1, rate * CHUNK_MS // 1000)
+            try:
+                stream = sd.RawInputStream(samplerate=rate, blocksize=frames, device=device,
+                                           channels=channels, dtype=dtype,
+                                           callback=self._callback)
+                stream.start()
+            except Exception as exc:
+                last_error = exc
+                log.warning("Microphone format %d Hz × %d ch %s failed: %s", rate, channels,
+                            dtype, exc)
+                continue
+            self._converter = MicConverter(rate, channels, dtype)
+            self._stream = stream
+            self._preroll.clear()
+            self._converted_bytes = 0
+            self._levels_logged = False
+            self.format_description = f"{rate} Hz × {channels} ch {dtype}"
+            log.info("Microphone opened (device=%s, %s → 16 kHz mono int16)", device,
+                     self.format_description)
+            return
+        log.error("Opening microphone failed: %s", last_error or "no usable format")
+        raise MicError(MIC_HELP) from last_error
 
     def _close_stream(self) -> None:
         stream, self._stream = self._stream, None
@@ -160,13 +203,21 @@ class MicCapture:
             chunk = self._queue.get()
             if chunk is None:
                 return
-            resampler = self._resampler
-            if resampler is not None and not resampler.passthrough:
-                chunk = resampler.process(chunk)
+            converter = self._converter
+            if converter is not None:
+                chunk = converter.process(chunk)
             if not chunk:
                 continue
             samples = np.frombuffer(chunk, dtype=np.int16)
             self.level = min(1.0, float(np.sqrt(np.mean(samples.astype(np.float32) ** 2))) / 6000)
+            self._converted_bytes += len(chunk)
+            if (not self._levels_logged and converter is not None
+                    and self._converted_bytes >= INPUT_RATE * 2 * LEVEL_LOG_AFTER_S):
+                self._levels_logged = True
+                level = rms_dbfs(samples.astype(np.float32) / 32768.0)
+                used = [i + 1 for i, on in enumerate(converter.active) if on]
+                log.info("Mic levels after 1 s: output %.0f dBFS; channels (dBFS) %s; mixing %s",
+                         level, converter.channel_levels(), used)
             with self._lock:
                 self._preroll.append(chunk)
                 subscribers = list(self._subscribers.values())

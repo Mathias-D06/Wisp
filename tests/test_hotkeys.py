@@ -24,12 +24,21 @@ class Timers:
             fn()
 
 
+ARMING: list[tuple[str, str]] = []
+
+
 def machine(**chords):
+    """``events`` holds press/release/cancel; arm/disarm go to ``ARMING`` (checked separately)."""
     events, masks, replays = [], [], []
+    ARMING.clear()
     timers = Timers()
+
+    def emit(name, kind):
+        (ARMING if kind in ("arm", "disarm") else events).append((name, kind))
+
     m = ChordMachine(
         chords={k: parse_chord(v) for k, v in chords.items()}, hold_ms=250,
-        emit=lambda name, kind: events.append((name, kind)), schedule=timers.schedule,
+        emit=emit, schedule=timers.schedule,
         on_activate=lambda chord: masks.append(chord.text), replay_key=replays.append,
     )
     return m, events, timers, masks, replays
@@ -164,3 +173,21 @@ def test_mask_rules():
     assert parse_chord("alt+win").needs_mask()
     assert not parse_chord("f9").needs_mask()
     assert not parse_chord("ctrl+space").needs_mask()
+
+
+def test_arm_and_disarm_events():
+    """"arm" when the chord's keys go down (push-to-talk opens the mic for its pre-roll),
+    "disarm" when it won't fire after all."""
+    m, events, timers, _, _ = machine(ptt="alt+win")
+    m.key_event(ALT_L, True)
+    m.key_event(WIN, True)
+    assert ARMING == [("ptt", "arm")] and events == []
+    m.key_event(0x52, True)  # Win+Alt+R: another shortcut
+    assert ARMING == [("ptt", "arm"), ("ptt", "disarm")] and events == []
+    for vk in (0x52, WIN, ALT_L):
+        m.key_event(vk, False)
+    m.key_event(ALT_L, True)
+    m.key_event(WIN, True)
+    timers.fire()
+    assert events == [("ptt", "press")] and ARMING[-1] == ("ptt", "arm")
+

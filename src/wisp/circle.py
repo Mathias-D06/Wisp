@@ -148,7 +148,7 @@ class CircleController(QObject):
             self.live.end_turn()
 
     # ----- answer bubble -----------------------------------------------------------------------
-    def _on_transcript(self, role: str, text: str, final: bool) -> None:
+    def _on_transcript(self, role: str, text: str, final: bool, _turn: int = 0) -> None:
         if not self._answering or role != "model":
             return
         self.bubble.set_text(text)

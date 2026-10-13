@@ -11,7 +11,7 @@ from typing import Any
 
 from google.genai import types
 
-from wisp.settings import CUSTOM_PERSONALITY_MAX, Settings
+from wisp.settings import CUSTOM_PERSONALITY_MAX, Settings, language_code
 
 PERSONALITIES = {
     "friendly": "warm, upbeat and concise",
@@ -29,10 +29,20 @@ def personality_text(settings: Settings) -> str:
     return PERSONALITIES.get(preset) or PERSONALITIES["friendly"]
 
 
+def language_rule(language: str) -> str:
+    """Native-audio Live models pick the language themselves and don't accept a language code;
+    the system instruction is the documented way to restrict it (D-040)."""
+    return (f"Language: the user speaks {language}. Always understand the user as speaking "
+            f"{language} and always reply in {language}, even if the audio is unclear or "
+            f"sounds like another language — then ask them, in {language}, to repeat. Switch "
+            "language only when the user explicitly asks you to.")
+
+
 def system_instruction(settings: Settings, facts: list[str], now: datetime) -> str:
     lines = [
         "You are Wisp, a voice assistant that controls the user's Windows PC through tools.",
-        f"Personality: {personality_text(settings)}. Reply in {settings.ai.language}.",
+        f"Personality: {personality_text(settings)}.",
+        language_rule(settings.ai.language),
         "Keep spoken replies to one or two sentences unless asked for detail.",
         "Rules:",
         "- Act only through tools; never claim an action a tool did not confirm.",
@@ -74,6 +84,13 @@ def function_declarations(declarations: list[dict[str, Any]], model: str) -> lis
     return result
 
 
+def transcription_config(language: str) -> types.AudioTranscriptionConfig:
+    """``languageCodes`` are documented as BCP-47 hints about the languages in the audio
+    (ai.google.dev/api/live, AudioTranscriptionConfig)."""
+    code = language_code(language)
+    return types.AudioTranscriptionConfig(language_codes=[code] if code else None)
+
+
 def build_live_config(
     settings: Settings,
     declarations: list[dict[str, Any]],
@@ -94,8 +111,8 @@ def build_live_config(
             )
         ),
         system_instruction=instruction,
-        input_audio_transcription=types.AudioTranscriptionConfig(),
-        output_audio_transcription=types.AudioTranscriptionConfig(),
+        input_audio_transcription=transcription_config(settings.ai.language),
+        output_audio_transcription=transcription_config(settings.ai.language),
         context_window_compression=types.ContextWindowCompressionConfig(
             sliding_window=types.SlidingWindow()
         ),

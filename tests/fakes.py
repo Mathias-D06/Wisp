@@ -158,7 +158,8 @@ class DirectUi:
         return future
 
 
-SPEECH_CHUNK = b"\x01\x00" * 512  # 32 ms of (non-silent) 16 kHz audio
+SPEECH_CHUNK = (3000).to_bytes(2, "little", signed=True) * 512  # 32 ms at about -21 dBFS
+SILENT_CHUNK = b"\x00\x00" * 512
 
 
 def speak(manager, chunks: int = 10) -> None:

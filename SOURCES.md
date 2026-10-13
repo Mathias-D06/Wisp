@@ -184,3 +184,16 @@ from `.venv`. Dates are when checked.
 | silent install/uninstall on this PC (PROGRESS log) | install: files, Start-menu shortcut, uninstall entry, Run value; the Run command line starts Wisp; uninstall removes all of these plus a Run value written by the app; user data kept | 2026-10-13 |
 | https://ai.google.dev/gemini-api/terms | Unpaid Services: content may be used to improve products and human reviewers may read it; Paid Services: not used that way; EEA, Switzerland and UK: Paid Services only; users must be 18+ | 2026-10-13 |
 | https://docs.github.com/en/actions | `runs-on: windows-latest`; `actions/checkout`, `actions/setup-python` (pip cache), `actions/upload-artifact` | 2026-10-13 |
+
+## Speech recognition fix (2026-10-13)
+
+| URL | Confirmed | Checked |
+|---|---|---|
+| https://ai.google.dev/gemini-api/docs/live-api/capabilities | input is raw 16-bit PCM, 16 kHz, little-endian, MIME `audio/pcm;rate=16000` (other rates are resampled by the API); native-audio models "automatically choose the appropriate language and don't support explicitly setting the language code", so restrict the language with system instructions; "The transcription language is inferred from the model's response"; `silence_duration_ms` 500–800 ms recommended; `prefix_padding_ms` 0 may clip words; with automatic VAD disabled the client sends `activityStart`/`activityEnd` | 2026-10-13 |
+| https://ai.google.dev/api/live | `AudioTranscriptionConfig.languageCodes[]`: "BCP-47 language codes providing hints about the languages present in the audio" | 2026-10-13 |
+| SDK `google.genai.types.AudioTranscriptionConfig` (2.29.0) and `_live_converters` | has `language_codes`; `input_audio_transcription` is passed to the setup as `inputAudioTranscription` | 2026-10-13 |
+| probe with the user's key: silence and noise | 4 s of digital silence was transcribed as "¿Qué tal?"; faint hiss (≈ −64 dBFS) as "¿Qué?", with a Spanish reply | 2026-10-13 |
+| probe with the user's key: full pipeline | 10 English phrases (Windows SAPI voice, 16 kHz) converted into 44.1 kHz × 4 ch float32 with two silent channels, then MicConverter → speech gate → `en-GB` hint → Gemini: 10/10 transcribed and answered in English; silence and hiss not sent | 2026-10-13 |
+| probe with an invalid key | Live socket closed with 1007, reason "API key not valid. Please pass a valid API key."; `models.get` gives the same through the key check | 2026-10-13 |
+| `sounddevice.check_input_settings` on this PC (no recording) | MME accepts the array's native 44100 Hz × 4 ch float32; WASAPI's shared format is 48000 Hz × 4 ch | 2026-10-13 |
+| https://learn.microsoft.com/en-us/dotnet/api/system.speech.synthesis.speechsynthesizer.setoutputtowavefile | test phrases written as 16 kHz 16-bit mono WAV with `SpeechAudioFormatInfo` (test tooling only) | 2026-10-13 |

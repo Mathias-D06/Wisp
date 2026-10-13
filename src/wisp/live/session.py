@@ -13,10 +13,15 @@ Behaviour:
 * Idle for the configured timeout → close the connection but keep the handle; the next request
   reconnects and resumes.
 * Barge-in: starting a turn clears playback locally at once; server ``interrupted`` does too.
-* Push-to-talk turns (D-038): ``activity_start`` waits until 0.2 s of audio is captured, so an
-  accidental tap sends nothing. A turn that carries an image (Circle to Ask) is always sent. The
-  server closes the session (1007 "Precondition check failed") when an activity contains no
-  audio, so the sender adds 32 ms of silence before any ``activity_end`` that would be empty.
+* Push-to-talk turns (D-038, D-039): ``activity_start`` waits until speech has been heard (a
+  32 ms frame at −45 dBFS or louder) and 0.2 s of audio is captured; the held-back audio is
+  then sent in order. A tap or a silent turn sends nothing — silence makes the transcriber
+  invent short phrases in random languages ("¿Qué?") — and the user is told why. A turn that
+  carries an image (Circle to Ask) is always sent. The server closes the session (1007
+  "Precondition check failed") when an activity contains no audio, so the sender adds 32 ms of
+  silence before any ``activity_end`` that would be empty.
+* The user's words for a turn are shown as one growing line (``user_text(turn, text, final)``),
+  even when transcription chunks arrive after the model has started answering.
 
 All private methods run on the core asyncio loop. Public methods are thread-safe.
 """
@@ -37,6 +42,7 @@ from google.genai import types
 
 from wisp.ai.gemini import NO_KEY_MESSAGE, describe_error
 from wisp.audio import INPUT_MIME
+from wisp.audio.convert import has_speech
 from wisp.tools.base import Origin
 
 log = logging.getLogger(__name__)
@@ -62,14 +68,14 @@ def _noop(*_args: Any) -> None:
 @dataclass
 class LiveCallbacks:
     state: Callable[[LiveState, str], None] = _noop
-    user_text: Callable[[str, bool], None] = _noop
+    user_text: Callable[[int, str, bool], None] = _noop  # turn number, text so far, final
     user_final: Callable[[str], None] = _noop
     model_text: Callable[[str, bool], None] = _noop
     model_audio: Callable[[bytes], None] = _noop
     interrupted: Callable[[], None] = _noop
     turn_complete: Callable[[], None] = _noop
     tool_activity: Callable[[str, str], None] = _noop
-    turn_too_short: Callable[[], None] = _noop
+    turn_dropped: Callable[[str], None] = _noop  # "short" or "silent"
 
 
 def parse_duration(value: str | None) -> float:
@@ -80,6 +86,31 @@ def parse_duration(value: str | None) -> float:
     return float(match.group(1)) if match else 0.0
 
 
+def close_reason(exc: BaseException) -> str:
+    """The server's explanation from an SDK APIError (a WebSocket close keeps it in details)."""
+    details = getattr(exc, "details", None)
+    for value in (getattr(exc, "message", None), details if isinstance(details, str) else None,
+                  getattr(exc, "status", None)):
+        if isinstance(value, str) and value.strip() and value.strip() != "None":
+            return value.strip().rstrip(".")
+    return "no reason given"
+
+
+def error_detail(exc: BaseException) -> str:
+    """Everything known about a connection failure, for the log (never contains the key)."""
+    parts = [type(exc).__name__]
+    for name in ("code", "status", "message"):
+        value = getattr(exc, name, None)
+        if value not in (None, ""):
+            parts.append(f"{name}={value!r}")
+    details = getattr(exc, "details", None)
+    if details not in (None, ""):
+        parts.append(f"details={str(details)[:500]!r}")
+    if len(parts) == 1:
+        parts.append(repr(str(exc))[:500])
+    return " ".join(parts)
+
+
 def classify_error(exc: BaseException, used_handle: bool) -> tuple[str, str]:
     """Return (kind, message): kind is 'fatal', 'resume' (drop handle, retry now) or 'retry'."""
     from google.genai import errors
@@ -88,7 +119,7 @@ def classify_error(exc: BaseException, used_handle: bool) -> tuple[str, str]:
         return "fatal", NO_KEY_MESSAGE
     if isinstance(exc, errors.APIError):
         code = exc.code or 0
-        text = f"{exc.status or ''} {exc.message or ''}".lower()
+        text = f"{exc.status or ''} {exc.message or ''} {close_reason(exc)}".lower()
         if code in (401, 403) or "api key" in text or "api_key" in text or "billing" in text:
             return "fatal", describe_error(exc)
         if code == 404:
@@ -96,10 +127,9 @@ def classify_error(exc: BaseException, used_handle: bool) -> tuple[str, str]:
         if code in (400, 1007, 1008):
             if used_handle:
                 return "resume", "Previous conversation could not be resumed; starting fresh."
-            details = exc.details if isinstance(exc.details, str) else None
-            reason = (exc.message or exc.status or details or "no reason given").strip()
-            return "fatal", (f"Gemini closed the voice session ({reason}). Talk again to "
-                             "reconnect; if it keeps happening, check Settings → General.")
+            return "fatal", (f"Gemini closed the voice session ({close_reason(exc)}). "
+                             "Click Retry or talk again; if it keeps happening, check "
+                             "Settings → General.")
         if code == 429:
             return "retry", "Quota or rate limit reached."
         return "retry", "Connection to Gemini lost."
@@ -122,6 +152,7 @@ class LiveSessionManager:
         dispatcher,
         callbacks: LiveCallbacks,
         *,
+        debug_audio=None,
         has_key: Callable[[], bool],
         idle_timeout_s: Callable[[], float],
         always_listening: Callable[[], bool],
@@ -162,6 +193,11 @@ class LiveSessionManager:
         self._turn_opened = False  # activity_start queued for the current push-to-talk turn
         self._turn_pending: list[bytes] = []  # audio held back until the turn is opened
         self._turn_media = False  # an image was sent during the turn
+        self._turn_heard = False  # a frame loud enough to be speech arrived in the turn
+        self._display_turn = 0  # number of the user turn being shown
+        self._display_text = ""
+        self._display_new = True  # next transcription chunk starts a new user turn
+        self._debug_audio = debug_audio
         self._activity_open = False
         self._activity_audio = False  # audio was sent inside the open activity
         self._suppress_audio = False
@@ -248,8 +284,10 @@ class LiveSessionManager:
         self._turn_opened = False
         self._turn_pending = []
         self._turn_media = False
+        self._turn_heard = False
         self._user_text = ""
-        # Push-to-talk: activity_start is sent once 0.2 s of audio has arrived (_open_turn).
+        self._finish_display()
+        # Push-to-talk: activity_start waits for speech and 0.2 s of audio (_open_turn).
 
     def _manual_turn(self) -> bool:
         return self._turn_active and not self._always_listening()
@@ -266,7 +304,9 @@ class LiveSessionManager:
     def _push_audio(self, pcm: bytes) -> None:
         if self._manual_turn() and not self._turn_opened:
             self._turn_pending.append(pcm)
-            if sum(map(len, self._turn_pending)) >= MIN_TURN_AUDIO_BYTES:
+            if not self._turn_heard and pcm:
+                self._turn_heard = has_speech(pcm)
+            if self._turn_heard and sum(map(len, self._turn_pending)) >= MIN_TURN_AUDIO_BYTES:
                 self._open_turn()
             return
         if self._turn_active or (self._always_listening() and self._wanted):
@@ -285,8 +325,9 @@ class LiveSessionManager:
             if not self._turn_media:
                 held_ms = sum(map(len, self._turn_pending)) * 1000 // 32000
                 self._turn_pending = []
-                log.info("Push-to-talk turn too short (%d ms of audio); nothing sent", held_ms)
-                self._cb.turn_too_short()
+                reason = "short" if self._turn_heard or held_ms < 400 else "silent"
+                log.info("Push-to-talk turn not sent (%s, %d ms of audio)", reason, held_ms)
+                self._cb.turn_dropped(reason)
                 return
             self._open_turn()
         self._enqueue(("activity_end", None))
@@ -366,7 +407,7 @@ class LiveSessionManager:
                         self._reconnect_requested = False
                         self._go_away_deadline = None
                         continue
-                    log.warning("Live connection error (%s): %s", kind, exc)
+                    log.warning("Live connection error (%s): %s", kind, error_detail(exc))
                     if kind == "fatal":
                         self._wanted = False
                         self._out.clear()
@@ -456,13 +497,16 @@ class LiveSessionManager:
                     # An activity without audio makes the server close the session (1007).
                     await session.send_realtime_input(
                         audio=types.Blob(data=SILENT_CHUNK, mime_type=INPUT_MIME))
+                    self._debug_add(SILENT_CHUNK)
                 await session.send_realtime_input(activity_end=types.ActivityEnd())
                 self._activity_open = False
+                self._debug_finish()
         elif kind == "audio":
             if manual and not self._activity_open:
                 return  # audio outside a turn is dropped in push-to-talk mode
             await session.send_realtime_input(audio=types.Blob(data=payload, mime_type=INPUT_MIME))
             self._activity_audio = True
+            self._debug_add(payload)
         elif kind == "text":
             self._touch()
             await session.send_realtime_input(text=payload)
@@ -473,6 +517,7 @@ class LiveSessionManager:
         elif kind == "audio_stream_end":
             if not manual:
                 await session.send_realtime_input(audio_stream_end=True)
+                self._debug_finish()
         elif kind == "tool_response":
             call_conn, responses = payload
             if call_conn == conn_id:
@@ -541,8 +586,14 @@ class LiveSessionManager:
     def _on_content(self, content: types.LiveServerContent) -> None:
         if content.input_transcription is not None and content.input_transcription.text:
             self._touch()
-            self._user_text += content.input_transcription.text
-            self._cb.user_text(self._user_text, False)
+            chunk = content.input_transcription.text
+            self._user_text += chunk
+            if self._display_new:
+                self._display_turn += 1
+                self._display_text = ""
+                self._display_new = False
+            self._display_text += chunk
+            self._cb.user_text(self._display_turn, self._display_text.strip(), False)
             if content.input_transcription.finished:
                 self._flush_user_text()
         if content.interrupted:
@@ -567,14 +618,31 @@ class LiveSessionManager:
             self._model_generating = False
             self._flush_user_text()
             self._finish_model_text()
+            self._finish_display()
+            if self._always_listening():
+                self._debug_finish()
             self._cb.turn_complete()
             self._touch()
 
     def _flush_user_text(self) -> None:
+        """The user's words so far count as said (confirmation evidence, D-011)."""
         if self._user_text.strip():
             text, self._user_text = self._user_text.strip(), ""
-            self._cb.user_text(text, True)
             self._cb.user_final(text)
+
+    def _finish_display(self) -> None:
+        """Mark the shown user line final; the next transcription starts a new line."""
+        if not self._display_new and self._display_text.strip():
+            self._cb.user_text(self._display_turn, self._display_text.strip(), True)
+        self._display_new = True
+
+    def _debug_add(self, pcm: bytes) -> None:
+        if self._debug_audio is not None:
+            self._debug_audio.add(pcm)
+
+    def _debug_finish(self) -> None:
+        if self._debug_audio is not None:
+            self._debug_audio.finish()
 
     def _finish_model_text(self) -> None:
         if self._model_text.strip():

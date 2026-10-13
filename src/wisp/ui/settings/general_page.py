@@ -21,13 +21,10 @@ from PySide6.QtWidgets import (
 from wisp import startup
 from wisp.ai.gemini import validate_key
 from wisp.keystore import KeyStore, looks_like_key, mask
-from wisp.settings import Settings, SettingsStore
+from wisp.settings import LANGUAGE_CODES, Settings, SettingsStore
 from wisp.ui.settings.base import SettingsPage, hint
 
-LANGUAGES = [
-    "English", "Spanish", "French", "German", "Italian", "Portuguese", "Dutch", "Polish",
-    "Turkish", "Hindi", "Japanese", "Korean", "Chinese", "Arabic", "Russian", "Swedish",
-]
+LANGUAGES = [name for name in LANGUAGE_CODES if name != "English"]
 
 
 class _KeyCheckBridge(QObject):
@@ -189,7 +186,7 @@ class GeneralPage(SettingsPage):
     def apply(self, settings: Settings) -> None:
         settings.ai.live_model = self.live_model.text().strip()
         settings.ai.text_model = self.text_model.text().strip()
-        settings.ai.language = self.language.currentText().strip() or "English"
+        settings.ai.language = self.language.currentText().strip() or "English (UK)"
         settings.ai.idle_timeout_min = self.idle_timeout.value()
         settings.general.start_with_windows = self.start_with_windows.isChecked()
         settings.general.show_island = self.show_island.isChecked()
