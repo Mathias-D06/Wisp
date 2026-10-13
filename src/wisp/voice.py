@@ -91,6 +91,7 @@ class VoiceController(QObject):
         signals.tool.connect(self._on_tool)
         signals.turn_done.connect(self._on_turn_done)
         signals.hint.connect(self._tell)
+        self._last_visual: tuple[str, float, str] | None = None
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._refresh_visual)
         self._timer.start(66)
@@ -292,7 +293,13 @@ class VoiceController(QObject):
         self.transcript.emit("notice", text, True, 0)
 
     def _refresh_visual(self) -> None:
+        """Emit only on a real change: an idle Wisp then costs no repaints (D-044)."""
         state, level, text = self.compute_visual()
+        last = self._last_visual
+        same = last is not None and last[0] == state and last[2] == text
+        if same and abs(last[1] - level) < 0.02:
+            return
+        self._last_visual = (state, level, text)
         self.visual.emit(state, level, text)
 
     def compute_visual(self) -> tuple[str, float, str]:

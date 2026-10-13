@@ -1,14 +1,22 @@
-"""The animated orb: shows the assistant's state and acts as a click-to-talk button."""
+"""The orb: Wisp's one living element and a click-to-talk button (D-044).
+
+Ready: a very slow, gentle glow. Listening: grows with the microphone level. Thinking: a soft
+pulse. Speaking: follows the output level. Offline/error: still, in a muted/red tone. Colours
+come from the theme tokens. The frame timer runs only while the orb is visible and only as fast
+as the state needs (8 fps for the slow glow, 60 fps while listening, thinking or speaking); with
+motion off the orb is drawn once per state change.
+"""
 
 from __future__ import annotations
 
 import math
+import time
 
-from PySide6.QtCore import QPointF, QRectF, Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QPainter, QPen, QRadialGradient
+from PySide6.QtCore import QPointF, Qt, QTimer, Signal
+from PySide6.QtGui import QColor, QPainter, QRadialGradient
 from PySide6.QtWidgets import QWidget
 
-from wisp.ui.icons import STATE_COLORS
+from wisp.ui import motion, theme
 
 TOOLTIPS = {
     "idle": "Click to talk",
@@ -18,39 +26,93 @@ TOOLTIPS = {
     "offline": "Offline",
     "error": "Needs attention",
 }
+FRAME_MS = {"idle": 125, "listening": 16, "speaking": 16, "thinking": 16}
+"""Ready breathes over 4.5 s, so 8 fps is smooth there and keeps idle CPU low; states that react
+to sound or pulse run at 60 fps."""
+GLOW_PERIOD_S = 4.5
+PULSE_PERIOD_S = 1.4
+
+
+def state_color(state: str, accent: str, p: theme.Palette | None = None) -> QColor:
+    p = p or theme.current()
+    return QColor({"listening": p.success, "thinking": p.warning, "offline": p.muted,
+                   "error": p.danger}.get(state, accent))
+
+
+def paint_orb(painter: QPainter, size: float, color: QColor, glow: float, scale: float) -> None:
+    """Draw the orb mark centred in a ``size`` square: a soft halo (``glow`` 0–1) and a
+    shaded core scaled by ``scale``."""
+    center = QPointF(size / 2, size / 2)
+    core = size * 0.30 * scale
+    painter.setPen(Qt.PenStyle.NoPen)
+    if glow > 0.01:
+        halo = QRadialGradient(center, size / 2)
+        inner = QColor(color)
+        inner.setAlphaF(min(1.0, 0.55 * glow))
+        outer = QColor(color)
+        outer.setAlphaF(0.0)
+        halo.setColorAt(core / (size / 2) * 0.85, inner)
+        halo.setColorAt(1.0, outer)
+        painter.setBrush(halo)
+        painter.drawEllipse(center, size / 2, size / 2)
+    shade = QRadialGradient(QPointF(center.x() - core * 0.35, center.y() - core * 0.4), core * 1.6)
+    shade.setColorAt(0.0, color.lighter(160))
+    shade.setColorAt(0.55, color)
+    shade.setColorAt(1.0, color.darker(150))
+    painter.setBrush(shade)
+    painter.drawEllipse(center, core, core)
 
 
 class Orb(QWidget):
     clicked = Signal()
 
-    def __init__(self, size: int = 28, accent: str = "#7c5cff", parent=None):
+    def __init__(self, size: int = 28, accent: str | None = None, parent=None):
         super().__init__(parent)
         self.setFixedSize(size, size)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._accent = accent
+        self._accent = accent or theme.current().accent
         self.state = "idle"
         self.level = 0.0
-        self._phase = 0.0
+        self._smoothed = 0.0
         self._timer = QTimer(self)
-        self._timer.timeout.connect(self._tick)
-        self._timer.start(33)
+        self._timer.timeout.connect(self.update)
         self.setToolTip(TOOLTIPS["idle"])
+        self.setAccessibleName("Wisp — click to talk")
 
+    # ----- state -------------------------------------------------------------------------------
     def set_accent(self, accent: str) -> None:
         self._accent = accent
         self.update()
 
     def set_state(self, state: str, level: float = 0.0) -> None:
-        if state != self.state:
+        changed = state != self.state
+        self.level = level
+        if changed:
             self.state = state
             self.setToolTip(TOOLTIPS.get(state, state))
-        self.level = level
-
-    def _tick(self) -> None:
-        self._phase = (self._phase + 0.12) % (2 * math.pi)
-        if self.isVisible():
+            self._schedule()
             self.update()
 
+    def _schedule(self) -> None:
+        interval = FRAME_MS.get(self.state)
+        if interval is None or not motion.enabled() or not self.isVisible():
+            self._timer.stop()
+        elif self._timer.interval() != interval or not self._timer.isActive():
+            self._timer.start(interval)
+
+    def showEvent(self, event) -> None:
+        self._schedule()
+        super().showEvent(event)
+
+    def hideEvent(self, event) -> None:
+        self._timer.stop()
+        super().hideEvent(event)
+
+    @property
+    def animating(self) -> bool:
+        return self._timer.isActive()
+
+    # ----- input -------------------------------------------------------------------------------
     def mousePressEvent(self, event) -> None:
         if event.button() == Qt.MouseButton.LeftButton:
             self.clicked.emit()
@@ -61,39 +123,25 @@ class Orb(QWidget):
         (two would start and immediately stop listening)."""
         event.accept()
 
+    # ----- drawing -----------------------------------------------------------------------------
+    def frame(self, now: float) -> tuple[float, float]:
+        """(glow 0–1, core scale) for the current state at time ``now``."""
+        moving = motion.enabled()
+        self._smoothed += (min(1.0, self.level * 1.6) - self._smoothed) * 0.35
+        if self.state == "idle":
+            breath = 0.5 + 0.5 * math.sin(2 * math.pi * now / GLOW_PERIOD_S) if moving else 0.5
+            return 0.25 + 0.2 * breath, 1.0
+        if self.state in ("listening", "speaking"):
+            level = self._smoothed if moving else 0.0
+            return 0.45 + 0.5 * level, 1.0 + 0.22 * level
+        if self.state == "thinking":
+            pulse = 0.5 + 0.5 * math.sin(2 * math.pi * now / PULSE_PERIOD_S) if moving else 0.5
+            return 0.3 + 0.35 * pulse, 1.0 + 0.04 * pulse
+        return 0.0, 0.92  # offline / error: still
+
     def paintEvent(self, _event) -> None:
+        glow, scale = self.frame(time.monotonic())
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        w = self.width()
-        color = QColor(STATE_COLORS.get(self.state) or self._accent)
-        base = w * 0.34
-        if self.state in ("listening", "speaking"):
-            radius = base * (1.0 + 0.28 * min(1.0, self.level * 1.6))
-        elif self.state == "idle":
-            radius = base * (1.0 + 0.04 * math.sin(self._phase * 0.5))
-        else:
-            radius = base
-        center = QPointF(w / 2, w / 2)
-        if self.state in ("listening", "speaking"):
-            halo = QColor(color)
-            halo.setAlpha(60)
-            painter.setPen(Qt.PenStyle.NoPen)
-            painter.setBrush(halo)
-            painter.drawEllipse(center, radius * 1.35, radius * 1.35)
-        gradient = QRadialGradient(QPointF(w * 0.4, w * 0.36), radius * 1.6)
-        gradient.setColorAt(0.0, color.lighter(165))
-        gradient.setColorAt(0.6, color)
-        gradient.setColorAt(1.0, color.darker(170))
-        painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(gradient)
-        painter.drawEllipse(center, radius, radius)
-        if self.state == "thinking":
-            pen = QPen(QColor(255, 255, 255, 200), max(1.5, w * 0.06))
-            pen.setCapStyle(Qt.PenCapStyle.RoundCap)
-            painter.setPen(pen)
-            painter.setBrush(Qt.BrushStyle.NoBrush)
-            arc = QRectF(center.x() - radius * 1.25, center.y() - radius * 1.25,
-                         radius * 2.5, radius * 2.5)
-            start = int(-math.degrees(self._phase * 2) * 16)
-            painter.drawArc(arc, start, 100 * 16)
+        paint_orb(painter, self.width(), state_color(self.state, self._accent), glow, scale)
         painter.end()

@@ -64,7 +64,14 @@ def _qt() -> str:
     png = image_to_png(orb_pixmap(64, "#7c5cff").toImage())
     if QImage.fromData(png, "PNG").isNull():
         raise RuntimeError("PNG round trip failed")
-    return f"{app.platformName()} platform, image formats ok"
+    from PySide6.QtCore import QSize
+
+    from wisp.ui.iconset import ICONS, icon
+
+    for name in ICONS:  # every bundled Lucide icon renders (QtSvg + assets present)
+        if icon(name, "#ffffff").pixmap(QSize(16, 16), 1.5).isNull():
+            raise RuntimeError(f"icon {name} did not render")
+    return f"{app.platformName()} platform, image formats and {len(ICONS)} icons ok"
 
 
 @check("sqlite_fts5")

@@ -1,7 +1,9 @@
 """Dev helper: render Wisp windows offscreen to PNG files for visual review.
 
-Run: .venv\\Scripts\\python spikes\\render_ui.py [name ...]
-Images go to spikes/out/. Uses a temporary data folder so real settings are untouched.
+Run: .venv\\Scripts\\python spikes\\render_ui.py [--out DIR] [--docs] [name ...]
+Images go to spikes/out/ (or DIR). Uses a temporary data folder so real settings are untouched.
+``--docs`` skips the Island's Apps and Wallpaper tabs, which show the PC's own apps and pictures.
+``--dpr 1.25`` renders at exactly 125 % display scaling (relative to this PC's own).
 """
 
 from __future__ import annotations
@@ -12,10 +14,23 @@ import tempfile
 from pathlib import Path
 
 os.environ.setdefault("WISP_DATA_DIR", tempfile.mkdtemp(prefix="wisp-render-"))
+os.environ.setdefault("WISP_NO_MICA", "1")  # an off-screen grab can't show the desktop material
+if "--dpr" in sys.argv:
+    # Render at an exact display scaling (1.0 = 100 %) whatever this PC's own scaling is.
+    import ctypes
+
+    _target = float(sys.argv[sys.argv.index("--dpr") + 1])
+    # Per-monitor-aware first (as Qt will be), otherwise Windows reports a virtualised 96 DPI.
+    ctypes.windll.user32.SetProcessDpiAwarenessContext(ctypes.c_void_p(-4))
+    _system = ctypes.windll.user32.GetDpiForSystem() / 96
+    os.environ["QT_SCALE_FACTOR"] = f"{_target / _system:.4f}"
+    del sys.argv[sys.argv.index("--dpr"):sys.argv.index("--dpr") + 2]
 
 from PySide6.QtWidgets import QApplication
 
 OUT = Path(__file__).parent / "out"
+DOCS = False
+PERSONAL_TABS = ("Apps", "Wallpaper")
 
 
 def _sample_data(wisp_app) -> None:
@@ -148,11 +163,14 @@ def render_island(app: QApplication) -> None:
     island = wisp_app.island
     island.show()
     island.show_media(MediaState(True, "Weightless", "Marconi Union", "Spotify", True, 95, 480))
-    island.collapse()
     _pump(app, 0.3)
+    island.collapse()  # the pointer may be over the Island (hover expands it)
+    app.processEvents()
     island.grab().save(str(OUT / "island_collapsed.png"))
     island.expand()
     for index, (name, _widget) in enumerate(island.tabs):
+        if DOCS and name in PERSONAL_TABS:
+            continue
         island.show_tab(index)
         _pump(app, 2.0 if name in ("Controls", "Apps", "Wallpaper") else 0.4)
         island.grab().save(str(OUT / f"island_{name.lower()}.png"))
@@ -164,9 +182,21 @@ RENDERERS = {"settings": render_settings, "console": render_console, "circle": r
 
 
 def main() -> None:
-    OUT.mkdir(exist_ok=True)
+    global OUT, DOCS
+    args = sys.argv[1:]
+    if "--out" in args:
+        index = args.index("--out")
+        OUT = Path(args[index + 1])
+        del args[index:index + 2]
+    if "--docs" in args:
+        DOCS = True
+        args.remove("--docs")
+    OUT.mkdir(parents=True, exist_ok=True)
     app = QApplication(sys.argv[:1])
-    names = sys.argv[1:] or list(RENDERERS)
+    from wisp.ui import motion
+
+    motion.force(False)  # grab final states, not the first frame of a fade
+    names = args or list(RENDERERS)
     for name in names:
         RENDERERS[name](app)
     print("wrote", sorted(p.name for p in OUT.glob("*.png")))

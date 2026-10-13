@@ -5,7 +5,7 @@ Everything here works without an API key; voice features show an "add your key" 
 
 from __future__ import annotations
 
-from PySide6.QtCore import QEvent, QPoint, Qt, QTimer, Signal
+from PySide6.QtCore import QEvent, QPoint, QSize, Qt, QTimer, QVariantAnimation, Signal
 from PySide6.QtGui import QColor, QCursor, QGuiApplication
 from PySide6.QtWidgets import (
     QApplication,
@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from wisp.ui import motion, theme
 from wisp.ui.island.common import SETTINGS, GlyphButton
 from wisp.ui.island.music import MusicStrip
 from wisp.ui.orb import Orb
@@ -31,33 +32,35 @@ MARGIN = 10  # room for the drop shadow
 
 
 def island_stylesheet(p) -> str:
-    surface = QColor(p.surface)
-    rgba = f"rgba({surface.red()}, {surface.green()}, {surface.blue()}, 245)"
+    """Island styles from the theme tokens (D-043)."""
+    shell = theme.rgba(p.surface, 0.97)
+    r, rc = theme.RADIUS_PANEL, theme.RADIUS_CONTROL
     return f"""
-    #IslandShell {{ background: {rgba}; border: 1px solid {p.border}; border-radius: 20px; }}
+    #IslandShell {{ background: {shell}; border: 1px solid {p.hairline}; border-radius: 20px; }}
     #IslandShell QLabel {{ background: transparent; }}
-    QLabel#Status {{ font-size: 10pt; }}
-    QLabel#Section {{ color: {p.muted}; font-size: 8pt; letter-spacing: 1px; margin-top: 6px; }}
-    QLabel#Hint {{ color: {p.muted}; font-size: 9pt; }}
-    QLabel#CardTitle {{ font-weight: 600; }}
-    QLabel#Big {{ font-size: 13pt; font-weight: 600; }}
-    QFrame#Card {{ background: {p.surface2}; border-radius: 12px; }}
-    QPushButton#Tab {{ background: transparent; border: none; color: {p.muted};
-        padding: 6px 10px; border-radius: 8px; }}
+    QLabel#Status {{ {theme.font_css(theme.BODY)} }}
+    QLabel#Section {{ color: {p.secondary}; {theme.font_css(theme.CAPTION)} margin-top: 6px; }}
+    QLabel#Hint {{ color: {p.muted}; {theme.font_css(theme.CAPTION)} }}
+    QLabel#CardTitle {{ color: {p.text}; }}
+    QLabel#Big {{ {theme.font_css(theme.TITLE)} font-weight: {theme.SEMIBOLD}; }}
+    QFrame#Card {{ background: {p.surface2}; border: 1px solid {p.hairline};
+        border-radius: {r}px; }}
+    QPushButton#Tab {{ background: transparent; border: none; color: {p.secondary};
+        padding: 6px 10px; border-radius: {rc}px; }}
     QPushButton#Tab:checked {{ background: {p.surface2}; color: {p.text}; }}
-    QPushButton#Tab:hover {{ color: {p.text}; }}
-    QPushButton#Chip {{ background: {p.surface2}; border: 1px solid {p.border}; border-radius: 12px;
-        padding: 8px 12px; text-align: left; }}
-    QPushButton#Chip:checked {{ background: {p.accent}; color: {p.accent_text}; border: none; }}
+    QPushButton#Tab:hover {{ color: {p.text}; background: {p.hover}; }}
+    QPushButton#Chip {{ background: {p.surface2}; border: 1px solid {p.hairline};
+        border-radius: {r}px; padding: 8px 12px; text-align: left; }}
+    QPushButton#Chip:hover {{ background: {p.hover}; }}
+    QPushButton#Chip:checked {{ background: {p.accent_soft}; color: {p.text};
+        border: 1px solid {theme.rgba(p.accent, 0.55)}; }}
     QPushButton#Chip:disabled {{ color: {p.muted}; }}
-    QPushButton#Glyph {{ background: transparent; border: none; border-radius: 17px; }}
-    QPushButton#Glyph:hover {{ background: {p.surface2}; }}
-    QPushButton#Glyph:checked {{ color: {p.accent}; }}
-    QPushButton#KeyPrompt {{ background: {p.accent}; color: {p.accent_text}; border: none;
-        border-radius: 12px; padding: 4px 10px; }}
+    QPushButton#KeyPrompt {{ background: {p.accent_fill}; color: {p.accent_text}; border: none;
+        border-radius: {rc}px; padding: 4px 10px; }}
     QListWidget#Flat {{ background: transparent; border: none; }}
-    QListWidget#Flat::item {{ padding: 6px; border-radius: 8px; }}
-    QListWidget#Flat::item:hover {{ background: {p.surface2}; }}
+    QListWidget#Flat::item {{ padding: 6px; border-radius: {rc}px; }}
+    QListWidget#Flat::item:hover {{ background: {p.hover}; }}
+    QListWidget#Flat::item:selected {{ background: {p.accent_soft}; color: {p.text}; }}
     QProgressBar#Thin {{ background: {p.border}; border: none; border-radius: 2px; }}
     QProgressBar#Thin::chunk {{ background: {p.accent}; border-radius: 2px; }}
     """
@@ -75,6 +78,7 @@ class Island(QWidget):
         self.voice = voice
         self.has_key = has_key
         self.expanded = False
+        self._resize_anim: QVariantAnimation | None = None
         self.media_state = None
         self._voice_text = "Ready"
         self._voice_state = "idle"
@@ -83,11 +87,10 @@ class Island(QWidget):
         outer.setContentsMargins(MARGIN, MARGIN, MARGIN, MARGIN)
         self.shell = QFrame()
         self.shell.setObjectName("IslandShell")
-        shadow = QGraphicsDropShadowEffect(self.shell)
-        shadow.setBlurRadius(24)
-        shadow.setOffset(0, 4)
-        shadow.setColor(QColor(0, 0, 0, 110))
-        self.shell.setGraphicsEffect(shadow)
+        self._shadow = QGraphicsDropShadowEffect(self.shell)
+        self._shadow.setBlurRadius(theme.SHADOW_BLUR)
+        self._shadow.setOffset(0, theme.SHADOW_Y)
+        self.shell.setGraphicsEffect(self._shadow)
         outer.addWidget(self.shell)
         layout = QVBoxLayout(self.shell)
         layout.setContentsMargins(12, 6, 12, 10)
@@ -144,6 +147,7 @@ class Island(QWidget):
     # ----- appearance --------------------------------------------------------------------------
     def set_palette(self, palette) -> None:
         self.setStyleSheet(island_stylesheet(palette))
+        self._shadow.setColor(QColor(0, 0, 0, palette.shadow_alpha))
 
     def set_accent(self, accent: str) -> None:
         self.orb.set_accent(accent)
@@ -162,18 +166,52 @@ class Island(QWidget):
         if self.expanded:
             return
         self.expanded = True
-        self.body.setVisible(True)
         self.settings_button.setVisible(True)
-        self.setFixedSize(EXPANDED[0] + 2 * MARGIN, EXPANDED[1] + 2 * MARGIN)
-        self._place()
+        self._resize_to(EXPANDED, then=self._reveal_body)
         self.show_tab(self.stack.currentIndex())
+
+    def _reveal_body(self) -> None:
+        if self.expanded:
+            self.body.setVisible(True)
+            motion.fade_in(self.body, motion.FAST_MS)
 
     def collapse(self) -> None:
         self.expanded = False
         self.body.setVisible(False)
         self.settings_button.setVisible(False)
-        self.setFixedSize(COLLAPSED[0] + 2 * MARGIN, COLLAPSED[1] + 2 * MARGIN)
-        self._place()
+        self._resize_to(COLLAPSED)
+
+    def _resize_to(self, target: tuple[int, int], then=None) -> None:
+        """Grow or shrink the pill around its top-centre (motion.NORMAL_MS, ease-out)."""
+        end = QSize(target[0] + 2 * MARGIN, target[1] + 2 * MARGIN)
+        if self._resize_anim is not None:
+            self._resize_anim.stop()
+            self._resize_anim = None
+        if not motion.enabled() or not self.isVisible() or self.size() == end:
+            self.setFixedSize(end)
+            self._place()
+            if then is not None:
+                then()
+            return
+        animation = QVariantAnimation(self)
+        animation.setStartValue(self.size())
+        animation.setEndValue(end)
+        animation.setDuration(motion.NORMAL_MS)
+        animation.setEasingCurve(motion.EASING)
+
+        def step(value: QSize) -> None:
+            self.setFixedSize(value)
+            self._place()
+
+        def done() -> None:
+            self._resize_anim = None
+            if then is not None:
+                then()
+
+        animation.valueChanged.connect(step)
+        animation.finished.connect(done)
+        self._resize_anim = animation
+        animation.start()
 
     def _maybe_collapse(self) -> None:
         if self.geometry().contains(QCursor.pos()):
@@ -209,7 +247,9 @@ class Island(QWidget):
     def show_tab(self, index: int) -> None:
         if index < 0:
             return
-        self.stack.setCurrentIndex(index)
+        if index != self.stack.currentIndex():
+            self.stack.setCurrentIndex(index)
+            motion.fade_in(self.stack.widget(index), motion.FAST_MS)
         button = self.tab_group.button(index)
         if button is not None:
             button.setChecked(True)
@@ -244,6 +284,7 @@ class Island(QWidget):
         else:
             text = self._voice_text
         metrics = self.status.fontMetrics()
-        self.status.setText(metrics.elidedText(text, Qt.TextElideMode.ElideRight,
-                                               max(80, self.status.width())))
-        self.status.setToolTip(text)
+        shown = metrics.elidedText(text, Qt.TextElideMode.ElideRight, max(80, self.status.width()))
+        if shown != self.status.text():  # no relayout/repaint when nothing changed
+            self.status.setText(shown)
+            self.status.setToolTip(text)

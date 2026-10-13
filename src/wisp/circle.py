@@ -68,13 +68,13 @@ class CircleController(QObject):
         if self.active:
             return
         if not self.has_key():
-            self.hud.flash(NO_KEY_MESSAGE, 4000, "#6b7280")
+            self.hud.flash(NO_KEY_MESSAGE, 4000, "muted")
             return
         shots = [(screen, screen.grabWindow(0)) for screen in self.screens()]
         try:
             self.mic.acquire("circle")
         except MicError as exc:
-            self.hud.flash(str(exc), 4000, "#f87171")
+            self.hud.flash(str(exc), 4000, "danger")
             return
         accent = self.accent()
         self.overlays = [self.overlay_factory(screen, shot, accent) for screen, shot in shots]
@@ -91,7 +91,7 @@ class CircleController(QObject):
             self.mic.subscribe("circle", self.live.push_audio)
         self.voice.talking = True
         self.active = True
-        self.hud.show_state("Circle it and ask your question", self.accent(),
+        self.hud.show_state("Circle it and ask your question", "accent",
                             lambda: self.mic.level)
 
     def _end_capture(self) -> None:
@@ -126,7 +126,7 @@ class CircleController(QObject):
                 self.voice.suspend_always(False)
             else:
                 self.live.cancel_turn()
-            self.hud.flash("Nothing was circled", 1500, "#6b7280")
+            self.hud.flash("Nothing was circled", 1500, "muted")
             return
         jpeg, anchor = crop
         self.live.send_image(jpeg)

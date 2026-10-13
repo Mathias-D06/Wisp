@@ -21,6 +21,7 @@ from wisp.ui.island.common import (
     BRIGHTNESS,
     MUTE,
     NIGHT,
+    THEME,
     VOLUME,
     WIFI,
     Chip,
@@ -66,7 +67,7 @@ class ControlsTab(QWidget):
         self.wifi = Chip(WIFI, "Wi-Fi", color)
         self.bluetooth = Chip(BLUETOOTH, "Bluetooth", color)
         self.night = Chip(NIGHT, "Night light", color)
-        self.dark = Chip("◐", "Dark mode", color)
+        self.dark = Chip(THEME, "Dark mode", color)
         for index, chip in enumerate((self.wifi, self.bluetooth, self.night, self.dark)):
             grid.addWidget(chip, index // 2, index % 2)
         self.wifi.clicked.connect(lambda on: self._radio("wifi", on))
@@ -123,7 +124,7 @@ class ControlsTab(QWidget):
             self.volume.setValue(level)
             self.volume_label.setText(f"{level}%")
             self.mute.setChecked(muted)
-            self.mute.setText(MUTE if muted else VOLUME)
+            self.mute.set_icon_name(MUTE if muted else VOLUME)
         self.output.clear()
         for device in data.get("outputs") or []:
             self.output.addItem(device.name, device.id)
@@ -157,7 +158,7 @@ class ControlsTab(QWidget):
         self.bg.run(lambda: controls.set_volume(value), None, self._failed)
 
     def _mute_toggled(self, muted: bool) -> None:
-        self.mute.setText(MUTE if muted else VOLUME)
+        self.mute.set_icon_name(MUTE if muted else VOLUME)
         if not self._loading:
             self.bg.run(lambda: controls.set_mute(muted), None, self._failed)
 

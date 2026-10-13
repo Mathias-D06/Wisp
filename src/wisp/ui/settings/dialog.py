@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
 )
 
 from wisp.settings import SettingsStore
+from wisp.ui import chrome, motion, theme
 from wisp.ui.settings.base import SettingsPage
 
 log = logging.getLogger(__name__)
@@ -24,17 +25,25 @@ class SettingsDialog(QDialog):
     def __init__(self, store: SettingsStore, pages: list[SettingsPage], parent=None):
         super().__init__(parent)
         self.setWindowTitle("Wisp settings")
-        self.setMinimumSize(760, 600)
+        self.setMinimumSize(780, 620)
+        chrome.prepare(self)
         self._store = store
         self._pages = pages
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(theme.SPACE["l"], theme.SPACE["m"], theme.SPACE["l"],
+                                  theme.SPACE["l"])
+        layout.setSpacing(theme.SPACE["m"])
         self.tabs = QTabWidget()
+        self.tabs.setDocumentMode(True)
         for page in pages:
             scroll = QScrollArea()
             scroll.setWidgetResizable(True)
             scroll.setFrameShape(QScrollArea.Shape.NoFrame)
             scroll.setWidget(page)
+            scroll.viewport().setAutoFillBackground(False)
             self.tabs.addTab(scroll, page.title)
+        self.tabs.currentChanged.connect(
+            lambda index: motion.fade_in(self.tabs.widget(index), motion.FAST_MS))
         layout.addWidget(self.tabs)
         self.error = QLabel()
         self.error.setProperty("error", True)
@@ -45,11 +54,13 @@ class SettingsDialog(QDialog):
             | QDialogButtonBox.StandardButton.Apply
             | QDialogButtonBox.StandardButton.Cancel
         )
+        buttons.button(QDialogButtonBox.StandardButton.Ok).setProperty("primary", True)
         buttons.accepted.connect(self._ok)
         buttons.rejected.connect(self.reject)
         buttons.button(QDialogButtonBox.StandardButton.Apply).clicked.connect(self.apply)
         layout.addWidget(buttons)
         self.setWindowFlag(Qt.WindowType.WindowContextHelpButtonHint, False)
+        theme.reveal_scrollbars(self)
 
     def open_page(self, title: str | None = None) -> None:
         settings = self._store.get()
@@ -60,7 +71,11 @@ class SettingsDialog(QDialog):
                 if page.title == title:
                     self.tabs.setCurrentIndex(index)
         self.error.clear()
+        appearing = not self.isVisible()
         self.show()
+        chrome.apply(self)
+        if appearing:
+            motion.window_fade(self, show=True)
         self.raise_()
         self.activateWindow()
 

@@ -8,12 +8,24 @@ from __future__ import annotations
 from collections.abc import Callable
 
 from PySide6.QtCore import QRectF, Qt, QTimer
-from PySide6.QtGui import QColor, QCursor, QFont, QGuiApplication, QPainter, QPainterPath
+from PySide6.QtGui import QColor, QCursor, QGuiApplication, QPainter, QPainterPath
 from PySide6.QtWidgets import QWidget
+
+from wisp.ui import motion, theme
+
+TONES = ("accent", "success", "warning", "danger", "muted")
+
+
+def tone_color(tone: str | None, accent: str) -> QColor:
+    """A tone name from TONES (or an explicit colour) → colour from the current palette."""
+    p = theme.current()
+    named = {"accent": accent, "success": p.success, "warning": p.warning, "danger": p.danger,
+             "muted": p.muted}
+    return QColor(named.get(tone or "accent", tone or accent))
 
 
 class Hud(QWidget):
-    def __init__(self, accent: str = "#7c5cff"):
+    def __init__(self, accent: str | None = None):
         super().__init__(None, Qt.WindowType.Tool | Qt.WindowType.FramelessWindowHint
                          | Qt.WindowType.WindowStaysOnTopHint
                          | Qt.WindowType.WindowDoesNotAcceptFocus
@@ -21,26 +33,33 @@ class Hud(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
         self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
-        self.accent = accent
+        self.accent = accent or theme.current().accent
         self.text = ""
-        self.dot = accent
+        self.dot = "accent"
         self._level: Callable[[], float] | None = None
         self._ticker = QTimer(self)
         self._ticker.timeout.connect(self.update)
         self._hide_timer = QTimer(self)
         self._hide_timer.setSingleShot(True)
-        self._hide_timer.timeout.connect(self.hide)
-        self.setFixedSize(280, 44)
+        self._hide_timer.timeout.connect(self._fade_out)
+        self.setFixedSize(300, 44)
 
     def show_state(self, text: str, dot: str | None = None,
                    level: Callable[[], float] | None = None) -> None:
+        """``dot`` is a tone from TONES (default: the accent)."""
         self._hide_timer.stop()
+        appearing = not self.isVisible()
         self.text = text
-        self.dot = dot or self.accent
+        self.dot = dot or "accent"
         self._level = level
         self._place()
         self.show()
-        self._ticker.start(50)
+        if level is not None:
+            self._ticker.start(50)  # only while the level moves (recording)
+        else:
+            self._ticker.stop()
+        if appearing:
+            motion.window_fade(self, show=True)
         self.update()
 
     def flash(self, text: str, ms: int = 2500, dot: str | None = None) -> None:
@@ -51,6 +70,10 @@ class Hud(QWidget):
         self._ticker.stop()
         self.hide()
 
+    def _fade_out(self) -> None:
+        self._ticker.stop()
+        motion.window_fade(self, show=False, finished=self.hide)
+
     def _place(self) -> None:
         screen = QGuiApplication.screenAt(QCursor.pos()) or QGuiApplication.primaryScreen()
         area = screen.availableGeometry()
@@ -58,25 +81,27 @@ class Hud(QWidget):
                   area.y() + area.height() - self.height() - 72)
 
     def paintEvent(self, _event) -> None:
+        p = theme.current()
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         rect = QRectF(self.rect()).adjusted(2, 2, -2, -2)
         path = QPainterPath()
         path.addRoundedRect(rect, rect.height() / 2, rect.height() / 2)
-        painter.fillPath(path, QColor(20, 20, 26, 235))
-        painter.setPen(QColor(255, 255, 255, 40))
+        background = QColor(p.surface2)
+        background.setAlphaF(0.96)
+        painter.fillPath(path, background)
+        painter.setPen(QColor(p.border))
         painter.drawPath(path)
         level = min(1.0, (self._level() if self._level else 0.0) * 1.6)
-        radius = 5 + 4 * level
+        radius = 4.5 + 3.5 * level
         painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(QColor(self.dot))
-        painter.drawEllipse(QRectF(22 - radius, rect.center().y() - radius, radius * 2,
+        painter.setBrush(tone_color(self.dot, self.accent))
+        painter.drawEllipse(QRectF(24 - radius, rect.center().y() - radius, radius * 2,
                                    radius * 2))
-        painter.setPen(QColor("#f2f2f7"))
-        font = QFont("Segoe UI", 10)
-        painter.setFont(font)
-        painter.drawText(rect.adjusted(38, 0, -14, 0),
+        painter.setPen(QColor(p.text))
+        painter.setFont(theme.ui_font(theme.BODY))
+        painter.drawText(rect.adjusted(40, 0, -16, 0),
                          Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
                          painter.fontMetrics().elidedText(self.text, Qt.TextElideMode.ElideRight,
-                                                          int(rect.width()) - 52))
+                                                          int(rect.width()) - 56))
         painter.end()

@@ -224,3 +224,20 @@ def test_too_short_turn_shows_a_hint(qtbot, tmp_path):
     qtbot.waitUntil(lambda: messages == [DROPPED_MESSAGES["short"], DROPPED_MESSAGES["silent"]],
                     timeout=1000)
     assert "Test microphone" in DROPPED_MESSAGES["silent"]
+
+
+def test_visual_is_emitted_only_on_change(qtbot, tmp_path):
+    """An idle Wisp emits nothing, so nothing repaints (D-044)."""
+    voice, _live, mic, *_ = make(tmp_path)
+    seen = []
+    voice.visual.connect(lambda state, level, text: seen.append((state, round(level, 2), text)))
+    for _ in range(5):
+        voice._refresh_visual()
+    assert len(seen) <= 1
+    voice.on_hotkey("push_to_talk", "press")
+    voice._refresh_visual()
+    mic.level = 0.31  # unchanged within 0.02 → no emission
+    voice._refresh_visual()
+    mic.level = 0.6
+    voice._refresh_visual()
+    assert [s[0] for s in seen[-2:]] == ["listening", "listening"] and seen[-1][1] == 0.6

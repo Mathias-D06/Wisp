@@ -2,14 +2,16 @@
 
 from __future__ import annotations
 
+from PySide6.QtCore import QSize
 from PySide6.QtWidgets import QGridLayout, QLabel, QMessageBox, QPushButton, QVBoxLayout, QWidget
 
 from wisp.system import power
-from wisp.ui.island.common import LOCK, NIGHT, POWER, RESTART, glyph_icon
+from wisp.ui import theme
+from wisp.ui.island.common import LOCK, POWER, RESTART, SLEEP, glyph_icon
 
 ACTIONS = [
     ("lock", "Lock", LOCK, None),
-    ("sleep", "Sleep", NIGHT, "Put the PC to sleep now?"),
+    ("sleep", "Sleep", SLEEP, "Put the PC to sleep now?"),
     ("restart", "Restart", RESTART, "Restart now? Unsaved work in other apps may be lost."),
     ("shutdown", "Shut down", POWER, "Shut down now? Unsaved work in other apps may be lost."),
 ]
@@ -26,7 +28,8 @@ class PowerTab(QWidget):
         grid = QGridLayout()
         self.buttons: dict[str, QPushButton] = {}
         for index, (key, label, glyph, _question) in enumerate(ACTIONS):
-            button = QPushButton(glyph_icon(glyph, palette.text, 22), label)
+            button = QPushButton(glyph_icon(glyph, palette.secondary), label)
+            button.setIconSize(QSize(theme.ICON_MD, theme.ICON_MD))
             button.setObjectName("Chip")
             button.setMinimumHeight(64)
             button.clicked.connect(lambda _c=False, k=key: self.trigger(k))

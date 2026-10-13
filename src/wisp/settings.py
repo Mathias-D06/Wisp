@@ -115,6 +115,7 @@ class LoadoutSettings:
     custom_personality: str = ""
     theme: str = "dark"
     accent: str = "#7c5cff"
+    reduce_motion: bool = False
     skills: list[str] = field(
         default_factory=lambda: [g for g in TOOL_GROUPS if g not in ("terminal", "input")]
     )

@@ -245,3 +245,30 @@ def test_other_key_cancels(qtbot):
     controller.on_hotkey("circle", "cancel")
     assert names(live) == ["begin_turn", "cancel_turn"] and not mic.users
     assert controller.overlays == [] and not voice.talking
+
+
+@pytest.mark.qt
+def test_overlay_loop_is_outlined_not_filled(qtbot):
+    """Regression: the hint pill's brush once filled the user's loop and hid what was circled."""
+    from PySide6.QtCore import QPointF, QRect
+    from PySide6.QtGui import QColor, QPixmap
+
+    from wisp.ui.overlay import CircleOverlay
+
+    class Screen:
+        def geometry(self):
+            return QRect(0, 0, 400, 300)
+
+    shot = QPixmap(400, 300)
+    shot.fill(QColor("#ffffff"))
+    overlay = CircleOverlay(Screen(), shot, "#7c5cff")
+    qtbot.addWidget(overlay)
+    overlay.resize(400, 300)
+    import math
+
+    overlay.strokes = [[QPointF(200 + 80 * math.cos(t / 20 * math.tau),
+                                180 + 50 * math.sin(t / 20 * math.tau)) for t in range(21)]]
+    image = overlay.grab().toImage()
+    ratio = image.devicePixelRatio()  # sample in device pixels (e.g. 2 at 200 % scaling)
+    centre = image.pixelColor(round(200 * ratio), round(180 * ratio))
+    assert centre.lightness() > 150  # the screenshot (dimmed white) shows inside the loop

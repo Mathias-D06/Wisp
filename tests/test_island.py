@@ -380,3 +380,39 @@ def test_stats_tab_survives_restyling(qtbot, db, tmp_path):
         sys.excepthook = hook
     assert errors == []
     assert callable(tab.metric)  # QWidget::metric is no longer shadowed
+
+
+def test_expand_and_collapse_animate_when_motion_is_on(island, qtbot):
+    from wisp.ui import motion
+    from wisp.ui.island.island import COLLAPSED, EXPANDED, MARGIN
+
+    motion.force(True)
+    # The real pointer may rest where the Island appears; its hover timers must not re-expand
+    # or collapse the Island mid-test.
+    island._expand_timer.setInterval(3_600_000)
+    island._collapse_timer.setInterval(3_600_000)
+    island.show()
+    island.expand()
+    assert island.expanded and island.body.isHidden()  # contents appear after the resize
+    assert island._resize_anim is not None
+    qtbot.waitUntil(lambda: island.size().width() == EXPANDED[0] + 2 * MARGIN, timeout=2000)
+    qtbot.waitUntil(lambda: not island.body.isHidden(), timeout=2000)
+    island.collapse()
+    qtbot.waitUntil(lambda: island.size().width() == COLLAPSED[0] + 2 * MARGIN, timeout=2000)
+    screen = QGuiApplication.primaryScreen().availableGeometry()
+    assert abs(island.geometry().center().x() - screen.center().x()) <= 1
+
+
+def test_reduce_motion_jumps_straight_to_the_end(island):
+    from wisp.ui import motion
+    from wisp.ui.island.island import EXPANDED, MARGIN
+
+    motion.force(None)
+    motion.configure(reduce_motion=True)
+    try:
+        island.show()
+        island.expand()
+        assert island.size().width() == EXPANDED[0] + 2 * MARGIN and not island.body.isHidden()
+    finally:
+        motion.configure(reduce_motion=False)
+

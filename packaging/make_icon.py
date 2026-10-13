@@ -13,9 +13,9 @@ from PIL import Image
 from PySide6.QtCore import QBuffer, QByteArray, QIODevice
 from PySide6.QtWidgets import QApplication
 
+from wisp.ui.icons import ICON_SIZES as SIZES  # same sizes as the tray icon
 from wisp.ui.icons import orb_pixmap
 
-SIZES = (16, 20, 24, 32, 40, 48, 64, 128, 256)
 ACCENT = "#7c5cff"
 OUT = Path(__file__).with_name("wisp.ico")
 

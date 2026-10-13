@@ -8,6 +8,7 @@ from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QPushButton, QVBoxLay
 
 from wisp.tools.base import Origin
 from wisp.tools.confirm import ConfirmationManager, PendingAction
+from wisp.ui import motion, theme
 
 
 class _Bridge(QObject):
@@ -32,12 +33,16 @@ class ConfirmCard(QWidget):
         outer.setContentsMargins(8, 8, 8, 8)
         outer.addWidget(frame)
         layout = QVBoxLayout(frame)
+        layout.setContentsMargins(theme.SPACE["l"], theme.SPACE["m"], theme.SPACE["l"],
+                                  theme.SPACE["m"])
+        layout.setSpacing(theme.SPACE["s"])
         self.title = QLabel("Wisp needs your OK")
-        self.title.setStyleSheet("font-weight: 600;")
+        self.title.setProperty("heading", True)
         self.summary = QLabel()
         self.summary.setWordWrap(True)
         self.hint = QLabel()
         self.hint.setProperty("muted", True)
+        self.hint.setProperty("caption", True)
         self.hint.setWordWrap(True)
         buttons = QHBoxLayout()
         self.yes = QPushButton("Yes, do it")
@@ -58,9 +63,8 @@ class ConfirmCard(QWidget):
         self._expiry.start(1000)
 
     def apply_palette(self, surface: str, border: str) -> None:
-        self.setStyleSheet(
-            f"#Card {{ background: {surface}; border: 1px solid {border}; border-radius: 12px; }}"
-        )
+        self.setStyleSheet(f"#Card {{ background: {surface}; border: 1px solid {border}; "
+                           f"border-radius: {theme.RADIUS_PANEL}px; }}")
 
     def _on_event(self, kind: str, item: PendingAction) -> None:
         if kind == "created":
@@ -91,8 +95,11 @@ class ConfirmCard(QWidget):
         self.adjustSize()
         screen = QGuiApplication.primaryScreen().availableGeometry()
         self.move(screen.x() + (screen.width() - self.width()) // 2, screen.y() + 64)
+        appearing = not self.isVisible()
         self.show()
         self.raise_()
+        if appearing:
+            motion.window_fade(self, show=True)
 
     def _approve(self) -> None:
         if self._items:

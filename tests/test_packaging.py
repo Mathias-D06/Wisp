@@ -78,6 +78,21 @@ def test_notices_cover_runtime_dependencies_only():
     assert not names & {"pytest", "ruff", "pyinstaller", "pytest-qt"}
 
 
+def test_notices_carry_the_icon_licence(tmp_path, monkeypatch, capsys):
+    sys.path.insert(0, str(PACKAGING))
+    try:
+        import notices
+    finally:
+        sys.path.remove(str(PACKAGING))
+    out = tmp_path / "THIRD_PARTY_NOTICES.txt"
+    monkeypatch.setattr(sys, "argv", ["notices.py", str(out)])
+    notices.main()
+    text = out.read_text(encoding="utf-8")
+    assert "Lucide icons 1.56.0" in text and "ISC License" in text
+    assert "Permission to use, copy, modify" in text  # the full ISC notice, not just its name
+    capsys.readouterr()
+
+
 def test_installer_agrees_with_the_app():
     from wisp import single_instance, startup
 

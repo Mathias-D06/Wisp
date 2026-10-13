@@ -458,3 +458,128 @@ Decisions:
 * **Transcript.** The user's words for a turn are one row keyed by the turn number, updated in
   place even when transcription chunks arrive after Wisp has started answering. Typed text is
   its own row. Confirmation evidence (`user_final`, D-011) is unchanged.
+
+## D-042 Window chrome: Mica, title bar, corners (brief of 2026-10-13, part 2)
+* **Windows 11 22H2 and later (build 22621+).** The console and Settings get Mica through the
+  whole window. The two calls are:
+  * `DwmSetWindowAttribute(DWMWA_SYSTEMBACKDROP_TYPE = 38, DWMSBT_MAINWINDOW = 2)`. The docs say
+    this draws "the backdrop material effect corresponding to a long-lived window behind the
+    entire window bounds", which is Mica on Windows 11.
+  * `DwmExtendFrameIntoClientArea` with −1 margins, the documented "sheet of glass".
+
+  The Qt window keeps a transparent background (`WA_TranslucentBackground`), and the panels
+  paint on the material.
+* **Windows 11 (build 22000+).** The title bar follows the theme
+  (`DWMWA_USE_IMMERSIVE_DARK_MODE` = 20), and corners are rounded
+  (`DWMWA_WINDOW_CORNER_PREFERENCE` = 33, `DWMWCP_ROUND` = 2).
+* **Windows 10 and older builds.** Wisp sets none of these attributes, so the window gets the
+  solid theme background. The build is checked before each call. Failures are logged and
+  ignored, never raised.
+* **Why not MicaController.** Microsoft's Win32 Mica article (apply-mica-win32) uses the
+  Windows App SDK `MicaController`. Wisp doesn't take that dependency: it would need the
+  WinAppSDK runtime, a DispatcherQueue and composition interop with Qt's HWND. The DWM attribute
+  is the documented per-window backdrop switch. On this PC (build 26200) DWM accepts all three
+  attributes and the frame extension (each returns S_OK). Microsoft says Mica falls back to a
+  neutral colour while the app is inactive, and a capture taken from a background process is of
+  an inactive window. So the on-screen capture (`docs/screenshots/after/onscreen`) shows the
+  title bar and corners, and seeing Mica itself is manual test MT-57.
+* **`WISP_NO_MICA=1`** forces the solid fallback, for troubleshooting and off-screen renders.
+* **Popups.** The Island, HUD, answer bubble and confirmation card are frameless translucent
+  windows with their own token surfaces and a soft shadow. They don't use Mica: they have no
+  frame to extend, and Acrylic would need the same WinAppSDK path.
+* **Theme changes.** The chrome is re-applied through a child QObject of the window, so the
+  connection dies with the window. Every other theme hook (IconButton, ToggleSwitch, Chip,
+  TranscriptView) is also a bound method rather than a lambda. Test:
+  `test_ui_design.py::test_theme_change_after_widgets_are_deleted`.
+
+## D-043 Design system (brief of 2026-10-13, part 2)
+* **One token module.** `ui/theme.py` holds the palette, type, spacing, radii, shadow and icon
+  sizes; `ui/motion.py` holds durations and easing. Every window uses them. No hex colour
+  appears outside the theme; `test_no_hard_coded_colours_outside_the_theme` enforces this, with
+  settings defaults and the self-check exempt as data.
+* **Colour.**
+  * Near-black, slightly cool dark mode: bg `#0e0f13`, surface `#16181d`, surface2 `#1f2128`.
+    Light mode mirrors it.
+  * Three text levels: text, secondary and muted.
+  * The accent is used sparingly: focus ring, checked states, the primary button, sliders and
+    the orb.
+  * Contrast uses WCAG 2.x relative luminance and (L1 + 0.05) / (L2 + 0.05). Every text level
+    and status colour is at least 4.5:1 on every surface, including hover, in both modes. The
+    worst cases are 4.91:1 (dark) and 4.81:1 (light).
+  * `accent_pair` darkens the fill or switches to dark text until accent buttons reach 4.5:1,
+    for any accent. Tested with the presets and 200 random colours.
+* **Type.**
+  * Segoe UI Variable, falling back to Segoe UI, on the brief's 12/13/15/20 px scale.
+  * The optical cut follows Microsoft's Windows type ramp: Small for 12 px captions, Text for
+    body, Display from 20 px.
+  * Two weights. Microsoft's guidance is Regular for most text and Semibold for titles, with
+    minimums of 12 px Regular and 14 px Semibold. So Semibold is used only at 15 px and above
+    (headings and the stats figure). Buttons, card titles and captions are Regular.
+  * Sentence case everywhere. The Island's 11 px uppercase section labels became 12 px
+    sentence case.
+  * Transcript line height is 145 %.
+  * Test: `test_type_follows_the_windows_minimums`.
+* **Spacing and shape.** A 4/8 grid (4, 8, 12, 16, 24); radius 8 px for controls and 12 px for
+  panels, as the brief asks. That is one step softer than Windows 11's own 4 px controls and
+  8 px windows (geometry page). 1 px hairline borders. One soft shadow (24 px blur, 4 px down), used only by the
+  Island.
+* **Icons.**
+  * Lucide 1.56.0 (ISC; icons Lucide derived from Feather are also MIT). 42 SVGs, behind 43
+    icon names, ship in `wisp/assets/icons` with the licence file, which holds both texts.
+    `packaging/notices.py` copies it into THIRD_PARTY_NOTICES.txt. They replace the Segoe Fluent Icons font glyphs.
+  * Lucide was chosen over Fluent UI System Icons (MIT): it is one consistent line style that
+    covers every glyph Wisp needs, with one plain SVG per icon.
+  * A `QIconEngine` renders each SVG at the exact device-pixel size, so icons are sharp at any
+    scale. It tints by replacing `currentColor` and keeps the stroke at 1.5 device-independent
+    px at any icon size.
+  * Stylesheet images (the check mark and chevrons) are tinted SVGs cached in
+    `%APPDATA%\Wisp\cache\icons`.
+* **App and tray icon.** The same painter as the live orb draws it at 16, 20, 24, 32, 40, 48,
+  64, 128 and 256 px. Sizes up to 24 px get a larger core and less glow, so the icon still reads
+  in the tray. `packaging/wisp.ico` is regenerated from it.
+* **Console.**
+  * Header: the orb (44 px), status and hint text, and a Retry button that appears only after a
+    voice error.
+  * Icon toggles for "Always listening" and "Mute" replace the two check boxes.
+  * The transcript is message rows: a role label; partial text in the secondary colour with
+    " …"; notices with an info icon.
+  * Composer: the input, Talk (click or hold) and a primary Send button.
+  * Scrollbars everywhere are thin and appear only on hover.
+* **Settings, Island and popups.**
+  * Settings: tabs in document mode, group boxes as cards, a toggle switch for "Reduce motion",
+    and OK as the primary button.
+  * Island: tinted icon buttons and chips; checked chips use a soft accent.
+  * The HUD, answer bubble, confirmation card and the circle-to-ask hint pill use token
+    surfaces.
+* **Native toasts.** Windows notifications (`QSystemTrayIcon.showMessage`) are drawn by
+  Windows and can't be styled. Wisp's own popups were restyled instead.
+* Found while restyling: the circle overlay's new hint pill left its brush set, so the user's
+  loop was filled. `_paint_hint` now saves and restores the painter. Regression test:
+  `test_circle.py::test_overlay_loop_is_outlined_not_filled`.
+
+## D-044 Motion and idle cost (brief of 2026-10-13, part 2)
+* **Motion only on state changes.**
+  * Windows and popups fade in, and the HUD also fades out.
+  * The Island resizes when it expands or collapses, and its contents appear afterwards.
+  * Tabs cross-fade, the toggle knob slides, and new transcript rows fade in.
+  * Durations are 120, 180 and 250 ms with OutCubic easing. Nothing loops except the orb.
+* **The orb is the one living element.**
+  * Ready: a slow glow on a 4.5 s cycle, drawn at 8 fps.
+  * Listening: grows with the microphone level.
+  * Thinking: a soft pulse on a 1.4 s cycle.
+  * Speaking: follows the output level.
+  * Listening, thinking and speaking redraw every 16 ms (about 60 fps). Error and offline are
+    still.
+  * The timer runs only while the orb is visible and its state moves.
+* **Off switch.** Motion is off when Windows "Animation effects" is off
+  (`SystemParametersInfoW(SPI_GETCLIENTAREAANIMATION)`, read each time motion is checked, so a
+  change applies at once) or when Settings → Loadout → "Reduce motion" is on. Every helper then jumps to the end
+  state, and the orb is drawn once per state change.
+* **Idle cost.**
+  * The voice controller emits its visual state only when the state or text changes, or when
+    the level moves by at least 0.02.
+  * The Island sets its status text only when it changes.
+  * Idle CPU is measured by `spikes/idle_cpu.py`: Island visible, no key, 60 s, whole process
+    tree. The numbers are in PROGRESS.md.
+* **Tests.** Tests pin motion off (conftest) unless they test motion itself. Island animation
+  tests park the hover timers, because the real pointer may rest where the Island appears.

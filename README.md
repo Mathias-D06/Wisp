@@ -14,6 +14,10 @@ routines, controls volume and music, and remembers facts you tell it. It also ad
 
 Everything Wisp stores stays on your PC, in `%APPDATA%\Wisp`.
 
+On Windows 11 22H2 or later, the console and Settings use the Mica backdrop. On Windows 10 they
+use a solid background. Before-and-after screenshots of the UI are in
+[docs/screenshots](docs/screenshots/README.md).
+
 ## Requirements
 
 - Windows 10 version 1809 or later, or Windows 11, 64-bit.
@@ -83,7 +87,8 @@ Things to try:
 - **General:** API key, models, language, idle timeout, start with Windows, Island, clipboard
   history size, typing speed (used for Stats).
 - **Loadout:** the voice (30 Gemini voices), personality (a preset or your own description),
-  theme and accent colour, and which skills Wisp may use.
+  theme and accent colour, **Reduce motion**, and which skills Wisp may use. Wisp also turns its
+  animations off when Windows' Animation effects setting is off.
 - **Hotkeys and audio:** the three hold-to-use hotkeys (clashes are flagged as you type), hold
   time, microphone, speaker and always listening.
 - **Safety:** see [Safety model](#safety-model).
@@ -178,6 +183,8 @@ pastes are kept out of both Windows clipboard history and Wisp's.
   different chord in Settings → Hotkeys and audio.
 - **Nothing happens in an administrator window.** Windows doesn't let normal apps control
   elevated apps. Use the app directly.
+- **Windows look wrong (blank or see-through areas).** Set the environment variable
+  `WISP_NO_MICA=1` and restart Wisp. Wisp then uses a solid background instead of Mica.
 - **Logs.** Open them from Settings → Action log → Open log folder (`%APPDATA%\Wisp\logs`).
 - **Checking an installation.** Run `"%LOCALAPPDATA%\Programs\Wisp\Wisp.exe" --self-check
   report.json`. This tests all bundled components without touching your data, and `report.json`
@@ -221,4 +228,6 @@ Project notes:
 
 Wisp bundles Python and open-source packages. Their names, versions, licences and home pages are
 in `THIRD_PARTY_NOTICES.txt` in the installation folder. Qt for Python (PySide6) is used under
-the LGPL v3, as separate, replaceable libraries.
+the LGPL v3, as separate, replaceable libraries. The icons are from
+[Lucide](https://lucide.dev) (ISC; the icons Lucide derived from Feather are also MIT). Their
+licence texts are in the same file and next to the icons.

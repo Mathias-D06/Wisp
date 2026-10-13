@@ -33,3 +33,13 @@ def pytest_collection_modifyitems(config, items):
     for item in items:
         if "windows" in item.keywords:
             item.add_marker(skip)
+
+
+@pytest.fixture(autouse=True)
+def no_motion():
+    """UI tests see end states at once; animation tests opt in with ``motion.force(True)``."""
+    from wisp.ui import motion
+
+    motion.force(False)
+    yield
+    motion.force(None)

@@ -15,6 +15,10 @@ class SettingsPage(QWidget):
     """
 
     title = "Page"
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setObjectName("SettingsPage")
     reload_after_apply = False
     """Reload from the saved settings after Apply (for values another page may change)."""
 
@@ -32,5 +36,6 @@ class SettingsPage(QWidget):
 def hint(text: str) -> QLabel:
     label = QLabel(text)
     label.setWordWrap(True)
-    label.setProperty("muted", True)
+    label.setProperty("secondary", True)
+    label.setProperty("caption", True)
     return label

@@ -29,8 +29,10 @@ from wisp.settings import (
     VOICES,
     Settings,
 )
+from wisp.ui import theme
 from wisp.ui.settings.base import SettingsPage, hint
 from wisp.ui.theme import ACCENTS
+from wisp.ui.widgets import ToggleSwitch
 
 SKILLS = {
     "apps": "Open apps",
@@ -111,8 +113,12 @@ class LoadoutPage(SettingsPage):
         accents.addWidget(self.custom_accent)
         accents.addStretch(1)
         self.accent = ACCENTS["Violet"]
+        self.reduce_motion = ToggleSwitch("Reduce motion")
+        self.reduce_motion.setToolTip("No animations (Wisp also follows Windows' Animation "
+                                      "effects setting)")
         look_form.addRow("Theme", self.theme)
         look_form.addRow("Accent colour", accents)
+        look_form.addRow("", self.reduce_motion)
         layout.addWidget(look_box)
 
         skills_box = QGroupBox("Skills")
@@ -140,7 +146,8 @@ class LoadoutPage(SettingsPage):
         button.setAccessibleName(f"{name} accent")
         button.setStyleSheet(
             f"QPushButton {{ background: {color}; border-radius: 14px; border: 2px solid "
-            f"transparent; }} QPushButton:checked {{ border: 2px solid palette(text); }}")
+            f"transparent; }} QPushButton:checked {{ border: 2px solid "
+            f"{theme.current().text}; }}")
         button.clicked.connect(lambda _c=False, c=color: self._set_accent(c))
         return button
 
@@ -174,6 +181,7 @@ class LoadoutPage(SettingsPage):
         self.custom.setPlainText(loadout.custom_personality)
         self.theme.setCurrentIndex(max(0, self.theme.findData(loadout.theme)))
         self._set_accent(loadout.accent)
+        self.reduce_motion.setChecked(loadout.reduce_motion)
         for group, box in self.skills.items():
             box.setChecked(group in loadout.skills)
         self._sync_custom()
@@ -186,4 +194,5 @@ class LoadoutPage(SettingsPage):
         loadout.custom_personality = self.custom.toPlainText().strip()
         loadout.theme = self.theme.currentData()
         loadout.accent = self.accent
+        loadout.reduce_motion = self.reduce_motion.isChecked()
         loadout.skills = [g for g, box in self.skills.items() if box.isChecked()]

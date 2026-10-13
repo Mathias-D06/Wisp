@@ -24,7 +24,8 @@ step 4 run while you do the rest. Each step points to a case in the catalogue be
 | 11 | MT-25, MT-26 (results) | The reminder and routine fired with notifications. | 0.5 |
 | 12 | MT-35 | A memory survives a restart. | 1.5 |
 | 13 | MT-40, MT-55 | Terminal is off by default (F12.3); a bad key shows a clear error and Retry (D-041). | 1.5 |
-| 14 | MT-49 (answer **No**) | Uninstall is clean and keeps your data (D.1). | 1 |
+| 14 | MT-57, MT-58, MT-60 | The polished console, the orb's states and Reduce motion (D-042…D-044). | 2 |
+| 15 | MT-49 (answer **No**) | Uninstall is clean and keeps your data (D.1). | 1 |
 
 **Extended (optional):** every other case below. MT-09 is the 30-minute conversation (F1.A); run
 it in the background during the extended cases. MT-47 needs a sign-out and sign-in.
@@ -135,6 +136,18 @@ it in the background during the extended cases. MT-47 needs a sign-out and sign-
 | MT-54 | Mute the microphone with your laptop's mute key (or cover it and stay silent), hold Alt+Win for 2 s and release. | "Wisp didn't hear any speech, so nothing was sent…" appears; no "¿Qué?"-style reply. Unmute afterwards. |
 | MT-55 | Settings → General: note your key, paste `AIzaInvalidKeyForTesting0000000000000000`, click **Save without test**. Hold Alt+Win and speak. Then put your real key back with **Save and test**. | The console shows "Google rejected this API key…" (never "None") and a **Retry** button. The log has a line with the exception type, code and reason. After restoring the key, Retry or talking works again. |
 | MT-56 | Say "from now on please answer in French", then "what time is it", then "switch back to English". | Wisp switches to French only when asked, and back when asked. |
+
+## UI polish (D-042…D-044)
+
+| ID | Steps | Expected |
+|---|---|---|
+| MT-57 | Open the console from the tray. Hover the two icons at the top right, click each, then click them again. Send a typed message and scroll the transcript. | On Windows 11 22H2 or later the background is Mica: while the window is active a faint tint of your wallpaper shows through (when you click elsewhere it turns a plain neutral colour, as Windows intends), the title bar matches the theme and the corners are rounded. The icons have tooltips ("Always listening …", "Mute microphone") and turn the accent colour while on. Messages are rows labelled "You" and "Wisp", one per turn. The scrollbar shows only while the pointer is over the transcript. Text and icons are crisp. |
+| MT-58 | Watch the orb in the console header: leave it idle, then hold **Alt+Win** and speak, release, and let Wisp answer. | Idle: a slow, gentle glow. Listening: green, growing with your voice. Thinking: a soft amber pulse. Speaking: your accent colour, moving with Wisp's voice. Nothing else on screen moves while idle. |
+| MT-59 | Hover the Island until it opens, switch between its tabs, then move the pointer away. Start dictation (hold **Ctrl+Win**) and Circle to Ask once. | The Island grows smoothly (about a fifth of a second), its contents appear once it has opened, tabs cross-fade quickly, and it shrinks back when you leave. The dictation pill fades in and out; the circle hint is a small pill at the top and your loop is drawn as an outline. No flicker or jumps. |
+| MT-60 | Settings → Loadout → turn on **Reduce motion**, Apply; repeat MT-59 and watch the orb. Turn it off. Then Windows Settings → Accessibility → Visual effects → turn off **Animation effects** (Windows 10: Ease of Access → Display → **Show animations in Windows**) and repeat. Turn it back on. | With either switch off, the Island opens and closes at once, nothing fades, toggles snap, and the orb is still (it still changes colour with its state). Everything animates again once both are back on. |
+| MT-61 | Settings → Loadout → Theme **Light**, Apply; look at the console, Settings, Island and a confirmation card (ask Wisp to close Notepad). Switch back to Dark. | Every window turns light at once, including the title bar; all text is easy to read, and buttons in the accent colour have readable text. |
+| MT-62 | Windows Settings → System → Display → Scale: 125 %, then 150 %; open the console, Settings and the Island at each. Put the scale back afterwards. | Text, icons and the orb stay sharp (no blurry or pixelated icons), nothing is clipped and the Island fits at the top of the screen. |
+| MT-63 | Look at the tray icon, the console's taskbar button and Alt+Tab entry, and `Wisp.exe` in Explorer with Large icons. If you have Windows 10 (or set the environment variable `WISP_NO_MICA=1` and restart Wisp), open the console there too. | The orb is crisp and recognisable at every size. Without Mica the console has a solid near-black background (light in Light theme) and looks otherwise the same. |
 
 ## Hotkeys
 

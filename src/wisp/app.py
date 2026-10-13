@@ -56,12 +56,13 @@ from wisp.tools.confirm import ConfirmationManager
 from wisp.tools.dispatcher import Dispatcher
 from wisp.tools.registry import ToolRegistry
 from wisp.tools.safety import SafetyPolicy, TaintTracker
-from wisp.ui import theme
+from wisp.ui import motion, theme
 from wisp.ui.bridge import UiInvoker
 from wisp.ui.bubble import AnswerBubble
 from wisp.ui.confirm_card import ConfirmCard
 from wisp.ui.console import ConsoleWindow
 from wisp.ui.hud import Hud
+from wisp.ui.icons import orb_icon
 from wisp.ui.island.apps_tab import AppsTab
 from wisp.ui.island.clipboard_tab import ClipboardTab
 from wisp.ui.island.common import Background
@@ -370,8 +371,13 @@ class WispApp(QObject):
         self.circle.on_hotkey(name, kind)
 
     def _apply_theme(self, settings: Settings) -> None:
+        """One place applies the design tokens: palette, stylesheet, base font, motion."""
+        motion.configure(settings.loadout.reduce_motion)
         palette = theme.palette(settings.loadout.theme, settings.loadout.accent)
+        self.qt_app.setFont(theme.ui_font())
         self.qt_app.setStyleSheet(theme.stylesheet(palette))
+        self.qt_app.setWindowIcon(orb_icon(palette.accent))  # title bars and the taskbar
+        theme.set_current(palette)
 
     def _on_key_changed(self, has_key: bool) -> None:
         self.island.update_key_prompt()

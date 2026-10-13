@@ -89,13 +89,13 @@ class DictationController(QObject):
         if self.recording:
             return
         if not self.deps.has_key():
-            self.hud.flash(NO_KEY_MESSAGE, 4000, "#6b7280")
+            self.hud.flash(NO_KEY_MESSAGE, 4000, "muted")
             self.notify("Dictation needs an API key", NO_KEY_MESSAGE)
             return
         try:
             self.mic.acquire("dictation")
         except MicError as exc:
-            self.hud.flash(str(exc), 4000, "#f87171")
+            self.hud.flash(str(exc), 4000, "danger")
             return
         self._target = self.deps.foreground()
         self._buffer = bytearray()
@@ -103,7 +103,7 @@ class DictationController(QObject):
         self._started = time.monotonic()
         self.recording = True
         self._limit.start(MAX_SECONDS * 1000)
-        self.hud.show_state("Dictating… release to insert", "#4ade80", lambda: self.mic.level)
+        self.hud.show_state("Dictating… release to insert", "success", lambda: self.mic.level)
         self.state.emit("recording")
 
     def _stop_recording(self) -> bytes:
@@ -130,13 +130,13 @@ class DictationController(QObject):
             return
         if not has_speech(audio):
             # Silence makes the model invent text; never paste that (D-039).
-            self.hud.flash(SILENT_MESSAGE, 3500, "#6b7280")
+            self.hud.flash(SILENT_MESSAGE, 3500, "muted")
             self.state.emit("idle")
             return
         self.deps.save_debug(audio)
         self._token += 1
         token = self._token
-        self.hud.show_state("Transcribing…", "#facc15")
+        self.hud.show_state("Transcribing…", "warning")
         self.state.emit("transcribing")
 
         def work() -> None:
@@ -153,11 +153,11 @@ class DictationController(QObject):
         if token != self._token:
             return
         if error:
-            self.hud.flash(error, 4000, "#f87171")
+            self.hud.flash(error, 4000, "danger")
             self.state.emit("error")
             return
         if not text.strip():
-            self.hud.flash("No speech heard", 1800, "#6b7280")
+            self.hud.flash("No speech heard", 1800, "muted")
             self.state.emit("idle")
             return
         self.last_text = text
@@ -190,7 +190,7 @@ class DictationController(QObject):
         if target is not None and (current is None or current.hwnd != target.hwnd):
             self.deps.activate(target.hwnd)
         self.deps.paste()
-        self.hud.flash(f"Inserted {word_count(text)} words", 1500, "#4ade80")
+        self.hud.flash(f"Inserted {word_count(text)} words", 1500, "success")
         self._record(text, seconds)
         self.state.emit("pasted")
 

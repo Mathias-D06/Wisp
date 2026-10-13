@@ -1,6 +1,5 @@
-"""Shared Island pieces: glyphs (Segoe Fluent Icons code points from learn.microsoft.com
-"Segoe Fluent Icons font"; Windows 10 falls back to Segoe MDL2 Assets), small widgets and a
-background runner that keeps blocking Windows calls off the UI thread."""
+"""Shared Island pieces: icon names (Lucide, ``ui/iconset.py``), small widgets and a background
+runner that keeps blocking Windows calls off the UI thread."""
 
 from __future__ import annotations
 
@@ -10,63 +9,57 @@ import logging
 from collections.abc import Callable
 from typing import Any
 
-from PySide6.QtCore import QObject, QRectF, Qt, Signal
-from PySide6.QtGui import QColor, QFont, QIcon, QPainter, QPixmap
+from PySide6.QtCore import QObject, QRectF, QSize, Qt, Signal
+from PySide6.QtGui import QColor, QIcon, QPainter
 from PySide6.QtWidgets import QLabel, QPushButton, QWidget
+
+from wisp.ui import iconset, theme
+from wisp.ui.widgets import IconButton
 
 log = logging.getLogger(__name__)
 
-PLAY, PAUSE, NEXT, PREVIOUS = "", "", "", ""
-VOLUME, MUTE, WIFI, BLUETOOTH = "", "", "", ""
-BRIGHTNESS, NIGHT, LOCK, POWER, RESTART = "", "", "", "", ""
-PASTE, APPS, CALENDAR, CHART, PHOTO = "", "", "", "", ""
-SETTINGS, DELETE, ADD, PIN, SEARCH, MIC = "", "", "", "", "", ""
+PLAY, PAUSE, NEXT, PREVIOUS = "play", "pause", "next", "previous"
+VOLUME, MUTE, WIFI, BLUETOOTH = "volume", "mute", "wifi", "bluetooth"
+BRIGHTNESS, NIGHT, THEME, SLEEP = "brightness", "night", "theme", "sleep"
+LOCK, POWER, RESTART = "lock", "power", "restart"
+PASTE, APPS, CALENDAR, CHART, PHOTO = "clipboard", "apps", "calendar", "chart", "image"
+SETTINGS, DELETE, ADD, PIN, SEARCH, MIC = "settings", "delete", "add", "pin", "search", "mic"
 
 
-def icon_font(pixels: int = 16) -> QFont:
-    font = QFont()
-    font.setFamilies(["Segoe Fluent Icons", "Segoe MDL2 Assets"])
-    font.setPixelSize(pixels)
-    return font
+def glyph_icon(name: str, color: str, size: int = theme.ICON_SM) -> QIcon:
+    """A theme-tinted line icon (``size`` is kept for callers; icons draw at any size)."""
+    return iconset.icon(name, color, disabled=theme.current().muted)
 
 
-def glyph_icon(glyph: str, color: str, size: int = 20) -> QIcon:
-    pixmap = QPixmap(size * 2, size * 2)
-    pixmap.setDevicePixelRatio(2)
-    pixmap.fill(Qt.GlobalColor.transparent)
-    painter = QPainter(pixmap)
-    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-    painter.setFont(icon_font(int(size * 0.8)))
-    painter.setPen(QColor(color))
-    painter.drawText(QRectF(0, 0, size, size), Qt.AlignmentFlag.AlignCenter, glyph)
-    painter.end()
-    return QIcon(pixmap)
+class GlyphButton(IconButton):
+    """Square icon button used across the Island (same icon size everywhere)."""
 
-
-class GlyphButton(QPushButton):
-    def __init__(self, glyph: str, tooltip: str, size: int = 34, parent=None):
-        super().__init__(glyph, parent)
-        self.setObjectName("Glyph")
-        self.setFont(icon_font(int(size * 0.45)))
+    def __init__(self, name: str, tooltip: str, size: int = 34, parent=None):
+        super().__init__(name, tooltip, theme.ICON_SM, parent=parent)
         self.setFixedSize(size, size)
-        self.setToolTip(tooltip)
-        self.setAccessibleName(tooltip)
-        self.setCursor(Qt.CursorShape.PointingHandCursor)
 
 
 class Chip(QPushButton):
-    """Checkable tile with a glyph and a label (Wi-Fi, Bluetooth …)."""
+    """Checkable tile with an icon and a label (Wi-Fi, Bluetooth …)."""
 
-    def __init__(self, glyph: str, label: str, color: str, parent=None):
-        super().__init__(glyph_icon(glyph, color), label, parent)
+    def __init__(self, name: str, label: str, color: str | None = None, parent=None):
+        super().__init__(label, parent)
         self.setObjectName("Chip")
+        self._name = name
         self.setCheckable(True)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.setMinimumHeight(40)
+        self.setMinimumHeight(44)
+        self.setIconSize(QSize(theme.ICON_SM, theme.ICON_SM))
+        theme.signals.changed.connect(self._tint)  # bound: dropped when the chip is deleted
+        self._tint()
+
+    def _tint(self, _palette=None) -> None:
+        p = theme.current()
+        self.setIcon(iconset.icon(self._name, p.secondary, disabled=p.muted, checked=p.accent))
 
 
 def section(text: str) -> QLabel:
-    label = QLabel(text.upper())
+    label = QLabel(text)  # sentence case (Windows typography guidance)
     label.setObjectName("Section")
     return label
 
@@ -75,6 +68,7 @@ class BarChart(QWidget):
     def __init__(self, accent: str, parent=None):
         super().__init__(parent)
         self.accent = QColor(accent)
+        self.setFont(theme.ui_font(theme.CAPTION))
         self.values: list[tuple[str, float]] = []
         self.setMinimumHeight(110)
 

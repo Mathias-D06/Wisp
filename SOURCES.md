@@ -122,6 +122,7 @@ from `.venv`. Dates are when checked.
 | SQLAlchemy | 2.1.4 | 2026-10-07 | MIT | APScheduler SQLAlchemyJobStore |
 | rapidfuzz | 3.14.6 | 2026-08-30 | MIT | fuzzy app matching |
 | Pillow | 12.3.0 | 2026-07-01 | MIT-CMU | image crop/scale/JPEG |
+| lucide-static (npm, bundled SVG files) | 1.56.0 | 2026-10-13 | ISC; Feather-derived icons also MIT | 42 icon SVGs copied into `wisp/assets/icons` with `LICENSE-lucide.txt`; static files, no code (registry.npmjs.org/lucide-static, files from unpkg.com/lucide-static@1.56.0) |
 | pyinstaller | 6.22.3 | 2026-09-12 | GPLv2+ with bootloader exception | build tool only |
 | ruff 0.17.0, pytest 9.1.1, pytest-asyncio 1.4.0, pytest-qt 4.5.0 | | | MIT / Apache-2.0 | dev only |
 | Not used: pynput (LGPLv3; replaced by ctypes hook), uiautomation (last release 2025-08; replaced by comtypes + documented UIA COM API), pywinauto (last release 2025-01) | | | | |
@@ -197,3 +198,22 @@ from `.venv`. Dates are when checked.
 | probe with an invalid key | Live socket closed with 1007, reason "API key not valid. Please pass a valid API key."; `models.get` gives the same through the key check | 2026-10-13 |
 | `sounddevice.check_input_settings` on this PC (no recording) | MME accepts the array's native 44100 Hz × 4 ch float32; WASAPI's shared format is 48000 Hz × 4 ch | 2026-10-13 |
 | https://learn.microsoft.com/en-us/dotnet/api/system.speech.synthesis.speechsynthesizer.setoutputtowavefile | test phrases written as 16 kHz 16-bit mono WAV with `SpeechAudioFormatInfo` (test tooling only) | 2026-10-13 |
+
+## UI polish (2026-10-13)
+
+| URL | Confirmed | Checked |
+|---|---|---|
+| https://learn.microsoft.com/en-us/windows/win32/api/dwmapi/ne-dwmapi-dwmwindowattribute | `DWMWA_USE_IMMERSIVE_DARK_MODE` (20) "supported starting with Windows 11 Build 22000"; `DWMWA_WINDOW_CORNER_PREFERENCE` (33) takes a `DWM_WINDOW_CORNER_PREFERENCE`; `DWMWA_SYSTEMBACKDROP_TYPE` (38) takes a `DWM_SYSTEMBACKDROP_TYPE`, "supported starting with Windows 11 Build 22621" | 2026-10-13 |
+| https://learn.microsoft.com/en-us/windows/win32/api/dwmapi/ne-dwmapi-dwm_window_corner_preference | `DWMWCP_DEFAULT` 0, `DWMWCP_DONOTROUND` 1, `DWMWCP_ROUND` 2 ("Round the corners, if appropriate"), `DWMWCP_ROUNDSMALL` 3; minimum client build 22000 | 2026-10-13 |
+| https://learn.microsoft.com/en-us/windows/win32/api/dwmapi/ne-dwmapi-dwm_systembackdrop_type | `DWMSBT_AUTO`, `DWMSBT_NONE`, `DWMSBT_MAINWINDOW` (2): "the backdrop material effect corresponding to a long-lived window behind the entire window bounds", Mica in its default variant on Windows 11; minimum client build 22621 | 2026-10-13 |
+| https://learn.microsoft.com/en-us/windows/win32/api/dwmapi/nf-dwmapi-dwmextendframeintoclientarea | negative margins create the "sheet of glass" effect (client area rendered without a window border); returns `S_OK` on success | 2026-10-13 |
+| https://learn.microsoft.com/en-us/windows/apps/desktop/modernize/ui/apply-mica-win32 | Microsoft's Win32 Mica path uses the Windows App SDK `MicaController` (system policy, light/dark, fallback colour); not used by Wisp (D-042). Mica samples the wallpaper once and falls back "to a neutral color when the app is inactive" | 2026-10-13 |
+| https://learn.microsoft.com/en-us/windows/apps/design/signature-experiences/geometry | Windows 11 rounds top-level windows, flyouts and dialogs at 8 px, in-page controls at 4 px; windows aren't rounded when snapped or maximized | 2026-10-13 |
+| `dwm.style_window` + `dwm.extend_frame` on this PC (Windows 11 build 26200) | `DwmSetWindowAttribute` returns S_OK for attributes 20, 33 and 38 and `DwmExtendFrameIntoClientArea` for −1 margins; on-screen capture (`docs/screenshots/after/onscreen`, taken while the window was inactive) shows the themed title bar and rounded corners. Seeing Mica itself needs an active window: MT-57 | 2026-10-13 |
+| https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-systemparametersinfow | `SPI_GETCLIENTAREAANIMATION` (0x1042): *pvParam* points to a BOOL that receives TRUE if animations are enabled (the Windows "Animation effects" setting) | 2026-10-13 |
+| https://learn.microsoft.com/en-us/windows/apps/design/signature-experiences/typography | Segoe UI Variable is the Windows system font (weight and optical-size axes; Light 300 … Bold 700); Windows 11 uses Regular for most text and Semibold for titles; minimums 14 px Semibold, 12 px Regular; sentence case; type ramp: caption 12/16 in the Small cut, body 14/20 in Text, subtitle 20/28 and up in Display; installed families on this PC include `Segoe UI Variable Small`, `… Text`, `… Display` (QFontDatabase) | 2026-10-13 |
+| https://www.w3.org/TR/WCAG21/ | contrast ratio (L1 + 0.05) / (L2 + 0.05), L1 the lighter; relative luminance L = 0.2126 R + 0.7152 G + 0.0722 B with each sRGB channel ≤ 0.04045 → /12.92, else ((c + 0.055)/1.055)^2.4 (0.03928 replaced in May 2021); SC 1.4.3: text at least 4.5:1 (large text 3:1) | 2026-10-13 |
+| https://registry.npmjs.org/lucide-static/latest, https://unpkg.com/lucide-static@1.56.0/ | latest 1.56.0, licence ISC, repository github.com/lucide-icons/lucide; icons are 24×24 SVGs with `stroke="currentColor"` and `stroke-width="2"`; LICENSE is the ISC text plus Feather's MIT text for the icons it lists (Wisp uses some of them, e.g. calendar, check, chevrons, clipboard, info, lock, moon, power, search, trash, x); both texts ship with the icons and in THIRD_PARTY_NOTICES.txt | 2026-10-13 |
+| https://doc.qt.io/qt-6/qiconengine.html | `paint()` and `clone()` must be reimplemented; `pixmap()` defaults to painting via `paint()`; `scaledPixmap(size, mode, state, scale)` returns a pixmap for that scale (reimplemented by Wisp so icons are drawn at the exact device-pixel size) | 2026-10-13 |
+| https://doc.qt.io/qt-6/qtimer.html | `singleShot(msec, context, functor)`: the functor "will be called only if the context object has not been destroyed before the interval occurs" (checked in PySide6 6.12.0: a deleted context drops the call) | 2026-10-13 |
+| `spikes/idle_cpu.py` on this PC | idle CPU of the whole process tree (GetProcessTimes over 60 s, Island visible, no key); results in PROGRESS.md | 2026-10-13 |

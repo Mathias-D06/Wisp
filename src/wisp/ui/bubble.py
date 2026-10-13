@@ -6,11 +6,13 @@ from PySide6.QtCore import QPoint, QRect, Qt, QTimer
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import QFrame, QLabel, QVBoxLayout, QWidget
 
+from wisp.ui import motion, theme
+
 MAX_WIDTH = 380
 
 
 class AnswerBubble(QWidget):
-    def __init__(self, surface: str = "#1d1d26", border: str = "#33333f"):
+    def __init__(self, surface: str | None = None, border: str | None = None):
         super().__init__(None, Qt.WindowType.Tool | Qt.WindowType.FramelessWindowHint
                          | Qt.WindowType.WindowStaysOnTopHint
                          | Qt.WindowType.WindowDoesNotAcceptFocus)
@@ -22,12 +24,15 @@ class AnswerBubble(QWidget):
         outer.setContentsMargins(6, 6, 6, 6)
         outer.addWidget(frame)
         layout = QVBoxLayout(frame)
+        layout.setContentsMargins(theme.SPACE["m"], theme.SPACE["m"], theme.SPACE["m"],
+                                  theme.SPACE["m"])
         self.label = QLabel()
         self.label.setWordWrap(True)
         self.label.setMaximumWidth(MAX_WIDTH)
         self.label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         layout.addWidget(self.label)
-        self.apply_palette(surface, border)
+        p = theme.current()
+        self.apply_palette(surface or p.surface2, border or p.hairline)
         self.anchor = QRect()
         self._hide_timer = QTimer(self)
         self._hide_timer.setSingleShot(True)
@@ -35,13 +40,17 @@ class AnswerBubble(QWidget):
 
     def apply_palette(self, surface: str, border: str) -> None:
         self.setStyleSheet(f"#Bubble {{ background: {surface}; border: 1px solid {border}; "
-                           "border-radius: 12px; }")
+                           f"border-radius: {theme.RADIUS_PANEL}px; }}"
+                           f"#Bubble QLabel {{ line-height: 140%; }}")
 
     def show_at(self, anchor: QRect, text: str) -> None:
         self.anchor = anchor
         self.set_text(text)
         self._hide_timer.stop()
+        appearing = not self.isVisible()
         self.show()
+        if appearing:
+            motion.window_fade(self, show=True)
 
     def set_text(self, text: str) -> None:
         self.label.setText(text)

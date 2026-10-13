@@ -62,6 +62,6 @@ class MusicStrip(QFrame):
         self.progress.setValue(int(state.progress * 1000))
         self.time.setText(f"{clock(state.position)} / {clock(state.duration)}"
                           if active and state.duration > 0 else "")
-        self.play.setText(PAUSE if state.playing else PLAY)
+        self.play.set_icon_name(PAUSE if state.playing else PLAY)
         for button in (self.previous, self.play, self.next):
             button.setEnabled(active)

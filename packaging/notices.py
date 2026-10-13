@@ -1,6 +1,6 @@
 """Write THIRD_PARTY_NOTICES.txt for the bundle: every runtime package Wisp ships (Wisp's
 dependencies and theirs, read from the installed package metadata) with version, licence and
-home page, plus the LGPL note for Qt/PySide6.
+home page, the LGPL note for Qt/PySide6, and bundled assets with their licence text (Lucide).
 
 Run: .venv\\Scripts\\python packaging\\notices.py [output path]
 """
@@ -14,6 +14,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "build" / "THIRD_PARTY_NOTICES.txt"
+ICONS = ROOT / "src" / "wisp" / "assets" / "icons"
 
 HEADER = """Wisp — third-party software
 ================================
@@ -84,6 +85,17 @@ def home(dist: metadata.Distribution) -> str:
     return f"https://pypi.org/project/{meta['Name']}/"
 
 
+def assets() -> str:
+    """Bundled non-Python assets: the Lucide icon SVGs (ISC; the notice must travel with them)."""
+    licence_text = (ICONS / "LICENSE-lucide.txt").read_text(encoding="utf-8").strip()
+    header = (ICONS / "mic.svg").read_text(encoding="utf-8")  # "@license lucide-static v…"
+    version = re.search(r"lucide-static v([\d.]+)", header).group(1)
+    return ("Bundled assets\n--------------\n\n"
+            f"Lucide icons {version} (wisp/assets/icons/*.svg), https://lucide.dev\n"
+            "  Licence: ISC; the icons derived from Feather are also MIT (both texts below)\n\n"
+            + licence_text + "\n")
+
+
 def main() -> None:
     out = Path(sys.argv[1]) if len(sys.argv) > 1 else OUT
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -92,8 +104,10 @@ def main() -> None:
         meta = dist.metadata
         lines.append(f"{meta['Name']} {dist.version}\n  Licence: {licence(dist)}\n"
                      f"  {home(dist)}\n")
+    packages = len(lines) - 1
+    lines.append(assets())
     out.write_text("\n".join(lines), encoding="utf-8")
-    print(f"wrote {out} ({len(lines) - 1} packages)")
+    print(f"wrote {out} ({packages} packages and the bundled assets)")
 
 
 if __name__ == "__main__":

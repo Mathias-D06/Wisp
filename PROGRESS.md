@@ -9,8 +9,9 @@ acceptance step needs real hardware/API key and is listed in `MANUAL_TESTS.md` (
 
 ## Status
 
-- Current phase: all phases done (0–11). Remaining work needs a person: the MANUAL_TESTS core run
-  (API key + microphone), pushing to GitHub so CI runs, choosing a licence. See FINAL_REPORT.md.
+- Current phase: all phases done (0–11), plus the brief of 2026-10-13 (speech fix, part 1; UI polish,
+  part 2). Remaining work needs a person: the MANUAL_TESTS core run (API key + microphone, now including
+  MT-50…MT-63), pushing to GitHub so CI runs, choosing a licence. See FINAL_REPORT.md.
 - Safety note for automated runs: never toggle the user's Night Light/Wi-Fi/Bluetooth/theme/
   volume/output device in tests on this PC; test write paths with pure functions + manual tests.
 - Environment: Windows 11, Python 3.12.10 venv in `.venv`, Git 2.55, Inno Setup 6.7.3 (per-user,
@@ -282,6 +283,47 @@ acceptance step needs real hardware/API key and is listed in `MANUAL_TESTS.md` (
 - [~] S.A Accept: 10 English phrases 10/10 on the laptop mic — 10/10 through the full pipeline with
   synthesised speech in the array's format against the real API (2026-10-13); real mic MT-51
 
+### UI polish (brief of 2026-10-13, part 2)
+- [x] U.1 One token module for every window (colour, type, spacing, radii, shadow, motion); no hard-coded
+  styles — `ui/theme.py`, `ui/motion.py`; `test_ui_design.py::test_no_hard_coded_colours_outside_the_theme`,
+  `::test_type_scale_and_shape_tokens`; D-043
+- [x] U.2 Near-black cool palette, two surfaces, three text levels, WCAG AA in both modes (worst 4.91:1 dark,
+  4.81:1 light); readable accent buttons for any accent — `::test_text_meets_wcag_aa_on_every_surface`,
+  `::test_accent_buttons_are_readable_for_any_accent`
+- [x] U.3 Segoe UI Variable (Small/Text/Display cut by size), 12/13/15/20, Regular + Semibold (titles only),
+  sentence case, 145 % transcript line height — `::test_type_follows_the_windows_minimums`
+- [x] U.4 4/8 spacing grid, radii 8 (controls) / 12 (panels), hairline borders — `::test_type_scale_and_shape_tokens`
+- [~] U.5 Mica + rounded corners + themed title bar, Windows 10 fallback — `winapi/dwm.py`, `ui/chrome.py`;
+  `::test_chrome_never_fails_and_honours_no_mica`, `::test_theme_change_after_widgets_are_deleted`; DWM accepts
+  every attribute on build 26200 (S_OK); title bar and corners in `docs/screenshots/after/onscreen`; D-042. Seeing
+  Mica needs an active window: MT-57. No Windows 10 PC here: MT-63
+- [x] U.6 One line icon set (Lucide 1.56.0, ISC; Feather-derived icons also MIT) as tinted SVG, licence in SOURCES
+  and THIRD_PARTY_NOTICES — `ui/iconset.py`, `assets/icons`; `::test_every_icon_exists_and_has_its_licence`,
+  `::test_icons_render_sharp_at_each_scale`, `::test_stroke_is_the_same_visual_weight_at_any_size`,
+  `test_packaging.py::test_notices_carry_the_icon_licence`
+- [x] U.7 App and tray orb icon crisp at 16/24/32/48/256 (drawn per size; `packaging/wisp.ico` regenerated) —
+  `ui/icons.py`; `::test_app_icon_is_drawn_natively_at_every_size`; MT-63
+- [x] U.8 Console: icon toggles instead of check boxes, message rows, orb states, restyled composer and buttons,
+  thin hover-only scrollbars, Retry — `ui/console.py`, `ui/transcript.py`, `ui/widgets.py`;
+  `::test_console_rows_merge_per_turn`, `::test_console_retry_shows_only_after_an_error`,
+  `::test_console_toggles_and_composer`, `::test_console_trims_old_rows`; MT-57, MT-58
+- [x] U.9 Same treatment for the Island, Settings, overlay and Wisp's popups (native Windows toasts can't be
+  styled; D-043) — `::test_hud_tones_come_from_the_palette`, `::test_hud_ticks_only_while_a_level_is_shown`,
+  `test_circle.py::test_overlay_loop_is_outlined_not_filled`; screenshots; MT-59, MT-61
+- [x] U.10 Motion only on state changes (120/180/250 ms, OutCubic); the orb is the one living element; off with
+  Windows "Animation effects" or Settings → Loadout → Reduce motion; timers stop when hidden — `ui/motion.py`,
+  `ui/orb.py`; `::test_motion_follows_setting_and_windows`, `::test_animate_jumps_to_the_end_without_motion`,
+  `::test_toggle_switch_slides_with_motion`, `::test_orb_timer_runs_only_when_visible_and_moving`,
+  `::test_orb_frames_by_state`, `test_island.py::test_expand_and_collapse_animate_when_motion_is_on`,
+  `::test_reduce_motion_jumps_straight_to_the_end`; D-044; MT-60
+- [x] U.11 Idle CPU (`spikes/idle_cpu.py 60`: Island visible, no key, whole process tree, % of one core, this PC,
+  2026-10-13): before (commit 48bdfe8, clean export) **6.17 %**; after **3.28 %**; after with Reduce motion
+  **0.29 %**. The orb's idle glow runs at 8 fps, and voice visuals and the Island status update only on change —
+  `test_voice.py::test_visual_is_emitted_only_on_change`; D-044
+- [~] U.A Accept: before/after screenshots in `docs/screenshots` (17 screens each, plus 100/125/150 % renders and
+  an on-screen capture of the console); no regressions, suite green; sharp at 100/125/150 % in true-scale renders and the icon
+  tests; idle CPU logged (U.11). Smoothness on a real display and real scaling: MT-59, MT-62
+
 ### Testing, packaging, definition of done
 - [x] T.1 Unit tests: dispatcher, safety tiers, scheduler parsing + persistence, memory, clipboard store,
   settings (Windows-only tests marked) — `test_dispatcher.py`, `test_tools_core.py`, `test_hardening.py`,
@@ -289,8 +331,8 @@ acceptance step needs real hardware/API key and is listed in `MANUAL_TESTS.md` (
   `windows` marker skips Windows-only tests elsewhere (conftest)
 - [x] T.2 Integration tests with fake Live session replaying scripted tool calls — `tests/fakes.py`
   (FakeLiveServer), `test_live_session.py`, `test_schedule_tools.py::test_model_schedules_routine_then_it_replays_without_model`
-- [x] T.3 MANUAL_TESTS.md runnable in ~20 minutes — "Core run" (14 steps, ~21 min) covering every `[~]`
-  item; the full catalogue (49 cases) is the extended set
+- [x] T.3 MANUAL_TESTS.md runnable in ~20 minutes — "Core run" (15 steps, ~23 min) covering every `[~]`
+  item; the full catalogue (63 cases) is the extended set
 - [~] T.4 GitHub Actions on windows-latest: lint + tests + PyInstaller exe — `.github/workflows/ci.yml`
   (ruff, pytest, Inno Setup, `packaging/build.py` incl. frozen self-check, artefacts). Not yet run on GitHub (no
   remote); every step ran green in a fresh venv from a clean copy on 2026-10-13 (310 passed, build +
@@ -336,3 +378,11 @@ acceptance step needs real hardware/API key and is listed in `MANUAL_TESTS.md` (
   capture with active-channel downmix + FIR resampling, speech gate, pre-roll, click/hold Talk, orb
   double-click, language lock (en-GB), debug WAV + mic test, clear errors + Retry, one row per turn.
   Real-API check: 10/10 English, silence/hiss not sent, invalid key → "Google rejected this API key".
+- 2026-10-13: UI polish (part 2). Design tokens (`ui/theme.py`, `ui/motion.py`), near-black palette meeting
+  WCAG AA in both modes, Segoe UI Variable type rules from Microsoft's typography page, Lucide icons via a vector
+  QIconEngine, Mica/rounded corners/themed title bar with a solid fallback, console rebuilt (icon toggles, message
+  rows, composer, Retry), Island/Settings/popups restyled, state-change motion with Reduce motion and the Windows
+  setting, orb as the only living element. Found and fixed on the way: the circle hint pill's brush filled the
+  user's loop; theme hooks connected as lambdas outlived their widgets (now bound/child-object connections); the
+  transcript's scroll timer had no context object; an Island test depended on where the real pointer rested.
+  Idle CPU 6.17 % → 3.28 % (0.29 % with Reduce motion). Screenshots in docs/screenshots. D-042…D-044, MT-57…MT-63.
