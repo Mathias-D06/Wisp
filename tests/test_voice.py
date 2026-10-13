@@ -153,3 +153,15 @@ def test_offline_state_visual(qtbot, tmp_path):
     voice._on_state(LiveState.OFFLINE.value, "Can't reach Google. Retrying in 4 s…")
     state, _, text = voice.compute_visual()
     assert state == "offline" and "Retrying" in text
+
+
+def test_always_listening_follows_settings_from_any_source(qtbot, tmp_path):
+    voice, live, mic, *_ = make(tmp_path)
+    voice.set_always_listening(True)  # console / tray path
+    assert voice.always_listening and "always" in mic.users and "always" in mic.subs
+    assert ("request_reconnect",) in live.calls and ("connect",) in live.calls
+    voice.settings_store.update(lambda s: setattr(s.audio, "always_listening", False))  # Settings
+    assert not voice.always_listening and "always" not in mic.users
+    calls = len(live.calls)
+    voice.settings_store.update(lambda s: setattr(s.general, "typing_wpm", 50))  # unrelated
+    assert len(live.calls) == calls

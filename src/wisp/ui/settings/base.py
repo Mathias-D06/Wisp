@@ -15,6 +15,8 @@ class SettingsPage(QWidget):
     """
 
     title = "Page"
+    reload_after_apply = False
+    """Reload from the saved settings after Apply (for values another page may change)."""
 
     def load(self, settings: Settings) -> None:
         """Fill widgets from ``settings``. Data-only pages refresh their lists instead."""

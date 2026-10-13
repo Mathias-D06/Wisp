@@ -54,6 +54,7 @@ NEEDS_SAFETY = {"terminal": "allow_terminal", "input": "allow_raw_input"}
 
 class LoadoutPage(SettingsPage):
     title = "Loadout"
+    reload_after_apply = True  # Settings → Safety can tick the terminal/input skills
 
     def __init__(self, registry=None):
         super().__init__()

@@ -49,10 +49,11 @@ def look_at_screen(ctx: ToolContext, args: dict) -> dict:
         label = "the screen"
     shot = screen.capture(region)
     ctx.services.live.send_image(shot.jpeg)
+    ctx.services.last_capture = (shot, time.monotonic())
     time.sleep(FRAME_LEAD_SECONDS)
     return {
         "captured": label,
-        "pixels": f"{shot.width}x{shot.height}",
+        "image_pixels": f"{shot.image_size[0]}x{shot.image_size[1]}",
         "how": "The screenshot was just sent to you as an image. Answer from it.",
     }
 

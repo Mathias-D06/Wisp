@@ -156,3 +156,16 @@ from `.venv`. Dates are when checked.
 | spike `spikes/sqlite_fts5.py`, tests `test_memory.py` | bundled SQLite has FTS5 + bm25; index follows inserts, edits and deletes; operator-laden input is neutralised | 2026-10-13 |
 | https://ai.google.dev/gemini-api/docs/speech-generation | (see phase 2) prebuilt voice names used by the Loadout voice list | 2026-10-12 |
 | https://ai.google.dev/gemini-api/docs/live-api/capabilities | (see phase 2) `speech_config.voice_config.prebuilt_voice_config.voice_name` | 2026-10-12 |
+
+## Safety and hardening (phase 9)
+
+| URL | Confirmed | Checked |
+|---|---|---|
+| https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_powershell_exe | `-NoLogo` hides the banner; `-NoProfile` doesn't load the profile; `-NonInteractive` makes prompts fail instead of hanging; a `-Command` string must be last; exit code from the last command or `exit n`; `-ExecutionPolicy` (not used) only sets the session policy | 2026-10-13 |
+| test `test_hardening.py::test_run_command_*` | real PowerShell: UTF-8 output, exit code 3 from `exit 3`, a 2 s limit ends the process tree | 2026-10-13 |
+| https://learn.microsoft.com/en-us/windows/win32/api/tlhelp32/nf-tlhelp32-createtoolhelp32snapshot | `TH32CS_SNAPPROCESS` (0x2) includes all processes, `th32ProcessID` ignored for it; `INVALID_HANDLE_VALUE` on failure; close with `CloseHandle`; enumerate with `Process32First`/`Next` | 2026-10-13 |
+| https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-windowfrompoint | returns the window containing a point (NULL if none); skips hidden/disabled windows | 2026-10-13 |
+| https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-getancestor | `GA_ROOT` (2) gives the root window of a child window | 2026-10-13 |
+| https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-sendinput | (see phase 2) UIPI silently blocks input to higher-integrity windows — Wisp checks elevation first and explains | 2026-10-12 |
+| https://docs.python.org/3/library/threading.html#threading.excepthook | args `exc_type`, `exc_value`, `exc_traceback`, `thread`; `SystemExit` ignored by default | 2026-10-13 |
+| https://docs.python.org/3/library/sys.html#sys.excepthook | called with (type, value, traceback) for uncaught exceptions | 2026-10-13 |

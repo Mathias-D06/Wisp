@@ -37,3 +37,5 @@ class Services:
     media: Any = None
     system: Any = None
     overlay: Any = None
+    last_capture: Any = None
+    """(screen.Capture, monotonic time) of the latest look_at_screen, for raw clicks."""

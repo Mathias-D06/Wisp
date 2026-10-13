@@ -79,6 +79,18 @@ General, paste your key and click **Save and test** (expect "Key works…").
 | MT-37 | Loadout → untick **Music and video controls**, Apply. Say "pause the music". | Wisp says it can't do that (skill switched off); the Island's music buttons still work. Tick it again afterwards. |
 | MT-38 | Dictate one sentence (MT-18) and run one voice command. Island → Stats. | Today and This week show the words, a time-saved figure and 1 command; the 7-day chart has today's bar. |
 
+## F11/F12 Settings and safety
+
+| ID | Steps | Expected |
+|---|---|---|
+| MT-39 | Settings → Hotkeys and audio: set Dictation to `alt+win` (same as push-to-talk). Then set it to `ctrl+alt+d`, pick your headset microphone, Apply. Hold Ctrl+Alt+D in Notepad and dictate. | The clash is shown at once and Apply refuses it; after the change dictation works with the new chord and the headset mic. Set it back to `ctrl+win` afterwards. |
+| MT-40 | Say "run the command get-date". | Wisp says terminal commands are switched off (Settings → Safety). |
+| MT-41 | Settings → Safety: tick **Allow terminal commands**, Apply (Loadout → "Run terminal commands" is now ticked). Say "use PowerShell to list the files in my Downloads folder". | A card shows the exact command; after "yes" Wisp summarises the list. Settings → Action log shows the call with "allow (confirmed…)". Untick the switch afterwards. |
+| MT-42 | Settings → Safety: tick **Allow raw mouse and keyboard control**. Open Notepad and say "look at my screen, then press control N", then "type hello world", then "click the File menu at its position on the screenshot". | Ctrl+N opens a new tab without asking; the text is typed; the click asks first and then hits File. Untick the switch afterwards. |
+| MT-43 | Run Task Manager as administrator and focus it. With raw input allowed, say "press F5". | Wisp explains that Windows blocks controlling administrator windows; nothing happens. |
+| MT-44 | Open Notepad and say "in 2 minutes, click the File menu in Notepad". Lock the PC (Win+L) before it runs; unlock after 3 minutes. | The routine's notification shows ✗ with "Windows is showing a secure screen…"; Wisp did not interact with the lock screen. |
+| MT-45 | Settings → Safety → tick "Close a window…", Apply. Say "close Notepad" (with unsaved text). Then say "what's on my screen?" followed by "close Calculator". | The first close happens without a card (Notepad still asks to save); the second asks first because the screen was just read. |
+
 ## Hotkeys
 
 | ID | Steps | Expected |

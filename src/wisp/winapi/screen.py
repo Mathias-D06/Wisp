@@ -26,6 +26,17 @@ class Capture:
     width: int
     height: int
     region: tuple[int, int, int, int]  # left, top, right, bottom (physical px)
+    image_size: tuple[int, int] = (0, 0)  # size of the JPEG the model sees
+
+    def to_screen(self, x: float, y: float) -> tuple[int, int]:
+        """Map a point in the sent image to physical screen pixels."""
+        image_w, image_h = self.image_size if self.image_size[0] else (self.width, self.height)
+        if not (0 <= x <= image_w and 0 <= y <= image_h):
+            raise ValueError(f"({x:g}, {y:g}) is outside the {image_w}x{image_h} screenshot.")
+        left, top, right, bottom = self.region
+        sx = left + round(x * (right - left) / image_w)
+        sy = top + round(y * (bottom - top) / image_h)
+        return min(sx, right - 1), min(sy, bottom - 1)
 
 
 def encode(image: Image.Image, max_edge: int = MAX_EDGE, quality: int = JPEG_QUALITY) -> bytes:
@@ -85,4 +96,6 @@ def capture(region: tuple[int, int, int, int], max_edge: int = MAX_EDGE) -> Capt
     image = grab(region)
     jpeg = encode(image, max_edge)
     width, height = image.size
-    return Capture(jpeg, width, height, region)
+    with Image.open(io.BytesIO(jpeg)) as sent:
+        image_size = sent.size
+    return Capture(jpeg, width, height, region, image_size)

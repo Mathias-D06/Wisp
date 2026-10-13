@@ -9,16 +9,17 @@ acceptance step needs real hardware/API key and is listed in `MANUAL_TESTS.md` (
 
 ## Status
 
-- Current phase: 9 — F12 hardening (not started)
-- Phase 8 done: `stores/memory.py`, `tools/builtin/memory.py`, `ui/settings/{memories,loadout}_page.py`,
-  loadout validation in `settings.py`; tests `test_memory.py`, `test_loadout_memories_ui.py`,
-  `test_stats.py`; D-032/D-033; MT-35…MT-38.
-- Next step: phase 9 (F12 hardening + remaining F11). Needed: Settings → Safety page (terminal /
-  raw-input toggles F12.3, auto-approve list, taint minutes; the Loadout tooltip already points
-  to it), terminal + raw input tools behind those toggles, action-log viewer page (F12.5),
-  F12.4/F12.6 evidence, F11.2 (key test on save — `general_page._test_and_save` exists, check
-  coverage), F11.4 Settings for hotkeys/devices/risky tools/model/language (General page has
-  model/language/idle/startup; hotkeys + devices pages missing).
+- Current phase: 10 — packaging, installer, CI (not started)
+- Phase 9 done: `tools/builtin/{terminal,raw_input}.py`, `winapi/processes.py`, `window_at`,
+  `ui/settings/{safety,hotkeys_audio,action_log}_page.py`, NEVER_AUTO_APPROVE, action-log
+  pruning, crash hooks; tests `test_hardening.py`, `test_safety_settings_ui.py`, voice
+  always-listening test; D-034…D-036; MT-39…MT-45.
+- Next step: phase 10. PyInstaller onedir spec (assets, winrt/comtypes hidden imports, version
+  info), Inno Setup script (per-user install, Start-menu shortcut, optional start with Windows,
+  clean uninstall incl. Run key; keep `%APPDATA%\Wisp` unless the user ticks "remove data"),
+  GitHub Actions on windows-latest (ruff + pytest + PyInstaller exe artefact), README (F11.3
+  UK/EEA/Swiss billing note, safety model section referenced by `tools/safety.py`, missed-run
+  policy, manual tests), D.2 stub/placeholder grep.
 - Known gap: `README.md` does not exist yet although `pyproject.toml` names it and F6.5 cites it
   (the policy itself is in D-029). Write it in phase 10 (D.3); `pip install .` needs it.
 - Safety note for automated runs: never toggle the user's Night Light/Wi-Fi/Bluetooth/theme/
@@ -53,7 +54,9 @@ acceptance step needs real hardware/API key and is listed in `MANUAL_TESTS.md` (
 - [x] 8 F8 memory, F9 loadout, F10 stats — `stores/memory.py`, `tools/builtin/memory.py`,
   `ui/settings/{memories,loadout}_page.py`, `stores/stats.py`; tests `test_memory.py`,
   `test_loadout_memories_ui.py`, `test_stats.py`
-- [ ] 9 F12 hardening
+- [x] 9 F12 hardening — `tools/builtin/{terminal,raw_input}.py`, `winapi/processes.py`,
+  `ui/settings/{safety,hotkeys_audio,action_log}_page.py`; tests `test_hardening.py`,
+  `test_safety_settings_ui.py`
 - [ ] 10 Packaging, installer, CI
 - [ ] 11 Final audit
 
@@ -227,10 +230,15 @@ acceptance step needs real hardware/API key and is listed in `MANUAL_TESTS.md` (
   `test_keystore.py::test_dpapi_round_trip`, `::test_mask_never_reveals_middle`,
   `::test_redacting_filter_removes_keys`, `::test_redacting_filter_cleans_tracebacks`; Settings shows
   only `mask(key)` (`ui/settings/general_page.py`)
-- [ ] F11.2 Key validated with a test call on save
+- [x] F11.2 Key validated with a test call on save — `general_page._test_and_save` (`models.get` for both
+  models); `test_safety_settings_ui.py::test_key_is_tested_before_saving`,
+  `test_settings_ui.py::test_bad_key_is_rejected_before_network`
 - [ ] F11.3 README note: UK/EEA/Swiss users need a billing-enabled key
-- [ ] F11.4 Settings: hotkeys with conflict detection, mic + speaker device, idle timeout, start with
-  Windows, risky-tool toggles, model name, language
+- [x] F11.4 Settings: hotkeys with conflict detection, mic + speaker device, idle timeout, start with
+  Windows, risky-tool toggles, model name, language — General (key, models, language, idle, start-up),
+  Hotkeys and audio, Safety pages; `test_safety_settings_ui.py::test_hotkeys_live_conflicts_and_audio`,
+  `::test_missing_audio_device_is_kept_and_labelled`, `::test_safety_toggle_also_ticks_skill_and_loadout_follows`,
+  `test_settings_ui.py`; MT-39
 
 ### F12 Safety
 - [x] F12.1 Risk tiers enforced in dispatcher — `tools/safety.py` + `tools/dispatcher.py`;
@@ -240,10 +248,19 @@ acceptance step needs real hardware/API key and is listed in `MANUAL_TESTS.md` (
   `::test_click_executes_and_notifies_model`, `::test_spoken_no_cancels`,
   `::test_scheduled_confirm_waits_for_click`, `test_live_session.py::test_spoken_yes_confirms_through_transcription`;
   card `ui/confirm_card.py`
-- [ ] F12.3 Terminal + raw mouse/keyboard disabled by default behind Settings toggle
-- [ ] F12.4 Screen/web/file text is untrusted; confirm-tier after reading it always asks
-- [ ] F12.5 Action log of every tool call, viewable in Settings
-- [ ] F12.6 Never bypasses UAC, secure desktop, lock screen, anti-cheat; explains the limit
+- [x] F12.3 Terminal + raw mouse/keyboard disabled by default behind Settings toggle — D-034;
+  `test_hardening.py::test_terminal_and_raw_input_off_by_default`, `::test_terminal_needs_toggle_and_skill_then_always_asks`,
+  `::test_raw_input_tiers_when_enabled`, `::test_run_command_*`, `::test_mouse_click_maps_and_needs_a_recent_screenshot`; MT-40…MT-42
+- [x] F12.4 Screen/web/file text is untrusted; confirm-tier after reading it always asks — D-012/D-019;
+  `test_dispatcher.py::test_untrusted_output_is_wrapped_and_taints`, `test_tools_core.py::test_auto_approve_ignored_when_tainted_and_for_schedules`,
+  `test_hardening.py::test_auto_approve_limits`, `test_memory.py::test_tainted_session_asks_before_remember`; MT-45
+- [x] F12.5 Action log of every tool call, viewable in Settings — `ui/settings/action_log_page.py`;
+  `test_safety_settings_ui.py::test_action_log_*`, `test_hardening.py::test_action_log_prunes_and_redacts`,
+  `test_dispatcher.py::test_safe_tool_runs_and_is_logged`; MT-41
+- [x] F12.6 Never bypasses UAC, secure desktop, lock screen, anti-cheat; explains the limit — D-022, D-035;
+  `test_hardening.py::test_refuses_secure_desktop_and_elevated_windows`, `::test_refuses_fullscreen_window_while_anti_cheat_runs`,
+  `::test_look_at_screen_refuses_secure_desktop`, `::test_instruction_states_the_limits`, `::test_real_secure_desktop_probe_and_window_at`;
+  MT-17, MT-43, MT-44
 
 ### Testing, packaging, definition of done
 - [ ] T.1 Unit tests: dispatcher, safety tiers, scheduler parsing + persistence, memory, clipboard store,
@@ -263,3 +280,5 @@ acceptance step needs real hardware/API key and is listed in `MANUAL_TESTS.md` (
 - 2026-10-13: Phase 7 finished (tests, D-030/D-031, sources, MT-29…MT-34). Added
   `winrt-Windows.Foundation.Collections` to pyproject; clipboard search now treats % and _ literally.
 - 2026-10-13: Phase 8 finished (memory, loadout page, stats tests, D-032/D-033, MT-35…MT-38).
+- 2026-10-13: Phase 9 finished (Safety/Hotkeys and audio/Action log pages, terminal + raw input,
+  anti-cheat guard, crash logging, D-034…D-036, MT-39…MT-45).

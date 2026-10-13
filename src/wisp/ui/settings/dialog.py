@@ -78,6 +78,10 @@ class SettingsDialog(QDialog):
             self.error.setText(f"Could not save settings: {exc}")
             return False
         self.error.clear()
+        saved = self._store.get()
+        for page in self._pages:  # another page may have changed its values (Safety → skills)
+            if page.reload_after_apply:
+                page.load(saved)
         return True
 
     def _ok(self) -> None:

@@ -3,7 +3,8 @@
 Rules (README "Safety model"):
 * DISABLED-tier tools (terminal, raw mouse/keyboard) are refused unless their Safety toggle is on.
 * CONFIRM-tier tools need a spoken "yes" or a click. A user may auto-approve specific
-  confirm-tier tools, but never while the session is "tainted".
+  confirm-tier tools, but never while the session is "tainted", and never the tools in
+  ``NEVER_AUTO_APPROVE`` (terminal, raw input, deletion, power, risky clicks…).
 * Tainted = untrusted content (screen text, files, web pages) was read in the last N minutes.
   While tainted, every confirm-tier call asks, and SAFE tools marked ``escalate_when_tainted``
   (typing, clicking, opening URLs) also ask.
@@ -18,7 +19,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, Literal
 
-from wisp.settings import Settings
+from wisp.settings import NEVER_AUTO_APPROVE, Settings
 from wisp.tools.base import Origin, Risk, Tool
 
 
@@ -93,7 +94,8 @@ class SafetyPolicy:
         if tier == Risk.CONFIRM:
             if tainted:
                 return Decision("confirm", "Untrusted content was read recently.", tier)
-            if origin == Origin.VOICE and tool.name in settings.safety.auto_approve:
+            if (origin == Origin.VOICE and tool.name in settings.safety.auto_approve
+                    and tool.name not in NEVER_AUTO_APPROVE):
                 return Decision("allow", "Auto-approved in Settings → Safety.", tier)
             return Decision("confirm", "This action needs your OK.", tier)
         if tainted and tool.escalate_when_tainted and origin != Origin.UI:

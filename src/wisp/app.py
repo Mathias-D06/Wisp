@@ -42,9 +42,11 @@ from wisp.tools.builtin import apps as apps_tools
 from wisp.tools.builtin import core as core_tools
 from wisp.tools.builtin import files as files_tools
 from wisp.tools.builtin import memory as memory_tools
+from wisp.tools.builtin import raw_input as raw_input_tools
 from wisp.tools.builtin import schedule as schedule_tools
 from wisp.tools.builtin import screen as screen_tools
 from wisp.tools.builtin import system as system_tools
+from wisp.tools.builtin import terminal as terminal_tools
 from wisp.tools.builtin import todos as todo_tools
 from wisp.tools.builtin import ui as ui_tools
 from wisp.tools.builtin import web as web_tools
@@ -69,11 +71,14 @@ from wisp.ui.island.power_tab import PowerTab
 from wisp.ui.island.stats_tab import StatsTab
 from wisp.ui.island.today_tab import TodayTab
 from wisp.ui.island.wallpaper_tab import WallpaperTab
+from wisp.ui.settings.action_log_page import ActionLogPage
 from wisp.ui.settings.dialog import SettingsDialog
 from wisp.ui.settings.general_page import GeneralPage
+from wisp.ui.settings.hotkeys_audio_page import HotkeysAudioPage
 from wisp.ui.settings.loadout_page import LoadoutPage
 from wisp.ui.settings.memories_page import MemoriesPage
 from wisp.ui.settings.routines_page import RoutinesPage
+from wisp.ui.settings.safety_page import SafetyPage
 from wisp.ui.tray import Tray
 from wisp.voice import VoiceController, VoiceSignals, make_callbacks
 from wisp.winapi import input as winput
@@ -204,7 +209,8 @@ class WispApp(QObject):
     # ----- tools -----------------------------------------------------------------------------
     def _register_tools(self) -> None:
         for module in (core_tools, apps_tools, windows_tools, web_tools, screen_tools, ui_tools,
-                       files_tools, todo_tools, memory_tools, system_tools):
+                       files_tools, todo_tools, memory_tools, system_tools, terminal_tools,
+                       raw_input_tools):
             self.registry.register_all(module.tools())
         self.registry.register_all(schedule_tools.tools(self.registry))
 
@@ -340,8 +346,11 @@ class WispApp(QObject):
         return [
             GeneralPage(self.settings_store, self.keystore),
             LoadoutPage(self.registry),
+            HotkeysAudioPage(),
+            SafetyPage(self.registry),  # after Loadout: it may tick the terminal/input skills
             MemoriesPage(self.services.memory),
             RoutinesPage(self.services.tasks, self.services.scheduler),
+            ActionLogPage(self.services.action_log, str(paths.log_dir())),
         ]
 
     def open_settings(self, page: str | None = None) -> None:
@@ -386,6 +395,7 @@ class WispApp(QObject):
         self.listen_action.blockSignals(True)
         self.listen_action.setChecked(settings.audio.always_listening)
         self.listen_action.blockSignals(False)
+        self.console.sync_toggles(settings.audio.mic_muted, settings.audio.always_listening)
         if (previous.audio.input_device != settings.audio.input_device
                 or previous.audio.output_device != settings.audio.output_device):
             self.voice.apply_settings()

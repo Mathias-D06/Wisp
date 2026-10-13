@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import logging
 import re
+import sys
+import threading
 from collections.abc import Callable
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
@@ -59,4 +61,27 @@ def configure(log_folder: Path, secret_provider: Callable[[], str | None]) -> Re
     # Network libraries can log request details at DEBUG; keep them quiet.
     for noisy in ("websockets", "httpx", "httpcore", "google_genai", "apscheduler", "comtypes"):
         logging.getLogger(noisy).setLevel(logging.WARNING)
+    install_exception_hooks()
     return redactor
+
+
+def install_exception_hooks() -> None:
+    """Send uncaught exceptions (main thread, worker threads, Qt slots) to the redacted log
+    instead of a console the packaged app doesn't have."""
+    crash_log = logging.getLogger("wisp.crash")
+
+    def main_hook(kind, value, tb) -> None:
+        if issubclass(kind, KeyboardInterrupt):
+            sys.__excepthook__(kind, value, tb)
+            return
+        crash_log.critical("Uncaught exception", exc_info=(kind, value, tb))
+
+    def thread_hook(args: threading.ExceptHookArgs) -> None:
+        if args.exc_type is SystemExit:
+            return
+        name = args.thread.name if args.thread else "?"
+        crash_log.critical("Uncaught exception in thread %s", name,
+                           exc_info=(args.exc_type, args.exc_value, args.exc_traceback))
+
+    sys.excepthook = main_hook
+    threading.excepthook = thread_hook

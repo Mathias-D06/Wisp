@@ -1,4 +1,8 @@
-"""Action log: every tool call with time, tool, arguments, decision and result."""
+"""Action log: every tool call with time, tool, arguments, decision and result.
+
+Arguments and results pass through the key redactor and are capped at 2000 characters each; the
+log keeps the newest 5000 entries (older ones are pruned as new ones arrive).
+"""
 
 from __future__ import annotations
 
@@ -11,6 +15,8 @@ from typing import Any
 from wisp.db import Database
 
 MAX_FIELD = 2000
+MAX_ROWS = 5000
+PRUNE_EVERY = 100
 
 
 def _compact(value: Any, redact: Callable[[str], str] | None) -> str:
@@ -40,6 +46,7 @@ class ActionLog:
         self._db = db
         self._redact = redact
         self._listeners: list[Callable[[], None]] = []
+        self._since_prune = PRUNE_EVERY  # prune on the first write after start-up
 
     def subscribe(self, listener: Callable[[], None]) -> None:
         self._listeners.append(listener)
@@ -60,9 +67,18 @@ class ActionLog:
                 duration_ms,
             ),
         )
+        self._since_prune += 1
+        if self._since_prune >= PRUNE_EVERY:
+            self._since_prune = 0
+            self.prune()
         for listener in list(self._listeners):
             listener()
         return row_id
+
+    def prune(self, keep: int | None = None) -> None:
+        keep = MAX_ROWS if keep is None else keep
+        self._db.execute("DELETE FROM action_log WHERE id <= (SELECT id FROM action_log "
+                         "ORDER BY id DESC LIMIT 1 OFFSET ?)", (keep,))
 
     def recent(self, limit: int = 300) -> list[LogEntry]:
         rows = self._db.query(
@@ -76,3 +92,5 @@ class ActionLog:
 
     def clear(self) -> None:
         self._db.execute("DELETE FROM action_log")
+        for listener in list(self._listeners):
+            listener()

@@ -48,6 +48,13 @@ VOICES = [
 ]
 """Gemini prebuilt voices (https://ai.google.dev/gemini-api/docs/speech-generation)."""
 
+NEVER_AUTO_APPROVE = frozenset({
+    "run_command", "mouse_click", "press_keys", "type_text", "delete_to_recycle_bin", "power",
+    "click_element", "type_into_field", "open_path", "schedule_task", "delete_scheduled_task",
+})
+"""Tools whose confirmation can never be switched off (irreversible, purchase-capable or blind
+actions; DECISIONS.md D-034). Enforced by validate() and again by the safety policy."""
+
 PERSONALITY_PRESETS = ["friendly", "professional", "playful", "minimal", "custom"]
 THEMES = ["system", "dark", "light"]
 CUSTOM_PERSONALITY_MAX = 600
@@ -197,6 +204,11 @@ def validate(settings: Settings) -> list[str]:
         problems.append(f"Unknown theme {loadout.theme!r}.")
     if not re.fullmatch(r"#[0-9a-fA-F]{6}", loadout.accent):
         problems.append("Accent colour must look like #7c5cff.")
+    if not 1 <= settings.safety.taint_minutes <= 120:
+        problems.append("Untrusted-content window must be 1-120 minutes.")
+    blocked = sorted(set(settings.safety.auto_approve) & NEVER_AUTO_APPROVE)
+    if blocked:
+        problems.append(f"These actions always ask first: {', '.join(blocked)}.")
     unknown = [s for s in settings.loadout.skills if s not in TOOL_GROUPS]
     if unknown:
         problems.append(f"Unknown skill groups: {', '.join(unknown)}.")

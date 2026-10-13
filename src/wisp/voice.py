@@ -77,7 +77,17 @@ class VoiceController(QObject):
             QTimer.singleShot(0, lambda: self._start_always_listening())
 
     def _on_settings(self, settings) -> None:
-        self.always_listening = settings.audio.always_listening
+        """Settings are saved on the Qt thread (tray, console, Settings window)."""
+        enabled = settings.audio.always_listening
+        if enabled == self.always_listening:
+            return
+        self.always_listening = enabled
+        self.live.request_reconnect()  # VAD mode is part of the session setup
+        if enabled:
+            self._start_always_listening()
+        else:
+            self.mic.unsubscribe("always")
+            self.mic.release("always")
 
     # ----- push-to-talk / orb ------------------------------------------------------------------
     def ptt_press(self) -> None:
@@ -157,12 +167,6 @@ class VoiceController(QObject):
 
     def set_always_listening(self, enabled: bool) -> None:
         self.settings_store.update(lambda s: setattr(s.audio, "always_listening", enabled))
-        self.live.request_reconnect()  # VAD mode is part of the session setup
-        if enabled:
-            self._start_always_listening()
-        else:
-            self.mic.unsubscribe("always")
-            self.mic.release("always")
 
     def _start_always_listening(self) -> None:
         if not self.live.has_key():

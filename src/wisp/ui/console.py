@@ -108,6 +108,13 @@ class ConsoleWindow(QWidget):
         bar = self.view.verticalScrollBar()
         bar.setValue(bar.maximum())
 
+    def sync_toggles(self, muted: bool, always_listening: bool) -> None:
+        """Mirror changes made from the tray or the Settings window."""
+        for box, value in ((self.mute, muted), (self.always, always_listening)):
+            box.blockSignals(True)
+            box.setChecked(value)
+            box.blockSignals(False)
+
     def open(self) -> None:
         self.show()
         self.raise_()

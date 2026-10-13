@@ -283,3 +283,50 @@ keep several loadouts or how changes reach a running conversation. Decisions:
   request a reconnect: the next connection is built from the new settings and reuses the
   resumption handle so the conversation continues; if the server refuses to resume with the new
   setup, Wisp starts a fresh session with remembered facts (existing D-015 path). Verify MT-36.
+
+## D-034 Terminal and raw input (F12.3) and what may skip confirmation
+Gap: the brief puts the terminal and raw mouse/keyboard behind a Settings toggle but does not say
+what they can do once enabled. Decisions:
+* Both are off twice by default: the Safety switch (`allow_terminal` / `allow_raw_input`) and
+  the Loadout skill. Switching one on in Settings → Safety also ticks its skill; the dispatcher
+  re-checks both on every call, and the model is not told about the tools while they are off.
+* `run_command` runs Windows PowerShell 5.1 (`powershell.exe -NoLogo -NoProfile
+  -NonInteractive -Command`, present on every Windows 10/11) as the signed-in user, never
+  elevated, no window, stdin closed, the user's execution policy untouched, 60 s default limit
+  (max 300 s; the process tree is ended with `taskkill /T /F`), output capped at 4000
+  characters and treated as untrusted (D-012). Every command asks first.
+* Raw input: `mouse_click` (pixels of the latest `look_at_screen` image, mapped back to the
+  monitor; refused if that image is older than 2 minutes) always asks. `press_keys` asks for
+  Enter, Delete, any Win combination and Alt+F4 / Ctrl+W / Ctrl+Q / Ctrl+S / Ctrl+P / Ctrl+D /
+  Shift+Delete / Ctrl+Enter; `type_text` asks when the text contains a line break; otherwise
+  they are SAFE but ask while tainted. `mouse_scroll` is SAFE. Typing is limited to 2000
+  characters. `mouse_click` is not schedulable (coordinates go stale).
+* Auto-approval (Settings → Safety) applies only to requests made by voice/console, never while
+  tainted, never in routines, and never to `NEVER_AUTO_APPROVE`: terminal, raw input, Recycle
+  Bin deletion, power, risky clicks/typing in apps, opening executables, scheduling and deleting
+  routines. That leaves closing a window, deleting a to-do and switching Wi-Fi off. The rule is
+  enforced in `SafetyPolicy`, rejected by settings validation and filtered out by the page.
+
+## D-035 Anti-cheat (F12.6)
+Gap: "never bypasses anti-cheat" needs a concrete behaviour; Wisp cannot know whether a game
+protects itself. Decision: Wisp never hides its input (every injected event is a normal
+SendInput event carrying Wisp's signature) and the system instruction tells the model it can't
+get past anti-cheat. In addition, raw-input tools refuse to act on a window that fills its
+monitor while a known anti-cheat client is running (Easy Anti-Cheat, BattlEye, Riot Vanguard,
+FACEIT, EA Javelin, PunkBuster, nProtect GameGuard, XIGNCODE3, Anti-Cheat Expert — process names
+from a Tool Help snapshot), because the user's game account could be penalised. This is a
+heuristic: a windowed game is not detected, and a full-screen non-game window is refused while
+such a client runs; the message tells the user to act themselves.
+
+## D-036 Settings coverage and hardening details (F11.4, F12.5)
+* Settings → Hotkeys and audio edits the three hold-chords (live parse/conflict feedback; the
+  same `find_conflicts` runs again on save), the hold time, microphone, speaker and always
+  listening. A stored device that is not connected stays selected as "(not connected)" and the
+  default device is used meanwhile (`audio/devices.resolve`).
+* Always listening is switched in one place: the voice controller reacts to the saved setting,
+  whether it came from the tray, the console or the Settings window.
+* Settings → Action log shows the newest 500 entries with a filter, "only problems" and
+  details; the store keeps the newest 5000 (pruned every 100 writes). Arguments and results are
+  redacted and capped at 2000 characters each.
+* Uncaught exceptions on any thread go to the redacted log (`sys.excepthook`,
+  `threading.excepthook`), since the packaged app has no console.

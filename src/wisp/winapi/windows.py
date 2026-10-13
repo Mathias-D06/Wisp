@@ -44,6 +44,10 @@ _user32.GetClassNameW.argtypes = [wintypes.HWND, wintypes.LPWSTR, ctypes.c_int]
 _user32.OpenInputDesktop.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
 _user32.OpenInputDesktop.restype = wintypes.HANDLE
 _user32.CloseDesktop.argtypes = [wintypes.HANDLE]
+_user32.WindowFromPoint.argtypes = [wintypes.POINT]
+_user32.WindowFromPoint.restype = wintypes.HWND
+_user32.GetAncestor.argtypes = [wintypes.HWND, wintypes.UINT]
+_user32.GetAncestor.restype = wintypes.HWND
 _kernel32.GetCurrentThreadId.restype = wintypes.DWORD
 _kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
 _kernel32.OpenProcess.restype = wintypes.HANDLE
@@ -59,6 +63,7 @@ _advapi32.GetTokenInformation.argtypes = [wintypes.HANDLE, ctypes.c_int, ctypes.
                                           wintypes.DWORD, ctypes.POINTER(wintypes.DWORD)]
 
 GW_OWNER = 4
+GA_ROOT = 2
 GWL_EXSTYLE = -20
 WS_EX_TOOLWINDOW = 0x00000080
 WS_EX_APPWINDOW = 0x00040000
@@ -193,6 +198,19 @@ def list_windows() -> list[WindowInfo]:
         result.append(WindowInfo(hwnd, _title(hwnd), name, pid, bool(_user32.IsIconic(hwnd)),
                                  hwnd == foreground))
     return result
+
+
+def window_at(x: int, y: int) -> WindowInfo | None:
+    """Top-level window under a physical-pixel point (WindowFromPoint + GetAncestor GA_ROOT)."""
+    hwnd = _user32.WindowFromPoint(wintypes.POINT(x, y))
+    if not hwnd:
+        return None
+    root = _user32.GetAncestor(hwnd, GA_ROOT) or hwnd
+    pid = pid_of(root)
+    path = process_path(pid)
+    name = os.path.splitext(os.path.basename(path))[0] if path else "unknown"
+    return WindowInfo(root, _title(root), name, pid, bool(_user32.IsIconic(root)),
+                      root == _user32.GetForegroundWindow())
 
 
 def foreground_window() -> WindowInfo | None:
