@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 from datetime import datetime, timedelta
 from types import SimpleNamespace
 
@@ -352,3 +353,30 @@ def test_stats_tab_shows_today_and_week(qtbot, db, tmp_path):
     assert tab.week.values["commands"].text() == "1"
     assert tab.week.values["routines"].text() == "1"
     assert format_duration(3 * 3600 + 5 * 60) == "3 h 05 min"
+
+
+def test_stats_tab_survives_restyling(qtbot, db, tmp_path):
+    """Regression: an attribute named ``metric`` shadowed QWidget::metric(), so re-applying the
+    app stylesheet (every settings save) raised TypeError inside Qt."""
+    from PySide6.QtWidgets import QApplication
+
+    from wisp.settings import SettingsStore
+    from wisp.stores.stats import Stats
+    from wisp.ui import theme
+    from wisp.ui.island.stats_tab import StatsTab
+
+    tab = StatsTab(Stats(db, lambda: 40), SettingsStore(tmp_path / "s.json"), "#7c5cff")
+    qtbot.addWidget(tab)
+    tab.show()
+    errors = []
+    hook = sys.excepthook
+    sys.excepthook = lambda *exc: errors.append(exc)
+    try:
+        app = QApplication.instance()
+        app.setStyleSheet(theme.stylesheet(theme.palette("dark", "#14b8a6")))
+        tab.repaint()
+    finally:
+        app.setStyleSheet("")
+        sys.excepthook = hook
+    assert errors == []
+    assert callable(tab.metric)  # QWidget::metric is no longer shadowed

@@ -96,6 +96,8 @@ def stylesheet(p: Palette) -> str:
     QGroupBox::title {{ subcontrol-origin: margin; left: 10px; color: {p.muted}; }}
     QCheckBox::indicator:checked {{ background: {p.accent}; border: 1px solid {p.accent}; }}
     QCheckBox::indicator {{ width: 14px; height: 14px; border: 1px solid {p.border}; border-radius: 3px; }}
+    QAbstractItemView::indicator {{ width: 14px; height: 14px; border: 1px solid {p.border}; border-radius: 3px; background: {p.surface2}; }}
+    QAbstractItemView::indicator:checked {{ background: {p.accent}; border: 1px solid {p.accent}; }}
     QSlider::groove:horizontal {{ height: 4px; background: {p.border}; border-radius: 2px; }}
     QSlider::sub-page:horizontal {{ background: {p.accent}; border-radius: 2px; }}
     QSlider::handle:horizontal {{ background: {p.text}; width: 12px; margin: -5px 0; border-radius: 6px; }}

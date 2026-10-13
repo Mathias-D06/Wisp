@@ -7,6 +7,7 @@ CanIncludeInClipboardHistory=0 (password managers, Wisp's own dictation pastes) 
 
 from __future__ import annotations
 
+import contextlib
 import logging
 
 from PySide6.QtCore import QBuffer, QByteArray, QIODevice, QObject, QTimer
@@ -36,10 +37,27 @@ class ClipboardMonitor(QObject):
         self._pending = QTimer(self)
         self._pending.setSingleShot(True)
         self._pending.timeout.connect(self.capture)
-        QGuiApplication.clipboard().dataChanged.connect(lambda: self._pending.start(80))
+        # A bound method (not a lambda) so the connection ends with this object or close().
+        QGuiApplication.clipboard().dataChanged.connect(self._changed)
+        self._closed = False
+
+    def _changed(self) -> None:
+        if not self._closed:
+            self._pending.start(80)
+
+    def close(self) -> None:
+        """Stop watching (app quit, before the database closes)."""
+        if self._closed:
+            return
+        self._closed = True
+        self._pending.stop()
+        with contextlib.suppress(RuntimeError, TypeError):  # already disconnected
+            QGuiApplication.clipboard().dataChanged.disconnect(self._changed)
 
     def capture(self) -> None:
         """Read the clipboard once it settles (apps often write several formats in a row)."""
+        if self._closed:
+            return
         try:
             content = clipboard.read_for_history(self.owner_hwnd)
         except clipboard.ClipboardBusy:
@@ -51,14 +69,17 @@ class ClipboardMonitor(QObject):
         if content.excluded:
             self.skipped_excluded += 1
             return
-        if content.png:
-            self.history.add_image(content.png)
-        elif content.dib:
-            image = QGuiApplication.clipboard().image()
-            if not image.isNull():
-                self.history.add_image(image_to_png(image))
-        elif content.text:
-            self.history.add_text(content.text)
+        try:
+            if content.png:
+                self.history.add_image(content.png)
+            elif content.dib:
+                image = QGuiApplication.clipboard().image()
+                if not image.isNull():
+                    self.history.add_image(image_to_png(image))
+            elif content.text:
+                self.history.add_text(content.text)
+        except Exception:  # a slot must never raise into Qt's event loop
+            log.exception("Saving a clipboard item failed")
 
     def recopy(self, item_id: int) -> bool:
         item = self.history.get(item_id)

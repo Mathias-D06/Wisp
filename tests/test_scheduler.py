@@ -80,10 +80,14 @@ def test_missed_beyond_grace_is_reported(db, tmp_path):
     h = Harness(db, tmp_path, grace_hours=0)
     first = h.make()
     first.start()
-    task = h.store.add("Too late", Schedule(repeat="none", at=soon(1)), [])
+    # Leave enough lead time that a slow machine (CI) shuts the first scheduler down before the
+    # run time; then restart once the run time (+ the 1 s minimum grace) has clearly passed.
+    run_at = datetime.now().astimezone() + timedelta(seconds=3)
+    task = h.store.add("Too late", Schedule(repeat="none", at=run_at.isoformat()), [])
     first.schedule(task)
     first.shutdown()
-    time.sleep(2.2)
+    assert datetime.now().astimezone() < run_at, "machine too slow for this timing test"
+    time.sleep((run_at - datetime.now().astimezone()).total_seconds() + 1.6)
     second = h.make()
     second.start()
     try:

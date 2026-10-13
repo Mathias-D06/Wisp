@@ -9,14 +9,8 @@ acceptance step needs real hardware/API key and is listed in `MANUAL_TESTS.md` (
 
 ## Status
 
-- Current phase: 11 — final audit (not started)
-- Phase 10 done: `packaging/{wisp.spec,build.py,installer.iss,launcher.py,make_icon.py,notices.py,wisp.ico}`,
-  `wisp/selfcheck.py` (`--self-check`, `--version`), `.github/workflows/ci.yml`, `README.md`;
-  tests `test_packaging.py`; D-037; MT-46…MT-49. Build: `.venv\Scripts\python packaging\build.py`.
-- Next step: phase 11 final audit. Re-read the brief's requirements against PROGRESS evidence;
-  trim MANUAL_TESTS into a ~20-minute core run (T.3: it now has 49 cases) with the rest marked
-  optional; check every DECISIONS/SOURCES reference in code still holds; fresh-clone build;
-  final report (D.4). Push to GitHub to run CI for real (no remote yet).
+- Current phase: all phases done (0–11). Remaining work needs a person: the MANUAL_TESTS core run
+  (API key + microphone), pushing to GitHub so CI runs, choosing a licence. See FINAL_REPORT.md.
 - Safety note for automated runs: never toggle the user's Night Light/Wi-Fi/Bluetooth/theme/
   volume/output device in tests on this PC; test write paths with pure functions + manual tests.
 - Environment: Windows 11, Python 3.12.10 venv in `.venv`, Git 2.55, Inno Setup 6.7.3 (per-user,
@@ -54,7 +48,11 @@ acceptance step needs real hardware/API key and is listed in `MANUAL_TESTS.md` (
   `test_safety_settings_ui.py`
 - [x] 10 Packaging, installer, CI — `packaging/*`, `wisp/selfcheck.py`, `.github/workflows/ci.yml`,
   `README.md`; tests `test_packaging.py`
-- [ ] 11 Final audit
+- [x] 11 Final audit — reference audit (every cited test/file/MT/D exists), pins = installed =
+  SOURCES, fresh `git clone` build green, suite green 3× idle + 2× under full CPU load; fixed:
+  StatsTab shadowing `QWidget::metric` (TypeError on every settings save), leaked ClipboardMonitor
+  connections + unguarded store write in a Qt slot, a timing-sensitive scheduler test, item-view check
+  indicators; FINAL_REPORT.md
 
 ## Acceptance criteria
 
@@ -266,9 +264,10 @@ acceptance step needs real hardware/API key and is listed in `MANUAL_TESTS.md` (
   `windows` marker skips Windows-only tests elsewhere (conftest)
 - [x] T.2 Integration tests with fake Live session replaying scripted tool calls — `tests/fakes.py`
   (FakeLiveServer), `test_live_session.py`, `test_schedule_tools.py::test_model_schedules_routine_then_it_replays_without_model`
-- [ ] T.3 MANUAL_TESTS.md runnable in ~20 minutes
+- [x] T.3 MANUAL_TESTS.md runnable in ~20 minutes — "Core run" (14 steps, ~21 min) covering every `[~]`
+  item; the full catalogue (49 cases) is the extended set
 - [~] T.4 GitHub Actions on windows-latest: lint + tests + PyInstaller exe — `.github/workflows/ci.yml`
-  (ruff, pytest, Inno Setup, `build.py` incl. frozen self-check, artefacts). Not yet run on GitHub (no
+  (ruff, pytest, Inno Setup, `packaging/build.py` incl. frozen self-check, artefacts). Not yet run on GitHub (no
   remote); every step ran green in a fresh venv from a clean copy on 2026-10-13 (310 passed, build +
   self-check + installer ok). Hosted runners have no audio devices (those tests skip; the self-check marks
   audio optional)
@@ -281,7 +280,7 @@ acceptance step needs real hardware/API key and is listed in `MANUAL_TESTS.md` (
   only in empty exception classes
 - [x] D.3 README complete — `README.md` (install, key + billing/terms, usage, settings, Scheduled tasks,
   Safety model, privacy and data, troubleshooting, building, notices)
-- [ ] D.4 Final report
+- [x] D.4 Final report — `FINAL_REPORT.md`
 
 ## Log
 
@@ -296,3 +295,8 @@ acceptance step needs real hardware/API key and is listed in `MANUAL_TESTS.md` (
   installer 54 MB. Silent per-user install/uninstall tested on this PC into %TEMP% (state before/after
   recorded; nothing left behind, user data kept, dummy data folder removed). CI steps emulated in a
   fresh venv: all green. Commands: `.venv\Scripts\python packaging\build.py`.
+- 2026-10-13: Phase 11 final audit. Bugs found and fixed: `StatsTab.metric` shadowed
+  `QWidget::metric()` (re-applying the stylesheet on every settings save raised TypeError);
+  ClipboardMonitor kept a lambda connection to the global clipboard signal (never released) and let
+  store errors escape a Qt slot; `test_missed_beyond_grace_is_reported` raced under load. Regression
+  tests added for each. Item-view check boxes now styled like QCheckBox.

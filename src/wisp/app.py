@@ -309,6 +309,7 @@ class WispApp(QObject):
     def quit(self) -> None:
         log.info("Wisp quitting")
         self.services.scheduler.shutdown()
+        self.clipboard_monitor.close()
         self.media.stop()
         self.background.shutdown()
         self.island.hide()

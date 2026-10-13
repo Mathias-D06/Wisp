@@ -97,7 +97,8 @@ def monitor(qtbot, history, monkeypatch):
     monkeypatch.setattr(clipboard, "read_for_history", fake_read)
     mon = ClipboardMonitor(history, owner_hwnd=0)
     mon.contents = contents
-    return mon
+    yield mon
+    mon.close()  # otherwise a later clipboard change would write into the closed test database
 
 
 @pytest.mark.qt
@@ -125,3 +126,20 @@ def test_monitor_retries_when_clipboard_busy(monitor, history, qtbot):
     monitor.capture()
     assert history.items() == []
     qtbot.waitUntil(lambda: len(history.items()) == 1, timeout=2000)
+
+
+@pytest.mark.qt
+def test_closed_monitor_ignores_changes_and_store_errors_stay_inside(monitor, history, qtbot,
+                                                                     caplog):
+    def broken_add(text):
+        raise RuntimeError("database closed")
+
+    history.add_text = broken_add
+    monitor.contents.append(ClipContent(excluded=False, text="x"))
+    monitor.capture()  # must not raise into Qt's event loop
+    assert "Saving a clipboard item failed" in caplog.text
+    monitor.close()
+    monitor._changed()
+    assert not monitor._pending.isActive()
+    monitor.capture()  # closed: does nothing (no read attempted)
+    assert monitor.contents == []

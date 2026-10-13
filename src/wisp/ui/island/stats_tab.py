@@ -60,11 +60,11 @@ class StatsTab(QWidget):
         cards.addWidget(self.week, 0, 1)
         layout.addLayout(cards)
         layout.addWidget(section("Last 7 days"))
-        self.metric = QComboBox()
-        self.metric.addItem("Words dictated", "words")
-        self.metric.addItem("Commands run", "commands")
-        self.metric.currentIndexChanged.connect(lambda _i: self.refresh())
-        layout.addWidget(self.metric)
+        self.chart_metric = QComboBox()
+        self.chart_metric.addItem("Words dictated", "words")
+        self.chart_metric.addItem("Commands run", "commands")
+        self.chart_metric.currentIndexChanged.connect(lambda _i: self.refresh())
+        layout.addWidget(self.chart_metric)
         self.chart = BarChart(accent)
         layout.addWidget(self.chart, 1)
         self.note = QLabel()
@@ -77,7 +77,7 @@ class StatsTab(QWidget):
     def refresh(self) -> None:
         self.today.show_summary(self.stats.today())
         self.week.show_summary(self.stats.this_week())
-        key = self.metric.currentData()
+        key = self.chart_metric.currentData()
         self.chart.set_values([(day.label, getattr(day, key)) for day in self.stats.daily(7)])
         wpm = self.settings.peek().general.typing_wpm
         self.note.setText(f"Time saved = typing time at {wpm} words per minute minus the time you "

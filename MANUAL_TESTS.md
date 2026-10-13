@@ -1,11 +1,35 @@
 # Manual tests
 
-Run on a real Windows 10/11 PC with a microphone and speakers or headphones. Target: about 20
-minutes (MT-09 runs in the background while you do the others). Record pass/fail per step and
-report any failure with the matching lines from `%APPDATA%\Wisp\logs\wisp.log`.
+Run on a real Windows 10/11 PC with a microphone and speakers or headphones. Record pass/fail
+per step and report any failure with the matching lines from `%APPDATA%\Wisp\logs\wisp.log`.
 
-Setup: install with `WispSetup.exe` (or run `.venv\Scripts\python -m wisp`), open Settings →
-General, paste your key and click **Save and test** (expect "Key works…").
+## Core run (about 20 minutes)
+
+These steps check, on real hardware, what automated tests can't: the acceptance items marked
+`[~]` in PROGRESS.md, plus install and uninstall. Do them in this order; the timers started in
+step 4 run while you do the rest. Each step points to a case in the catalogue below.
+
+| # | Case | What it checks | ~min |
+|---|---|---|---|
+| 1 | MT-46 | Install with `WispSetup-<version>.exe` (or run `.venv\Scripts\python -m wisp`). | 1 |
+| 2 | MT-29 | Island, music strip, app launcher and clipboard history work with **no key** (F7.A). | 3 |
+| 3 | — | Settings → General: paste your key, **Save and test** → "Key works…" (F11.2). | 1 |
+| 4 | MT-25, MT-26 | Start a to-do reminder and a routine for 2–3 minutes from now; check them in step 11. | 1 |
+| 5 | MT-01, MT-03, MT-05 | Push-to-talk, barge-in, typed text (F1). | 2 |
+| 6 | MT-11, MT-12, MT-14, MT-15 | Open apps, describe the screen, click by name, close with confirmation (F2.A). | 4 |
+| 7 | MT-18, MT-20, MT-10 | Dictation into Notepad, not in Win+V history, Start menu stays shut (F3.2, F3.6). | 2 |
+| 8 | MT-22 | Circle to Ask; on a second or scaled monitor if you have one (MT-23, F4.6). | 1 |
+| 9 | MT-30 (volume, output, Night Light, dark mode) | System controls really change Windows (F7.2). | 1.5 |
+| 10 | MT-07 | Network drop and recovery (F1.B). | 1.5 |
+| 11 | MT-25, MT-26 (results) | The reminder and routine fired with notifications. | 0.5 |
+| 12 | MT-35 | A memory survives a restart. | 1.5 |
+| 13 | MT-40 | Terminal is off by default (F12.3). | 0.5 |
+| 14 | MT-49 (answer **No**) | Uninstall is clean and keeps your data (D.1). | 1 |
+
+**Extended (optional):** every other case below. MT-09 is the 30-minute conversation (F1.A); run
+it in the background during the extended cases. MT-47 needs a sign-out and sign-in.
+
+## Catalogue
 
 ## F1 Voice core
 
