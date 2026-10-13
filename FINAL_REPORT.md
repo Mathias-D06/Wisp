@@ -15,7 +15,7 @@ Wisp is a Windows 10/11 voice assistant built on the Gemini Live API:
 
 There are about 12,500 lines of application code and 4,800 lines of tests in 31 files. See
 `README.md` for features and usage, `PROGRESS.md` for the evidence behind each requirement,
-`DECISIONS.md` for the 37 design decisions, and `SOURCES.md` for every API and document the
+`DECISIONS.md` for the 38 design decisions, and `SOURCES.md` for every API and document the
 code relies on.
 
 ## Status of the requirements (PROGRESS.md)
@@ -71,6 +71,15 @@ The items that need a person all sit in the **Core run** of `MANUAL_TESTS.md` (1
 3. **A scheduler test was timing-sensitive.** It failed under CPU load; it now has margins safe
    for a slow CI runner.
 4. **Check boxes in tables and lists were unstyled.** They now match the regular check boxes.
+
+## Found in the first real test (with your key)
+
+5. **A very short press of the talk key closed the voice session.** An 81 ms tap sent a turn with
+   no audio in it, and Google rejected it (1007 "Precondition check failed"). A test with your
+   key confirmed the cause. Wisp now sends nothing for a tap (it shows a hint instead), always
+   sends turns that carry an image, and adds a moment of silence before any turn that would
+   otherwise be empty. The error message also shows the server's reason instead of "None"
+   (D-038). The fix was verified against the real service.
 
 ## Reliance on undocumented behaviour
 

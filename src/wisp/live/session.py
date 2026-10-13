@@ -13,6 +13,10 @@ Behaviour:
 * Idle for the configured timeout → close the connection but keep the handle; the next request
   reconnects and resumes.
 * Barge-in: starting a turn clears playback locally at once; server ``interrupted`` does too.
+* Push-to-talk turns (D-038): ``activity_start`` waits until 0.2 s of audio is captured, so an
+  accidental tap sends nothing. A turn that carries an image (Circle to Ask) is always sent. The
+  server closes the session (1007 "Precondition check failed") when an activity contains no
+  audio, so the sender adds 32 ms of silence before any ``activity_end`` that would be empty.
 
 All private methods run on the core asyncio loop. Public methods are thread-safe.
 """
@@ -36,6 +40,9 @@ from wisp.audio import INPUT_MIME
 from wisp.tools.base import Origin
 
 log = logging.getLogger(__name__)
+
+MIN_TURN_AUDIO_BYTES = 6400  # 0.2 s of 16 kHz 16-bit mono
+SILENT_CHUNK = b"\x00\x00" * 512  # 32 ms at 16 kHz
 
 
 class LiveState(StrEnum):
@@ -62,6 +69,7 @@ class LiveCallbacks:
     interrupted: Callable[[], None] = _noop
     turn_complete: Callable[[], None] = _noop
     tool_activity: Callable[[str, str], None] = _noop
+    turn_too_short: Callable[[], None] = _noop
 
 
 def parse_duration(value: str | None) -> float:
@@ -88,7 +96,10 @@ def classify_error(exc: BaseException, used_handle: bool) -> tuple[str, str]:
         if code in (400, 1007, 1008):
             if used_handle:
                 return "resume", "Previous conversation could not be resumed; starting fresh."
-            return "fatal", f"The voice session was rejected: {exc.message or exc.status}"
+            details = exc.details if isinstance(exc.details, str) else None
+            reason = (exc.message or exc.status or details or "no reason given").strip()
+            return "fatal", (f"Gemini closed the voice session ({reason}). Talk again to "
+                             "reconnect; if it keeps happening, check Settings → General.")
         if code == 429:
             return "retry", "Quota or rate limit reached."
         return "retry", "Connection to Gemini lost."
@@ -148,7 +159,11 @@ class LiveSessionManager:
         self._wake = asyncio.Event()
         self._conn_id = 0
         self._turn_active = False
+        self._turn_opened = False  # activity_start queued for the current push-to-talk turn
+        self._turn_pending: list[bytes] = []  # audio held back until the turn is opened
+        self._turn_media = False  # an image was sent during the turn
         self._activity_open = False
+        self._activity_audio = False  # audio was sent inside the open activity
         self._suppress_audio = False
         self._pending_tools = 0
         self._tool_tasks: set[asyncio.Task] = set()
@@ -230,26 +245,60 @@ class LiveSessionManager:
         self._cb.interrupted()  # barge-in: stop speaking immediately
         self._suppress_audio = True
         self._turn_active = True
+        self._turn_opened = False
+        self._turn_pending = []
+        self._turn_media = False
         self._user_text = ""
-        if not self._always_listening():
-            self._enqueue(("activity_start", None))
+        # Push-to-talk: activity_start is sent once 0.2 s of audio has arrived (_open_turn).
+
+    def _manual_turn(self) -> bool:
+        return self._turn_active and not self._always_listening()
+
+    def _open_turn(self) -> None:
+        if self._turn_opened:
+            return
+        self._turn_opened = True
+        self._enqueue(("activity_start", None))
+        for chunk in self._turn_pending:
+            self._enqueue(("audio", chunk))
+        self._turn_pending = []
 
     def _push_audio(self, pcm: bytes) -> None:
+        if self._manual_turn() and not self._turn_opened:
+            self._turn_pending.append(pcm)
+            if sum(map(len, self._turn_pending)) >= MIN_TURN_AUDIO_BYTES:
+                self._open_turn()
+            return
         if self._turn_active or (self._always_listening() and self._wanted):
             self._enqueue(("audio", pcm))
 
     def _end_turn(self) -> None:
         if not self._turn_active:
             return
+        manual = self._manual_turn()
         self._turn_active = False
         self._suppress_audio = False
         self._touch()
-        if not self._always_listening():
-            self._enqueue(("activity_end", None))
+        if not manual:
+            return
+        if not self._turn_opened:
+            if not self._turn_media:
+                held_ms = sum(map(len, self._turn_pending)) * 1000 // 32000
+                self._turn_pending = []
+                log.info("Push-to-talk turn too short (%d ms of audio); nothing sent", held_ms)
+                self._cb.turn_too_short()
+                return
+            self._open_turn()
+        self._enqueue(("activity_end", None))
 
     def _cancel_turn(self) -> None:
         """Abandon a turn (e.g. another key was pressed): drop its queued audio, close it."""
         if not self._turn_active:
+            return
+        if self._manual_turn() and not self._turn_opened:
+            self._turn_pending = []  # nothing reached the server yet
+            self._turn_active = False
+            self._suppress_audio = False
             return
         self._out = collections.deque(i for i in self._out if i[0] != "audio")
         self._end_turn()
@@ -257,6 +306,8 @@ class LiveSessionManager:
     def _send(self, kind: str, payload: Any) -> None:
         self._want()
         if self._wanted:
+            if kind == "video" and self._manual_turn():
+                self._turn_media = True  # a turn with an image is sent even if it is short
             self._enqueue((kind, payload))
 
     def _request_reconnect(self) -> None:
@@ -354,7 +405,7 @@ class LiveSessionManager:
         self._go_away_deadline = None
         self._model_generating = False
         self._touch()
-        if self._turn_active and not self._always_listening():
+        if self._manual_turn() and self._turn_opened:
             # Re-open an in-progress push-to-talk turn on the new connection.
             self._out = collections.deque(i for i in self._out if i[0] != "activity_start")
             self._enqueue(("activity_start", None), front=True)
@@ -398,14 +449,20 @@ class LiveSessionManager:
             if manual and not self._activity_open:
                 await session.send_realtime_input(activity_start=types.ActivityStart())
                 self._activity_open = True
+                self._activity_audio = False
         elif kind == "activity_end":
             if manual and self._activity_open:
+                if not self._activity_audio:
+                    # An activity without audio makes the server close the session (1007).
+                    await session.send_realtime_input(
+                        audio=types.Blob(data=SILENT_CHUNK, mime_type=INPUT_MIME))
                 await session.send_realtime_input(activity_end=types.ActivityEnd())
                 self._activity_open = False
         elif kind == "audio":
             if manual and not self._activity_open:
                 return  # audio outside a turn is dropped in push-to-talk mode
             await session.send_realtime_input(audio=types.Blob(data=payload, mime_type=INPUT_MIME))
+            self._activity_audio = True
         elif kind == "text":
             self._touch()
             await session.send_realtime_input(text=payload)

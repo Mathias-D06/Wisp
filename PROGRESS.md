@@ -300,3 +300,8 @@ acceptance step needs real hardware/API key and is listed in `MANUAL_TESTS.md` (
   ClipboardMonitor kept a lambda connection to the global clipboard signal (never released) and let
   store errors escape a Qt slot; `test_missed_beyond_grace_is_reported` raced under load. Regression
   tests added for each. Item-view check boxes now styled like QCheckBox.
+- 2026-10-13: First real test with the user's key. Voice worked; an 81 ms tap closed the session
+  (1007 "Precondition check failed"). Probe confirmed empty activities are rejected. Fixed (D-038):
+  push-to-talk turns open after 0.2 s of audio, taps send nothing (hint), image turns always sent,
+  sender adds 32 ms of silence before an empty activity_end; close reason shown. Verified against
+  the real API with the app's LiveSessionManager; tests in test_live_session.py (6 new) and test_voice.py.

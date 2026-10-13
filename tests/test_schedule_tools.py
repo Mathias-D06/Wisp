@@ -8,7 +8,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from tests.fakes import DirectUi, FakeLiveServer, tool_call, until
+from tests.fakes import DirectUi, FakeLiveServer, speak, tool_call, until
 from wisp.live.session import LiveCallbacks, LiveSessionManager
 from wisp.scheduling.tasks import TaskStore
 from wisp.settings import Settings, SettingsStore
@@ -156,6 +156,7 @@ async def test_model_schedules_routine_then_it_replays_without_model(env, db):
                                  idle_timeout_s=lambda: 3600, always_listening=lambda: False,
                                  tick_s=0.02)
     manager.begin_turn()
+    speak(manager)
     manager.end_turn()
     await until(lambda: env.services.tasks.list())
     task = env.services.tasks.list()[0]

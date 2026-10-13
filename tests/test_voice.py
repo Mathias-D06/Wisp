@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import pytest
 
 from wisp.audio.capture import MicError
@@ -165,3 +167,17 @@ def test_always_listening_follows_settings_from_any_source(qtbot, tmp_path):
     calls = len(live.calls)
     voice.settings_store.update(lambda s: setattr(s.general, "typing_wpm", 50))  # unrelated
     assert len(live.calls) == calls
+
+
+def test_too_short_turn_shows_a_hint(qtbot, tmp_path):
+    from wisp.voice import TOO_SHORT_MESSAGE, VoiceController, VoiceSignals, make_callbacks
+
+    signals = VoiceSignals()
+    voice = VoiceController(FakeLive(), FakeMic(), FakePlayer(), signals,
+                            SettingsStore(tmp_path / "s.json"), ConfirmationManager(),
+                            lambda t, m: None)
+    messages: list[str] = []
+    voice.message.connect(messages.append)
+    player = SimpleNamespace(feed=lambda pcm: None, clear=lambda: None)
+    make_callbacks(signals, player, lambda text: None).turn_too_short()
+    qtbot.waitUntil(lambda: messages == [TOO_SHORT_MESSAGE], timeout=1000)

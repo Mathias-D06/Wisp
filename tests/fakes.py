@@ -156,3 +156,12 @@ class DirectUi:
         except Exception as exc:
             future.set_exception(exc)
         return future
+
+
+SPEECH_CHUNK = b"\x01\x00" * 512  # 32 ms of (non-silent) 16 kHz audio
+
+
+def speak(manager, chunks: int = 10) -> None:
+    """Push ~0.32 s of audio into a push-to-talk turn (enough to open it; D-038)."""
+    for _ in range(chunks):
+        manager.push_audio(SPEECH_CHUNK)

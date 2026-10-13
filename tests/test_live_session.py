@@ -15,12 +15,20 @@ from tests.fakes import (
     go_away,
     interrupted,
     resumption,
+    speak,
     tool_call,
     transcript_msg,
     turn_complete,
     until,
 )
-from wisp.live.session import LiveCallbacks, LiveSessionManager, LiveState, parse_duration
+from wisp.live import session as session_module
+from wisp.live.session import (
+    LiveCallbacks,
+    LiveSessionManager,
+    LiveState,
+    classify_error,
+    parse_duration,
+)
 from wisp.settings import Settings
 from wisp.stores.action_log import ActionLog
 from wisp.tools.base import Risk, Tool, obj, string
@@ -38,6 +46,7 @@ class Recorder:
         self.user_final: list[str] = []
         self.model_final: list[str] = []
         self.tools: list[tuple[str, str]] = []
+        self.too_short = 0
         self.playing = False
 
     def callbacks(self) -> LiveCallbacks:
@@ -48,6 +57,9 @@ class Recorder:
         def on_interrupt():
             self.interrupts += 1
 
+        def on_too_short():
+            self.too_short += 1
+
         return LiveCallbacks(
             state=lambda s, d: self.states.append((s, d)),
             model_audio=self.audio.append,
@@ -55,6 +67,7 @@ class Recorder:
             user_final=self.user_final.append,
             model_text=model_text,
             tool_activity=lambda n, s: self.tools.append((n, s)),
+            turn_too_short=on_too_short,
         )
 
 
@@ -122,11 +135,11 @@ async def test_push_to_talk_turn(env):
         transcript_msg(user="hello", finished=True), audio_msg(), transcript_msg(model="Hi!"),
         turn_complete()))
     env.manager.begin_turn()
-    env.manager.push_audio(b"\x00\x00" * 512)
+    speak(env.manager)
     env.manager.end_turn()
     await until(lambda: env.rec.model_final)
     session = env.server.current
-    assert session.kinds()[:3] == ["activity_start", "audio", "activity_end"]
+    assert session.kinds()[:12] == ["activity_start"] + ["audio"] * 10 + ["activity_end"]
     assert session.sent[1][1].mime_type == "audio/pcm;rate=16000"
     assert env.rec.audio and env.rec.user_final == ["hello"] and env.rec.model_final == ["Hi!"]
     assert env.manager.state == LiveState.READY
@@ -143,6 +156,7 @@ async def test_tool_call_mid_conversation(env):
 
     env.server.rules.append(rule)
     env.manager.begin_turn()
+    speak(env.manager)
     env.manager.end_turn()
     await until(lambda: env.rec.model_final == ["Opening Spotify."])
     assert env.opened == ["Spotify"]
@@ -281,12 +295,14 @@ async def test_spoken_yes_confirms_through_transcription(env):
 
     env.server.rules.append(rule)
     env.manager.begin_turn()
+    speak(env.manager)
     env.manager.end_turn()
     await until(lambda: env.server.sessions
                 and any(k == "tool_response" for k, _ in env.server.current.sent))
     first = next(v for k, v in env.server.current.sent if k == "tool_response")[0].response
     assert first["status"] == "needs_confirmation"
     env.manager.begin_turn()
+    speak(env.manager)
     env.manager.end_turn()
     await until(lambda: env.confirmations.get(first["confirmation_id"]).state != "pending")
     env.server.current.push(tool_call(("p2", "confirm_action",
@@ -315,7 +331,7 @@ async def test_long_conversation_survives_many_reconnects(env):
     env.server.rules.append(rule)
     for round_number in range(1, 7):
         env.manager.begin_turn()
-        env.manager.push_audio(b"\x00\x00" * 512)
+        speak(env.manager)
         env.manager.end_turn()
         await until(lambda n=round_number: env.manager.handle == f"h{n}")
         if round_number in (2, 4):
@@ -336,3 +352,86 @@ def test_parse_duration():
     assert parse_duration("3s") == 3.0
     assert parse_duration(None) == 0.0
     assert parse_duration("junk") == 0.0
+
+
+# ----- short push-to-talk turns (D-038) ------------------------------------------------------
+async def test_tap_sends_nothing_and_hints(env):
+    env.manager.connect()
+    await until(lambda: env.manager.state == LiveState.READY)
+    env.manager.begin_turn()
+    speak(env.manager, chunks=2)  # 64 ms: an accidental tap
+    env.manager.end_turn()
+    await until(lambda: env.rec.too_short == 1)
+    await asyncio.sleep(0.1)
+    assert "activity_start" not in env.server.current.kinds()
+    assert "audio" not in env.server.current.kinds()
+    assert env.manager.state == LiveState.READY  # the session stays open
+
+
+async def test_turn_opens_once_enough_audio_arrived(env):
+    env.manager.connect()
+    await until(lambda: env.manager.state == LiveState.READY)
+    env.manager.begin_turn()
+    speak(env.manager, chunks=6)  # 192 ms: still held back
+    await asyncio.sleep(0.1)
+    assert env.server.current.kinds() == []
+    speak(env.manager, chunks=1)  # 224 ms: opens, with the held-back audio in order
+    await until(lambda: env.server.current.kinds()[:1] == ["activity_start"])
+    await until(lambda: env.server.current.kinds().count("audio") == 7)
+    env.manager.end_turn()
+    await until(lambda: env.server.current.kinds()[-1:] == ["activity_end"])
+    assert env.rec.too_short == 0
+
+
+async def test_short_turn_with_image_is_sent_with_silence(env):
+    """Circle to Ask: an image turn is sent even if the question audio is too short; the sender
+    adds 32 ms of silence because an activity without audio closes the session (1007)."""
+    env.manager.connect()
+    await until(lambda: env.manager.state == LiveState.READY)
+    env.manager.begin_turn()
+    env.manager.send_image(b"jpeg")
+    env.manager.end_turn()
+    await until(lambda: "activity_end" in env.server.current.kinds())
+    kinds = [k for k in env.server.current.kinds() if k != "video"]
+    assert kinds == ["activity_start", "audio", "activity_end"]
+    silence = next(v for k, v in env.server.current.sent if k == "audio")
+    assert silence.data == session_module.SILENT_CHUNK
+    assert "video" in env.server.current.kinds() and env.rec.too_short == 0
+
+
+async def test_cancel_before_open_sends_nothing(env):
+    env.manager.connect()
+    await until(lambda: env.manager.state == LiveState.READY)
+    env.manager.begin_turn()
+    speak(env.manager, chunks=3)
+    env.manager.cancel_turn()
+    await asyncio.sleep(0.1)
+    assert env.server.current.kinds() == [] and env.rec.too_short == 0
+    assert not env.manager.turn_active
+
+
+async def test_sender_never_sends_an_empty_activity(env):
+    class Recording:
+        def __init__(self):
+            self.sent = []
+
+        async def send_realtime_input(self, **kwargs):
+            self.sent.extend(kwargs)
+
+    session = Recording()
+    await env.manager._send_item(session, 1, "activity_start", None)
+    await env.manager._send_item(session, 1, "activity_end", None)
+    assert session.sent == ["activity_start", "audio", "activity_end"]
+    session.sent.clear()
+    await env.manager._send_item(session, 1, "activity_start", None)
+    await env.manager._send_item(session, 1, "audio", b"\x01\x00" * 512)
+    await env.manager._send_item(session, 1, "activity_end", None)
+    assert session.sent == ["activity_start", "audio", "activity_end"]  # no extra silence
+
+
+def test_precondition_close_reason_is_shown():
+    exc = errors.APIError(1007, "Precondition check failed.")
+    kind, message = classify_error(exc, used_handle=False)
+    assert kind == "fatal"
+    assert "Precondition check failed." in message and "None" not in message
+    assert classify_error(exc, used_handle=True)[0] == "resume"

@@ -28,6 +28,10 @@ class VoiceSignals(QObject):
     model_text = Signal(str, bool)
     tool = Signal(str, str)
     turn_done = Signal()
+    hint = Signal(str)
+
+
+TOO_SHORT_MESSAGE = "Hold the talk key while you speak (that was too short to send)."
 
 
 def make_callbacks(signals: VoiceSignals, player: Player, on_user_final) -> LiveCallbacks:
@@ -40,6 +44,7 @@ def make_callbacks(signals: VoiceSignals, player: Player, on_user_final) -> Live
         interrupted=player.clear,
         turn_complete=signals.turn_done.emit,
         tool_activity=lambda name, status: signals.tool.emit(name, status),
+        turn_too_short=lambda: signals.hint.emit(TOO_SHORT_MESSAGE),
     )
 
 
@@ -70,6 +75,7 @@ class VoiceController(QObject):
         signals.model_text.connect(self._on_model_text)
         signals.tool.connect(self._on_tool)
         signals.turn_done.connect(self._on_turn_done)
+        signals.hint.connect(self._tell)
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._refresh_visual)
         self._timer.start(66)

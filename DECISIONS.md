@@ -366,3 +366,18 @@ such a client runs; the message tells the user to act themselves.
   self-check). The app folder and installer are uploaded as artefacts. The repository has no
   remote yet, so the workflow has not run on GitHub. Its steps were run locally in a fresh
   virtual environment instead (PROGRESS log).
+
+## D-038 Short push-to-talk turns (found during the first real test, 2026-10-13)
+Gap: the Live API documentation doesn't say what happens to an activity that contains no audio.
+A probe with a real key showed the answer: `activity_start` followed by `activity_end` with no
+audio in between makes the server close the session with 1007 "Precondition check failed".
+A single 32 ms chunk is enough to avoid it. The first real test hit this with an 81 ms tap.
+Decisions:
+* A push-to-talk turn sends `activity_start` only once 0.2 s of audio has been captured, and
+  then sends the held-back audio in order. A shorter tap sends nothing and shows "Hold the talk
+  key while you speak". Barge-in still stops playback locally the moment the key is pressed.
+* A turn that carries an image (Circle to Ask) is always sent, even if it is short.
+* Safety net in the sender: before any `activity_end` whose activity carried no audio (for
+  example after a cancel or a reconnect), Wisp sends 32 ms of silence.
+* A connection the server closes now shows its reason (the close reason, or "no reason given")
+  instead of "None".
