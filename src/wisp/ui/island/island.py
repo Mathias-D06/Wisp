@@ -41,6 +41,7 @@ from wisp.ui.island import content, geometry
 from wisp.ui.island.common import Chip
 from wisp.ui.island.machine import IslandStateMachine, Presentation
 from wisp.ui.island.panel import ExpandedPanel, island_stylesheet
+from wisp.ui.island.reveal import Dwell, hot_zone, in_zone
 from wisp.ui.island.spring import SpringSet
 from wisp.ui.theme import ISLAND
 from wisp.ui.widgets import IconButton
@@ -52,7 +53,7 @@ log = logging.getLogger(__name__)
 FLAGS = (Qt.WindowType.Tool | Qt.WindowType.FramelessWindowHint
          | Qt.WindowType.WindowStaysOnTopHint)
 EDITABLE = (QLineEdit, QTextEdit, QAbstractSpinBox)
-COMPACT = ("idle", "sliver", "activity")
+COMPACT = ("idle", "activity")
 VK_LBUTTON, VK_RBUTTON = 0x01, 0x02
 SWIPE_PX = 18
 SHADOW_OFFSET = 6
@@ -191,7 +192,8 @@ class Island(QWidget):
         self.monitor_mode = "primary"
         self._screen = None
         self.setFixedSize(*geometry.canvas_size())
-        self.springs = SpringSet(w=ISLAND.idle[0], h=ISLAND.idle[1], split=0.0, gap=0.0)
+        self.springs = SpringSet(w=ISLAND.idle[0], h=ISLAND.idle[1], split=0.0, gap=0.0,
+                                 lift=0.0, vis=1.0)
         self.presentation = self.machine.presentation
         self.look = content.Look(theme.palette_for(self))
         self.look.muted = bool(voice.mic.muted)
@@ -233,12 +235,16 @@ class Island(QWidget):
         self._poll = QTimer(self, interval=ISLAND.fullscreen_poll_ms)
         self._poll.timeout.connect(self._poll_environment)
         self._outside = QTimer(self, interval=50)
+        self._reveal = QTimer(self, interval=ISLAND.reveal_poll_ms)  # only while slid away
+        self._reveal.timeout.connect(self._poll_reveal)
+        self._dwell = Dwell()
         self._outside.timeout.connect(self._check_outside_click)
 
         voice.visual.connect(self._on_visual)
         voice.transcript.connect(self._on_transcript)
         voice.message.connect(self._on_message)
         self.machine.subscribe(self._on_presentation)
+        self.machine.subscribe_deadline(self._schedule_deadline)
         theme.signals.changed.connect(self.restyle)
         app = QGuiApplication.instance()
         app.screenAdded.connect(lambda _s: self.place())
@@ -267,9 +273,10 @@ class Island(QWidget):
         self.panel.update_key_prompt()
         self.update()
 
-    def configure(self, monitor: str, autohide: bool) -> None:
+    def configure(self, monitor: str, hide_when_idle: bool = True, hide_after_s: int = 6,
+                  keep_for_music: bool = True) -> None:
         self.monitor_mode = monitor if monitor in ("primary", "cursor") else "primary"
-        self.machine.set_autohide(autohide)
+        self.machine.set_autohide(hide_when_idle, hide_after_s * 1000, keep_for_music)
         self.place()
 
     def set_enabled(self, enabled: bool) -> None:
@@ -282,9 +289,18 @@ class Island(QWidget):
             self._poll.stop()
         self._apply_visibility()
 
+    def away_done(self) -> bool:
+        """Slid away and settled: nothing left on screen."""
+        return self.presentation.mode == "away" and self.springs.settled
+
     def _apply_visibility(self) -> None:
-        visible = self.enabled and self.presentation.mode != "hidden"
+        """Shown unless switched off, behind a full-screen app, or slid away. While slid away
+        the window is hidden, so nothing at the top of the screen is blocked, and the reveal
+        zone is polled instead."""
+        visible = self.enabled and self.presentation.mode != "hidden" and not self.away_done()
         if visible and not self.isVisible():
+            if self.monitor_mode == "cursor":
+                self.place()
             self.show()
             win.set_no_activate(int(self.winId()))
             self._sync_mask(force=True)
@@ -296,6 +312,22 @@ class Island(QWidget):
             self.hide()
             self.shadow.hide()
             self._frame.stop()
+        watching = self.enabled and self.away_done()
+        if watching and not self._reveal.isActive():
+            self._dwell.reset()
+            self._reveal.start()
+        elif not watching:
+            self._reveal.stop()
+
+    def _poll_reveal(self) -> None:
+        """~30 Hz while slid away: has the pointer rested in the top-centre zone?"""
+        pos = QCursor.pos()
+        screen = (QGuiApplication.screenAt(pos) if self.monitor_mode == "cursor"
+                  else QGuiApplication.primaryScreen())
+        inside = screen is not None and in_zone(pos, hot_zone(screen.geometry()))
+        if self._dwell.update(inside, self.clock()):
+            self._dwell.reset()
+            self.machine.reveal()
 
     # ----- placement ---------------------------------------------------------------------------
     def _target_screen(self):
@@ -326,7 +358,7 @@ class Island(QWidget):
     def _rects(self) -> tuple[QRectF, QRectF | None]:
         s = self.springs
         return geometry.shape_rects(self.width(), ISLAND.top, s["w"], s["h"], s["split"],
-                                    s["gap"])
+                                    s["gap"], s["lift"])
 
     def _expanded_main(self) -> QRectF:
         return geometry.shape_rects(self.width(), ISLAND.top, *ISLAND.expanded)[0]
@@ -344,7 +376,7 @@ class Island(QWidget):
         target = geometry.target_for(p, hover=self._hover and p.mode in COMPACT)
         animate = motion.enabled() and self.isVisible()
         self.springs.retarget(animate, w=target.width, h=target.height, split=target.split,
-                              gap=target.gap)
+                              gap=target.gap, lift=target.lift, vis=target.visible)
         if not animate:
             self._main, self._circle = self._rects()
         self._wake()
@@ -352,7 +384,7 @@ class Island(QWidget):
     # ----- state -------------------------------------------------------------------------------
     def _on_presentation(self, p: Presentation) -> None:
         old, self.presentation = self.presentation, p
-        if p.mode == "hidden" or old.mode == "hidden":
+        if "hidden" in (p.mode, old.mode) or "away" in (p.mode, old.mode):
             self._apply_visibility()
         if old.content_key != p.content_key:
             self._transition(old, p)
@@ -366,7 +398,6 @@ class Island(QWidget):
         if p.mode == "expanded" and old.mode != "expanded":
             self.panel.refresh_current()
         self._retarget()
-        self._schedule_deadline()
         self.update()
 
     def _transition(self, old: Presentation, new: Presentation) -> None:
@@ -656,6 +687,9 @@ class Island(QWidget):
         self._sync_panel(now)
         self._sync_mask()
         self._sync_shadow()
+        if self.away_done():
+            self._apply_visibility()  # slid out of view: hide the window
+            return
         if self._hover and not self._cursor_inside() and not self.springs.settled:
             self._set_hover(False)  # the shape shrank away from under a still pointer
         dirty = before.united(self.shape_bounds()).toAlignedRect().adjusted(-3, -3, 3, 3)
@@ -747,7 +781,8 @@ class Island(QWidget):
 
     def _sync_shadow(self) -> None:
         main = self._main
-        strength = max(0.0, min(1.0, (main.height() - 44) / 140))
+        visible = max(0.0, min(1.0, self.springs["vis"]))
+        strength = max(0.0, min(1.0, (main.height() - 44) / 140)) * visible
         want = strength > 0 and self.isVisible()
         if want and not self.shadow.isVisible():
             self.shadow.move(self.pos())
@@ -767,7 +802,7 @@ class Island(QWidget):
         if hidden != self.machine.hidden:
             self.machine.set_hidden(hidden)
         if (self.monitor_mode == "cursor" and not hidden and not self._hover
-                and self.presentation.mode in ("idle", "sliver")):
+                and self.presentation.mode == "idle"):
             screen = QGuiApplication.screenAt(QCursor.pos())
             if screen is not None and screen is not self._screen:
                 self.place()
@@ -783,13 +818,18 @@ class Island(QWidget):
     def paint_island(self, painter: QPainter, now: float) -> None:
         self.look.now, self.look.wall, self.look.moving = now, self.wall(), motion.enabled()
         main, circle = self._main, self._circle
+        visible = max(0.0, min(1.0, self.springs["vis"]))  # fades while sliding away
+        if visible <= 0.0:
+            return
         radius = geometry.corner_radius(main.height())
         path = QPainterPath()
         path.addRoundedRect(main, radius, radius)
         if circle is not None:
             path.addEllipse(circle)
+        painter.setOpacity(visible)
         painter.fillPath(path, QColor(0, 0, 0))
         self._paint_highlight(painter, main, radius, circle)
+        painter.setOpacity(1.0)
         if self.panel.isVisible():
             return  # the live panel draws the content
         painter.save()
@@ -809,9 +849,9 @@ class Island(QWidget):
                 painter.scale(scale, scale)
                 painter.translate(-anchor)
             if layer.p.mode == "expanded":
-                self._paint_panel_snapshot(painter, layer, now, main)
+                self._paint_panel_snapshot(painter, layer, now, main, visible)
             else:
-                painter.setOpacity(alpha)
+                painter.setOpacity(alpha * visible)
                 height = geometry.target_for(layer.p).height
                 rect = QRectF(main.left(), main.top(), main.width(), min(main.height(), height))
                 content.paint_compact(painter, rect, circle, layer.p, self.look)
@@ -833,7 +873,7 @@ class Island(QWidget):
             painter.drawEllipse(circle.adjusted(0.5, 0.5, -0.5, -0.5))
 
     def _paint_panel_snapshot(self, painter: QPainter, layer: Layer, now: float,
-                              main: QRectF) -> None:
+                              main: QRectF, visible: float = 1.0) -> None:
         pixmap = layer.snapshot
         if pixmap is None or pixmap.isNull():
             return
@@ -846,7 +886,7 @@ class Island(QWidget):
             alpha = layer.alpha(now, ISLAND.row_stagger_ms * index)
             if alpha <= 0.01:
                 continue
-            painter.setOpacity(alpha)
+            painter.setOpacity(alpha * visible)
             target = QRectF(band).translated(origin)
             source = QRectF(band.x() * ratio, band.y() * ratio, band.width() * ratio,
                             band.height() * ratio)

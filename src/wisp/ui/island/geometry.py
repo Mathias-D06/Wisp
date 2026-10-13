@@ -23,12 +23,16 @@ class ShapeTarget:
     height: float
     split: float = 0.0  # diameter of the detached circle (0 = no split)
     gap: float = 0.0  # space between the pill and the circle
+    lift: float = 0.0  # px the shape is moved up (auto-hidden: above the screen's edge)
+    visible: float = 1.0  # opacity
 
 
 def target_for(p: Presentation, hover: bool = False, tokens: IslandTokens = ISLAND) -> ShapeTarget:
     grow = tokens.hover_scale if hover else 1.0
-    if p.mode == "sliver":
-        return ShapeTarget(*tokens.sliver)
+    if p.mode == "away":
+        width, height = tokens.idle
+        return ShapeTarget(width, height, lift=tokens.top + height + tokens.away_lift,
+                           visible=0.0)
     if p.mode == "banner":
         return ShapeTarget(*tokens.banner)
     if p.mode == "expanded":
@@ -61,12 +65,14 @@ def canvas_size(tokens: IslandTokens = ISLAND) -> tuple[int, int]:
 
 
 def shape_rects(canvas_width: float, top: float, width: float, height: float,
-                split: float = 0.0, gap: float = 0.0) -> tuple[QRectF, QRectF | None]:
-    """The pill and the split circle, centred as a group at the top of the canvas."""
+                split: float = 0.0, gap: float = 0.0,
+                lift: float = 0.0) -> tuple[QRectF, QRectF | None]:
+    """The pill and the split circle, centred as a group at the top of the canvas (moved up by
+    ``lift`` while sliding away)."""
     has_circle = split >= 1.0
     total = width + (gap + split if has_circle else 0.0)
     left = (canvas_width - total) / 2
-    main = QRectF(left, top, width, height)
+    main = QRectF(left, top - lift, width, height)
     if not has_circle:
         return main, None
     circle = QRectF(main.right() + gap, main.center().y() - split / 2, split, split)

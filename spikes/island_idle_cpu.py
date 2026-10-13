@@ -54,9 +54,14 @@ def main() -> None:
         start_cpu, start = cpu_seconds(), time.monotonic()
         pump(seconds)
         used, elapsed = cpu_seconds() - start_cpu, time.monotonic() - start
-        print(f"{label}: island visible={island.isVisible()} — {used:.2f} s CPU over "
-              f"{elapsed:.0f} s = {100 * used / elapsed:.2f} % of one core")
+        shown = getattr(island, "presentation", None)
+        what = f"{shown.mode}/{shown.main.kind if shown.main else '-'}" if shown else "?"
+        print(f"{label}: island visible={island.isVisible()} showing {what} — {used:.2f} s CPU "
+              f"over {elapsed:.0f} s = {100 * used / elapsed:.2f} % of one core")
 
+    hides = hasattr(island, "away_done")  # auto-hide exists (2026-10-13, part 4)
+    if hides:
+        island.configure("primary", hide_when_idle=False)  # visible phases first
     pump(30)  # start-up work (the app index scan, the scheduler) finishes first
     motion.configure(reduce_motion=True)
     island.update()
@@ -65,6 +70,12 @@ def main() -> None:
     if hasattr(island, "_wake"):
         island._wake()
     measure("idle, motion on (orb glow)", window)
+    if hides:
+        island.configure("primary", hide_when_idle=True, hide_after_s=3)
+        pump(5)  # slides away, the window hides, the reveal zone is polled at ~30 Hz
+        print(f"auto-hidden: window visible={island.isVisible()}, "
+              f"reveal poll {island._reveal.interval()} ms active={island._reveal.isActive()}")
+        measure("auto-hidden (reveal poll)", window)
     wisp.quit()
 
 

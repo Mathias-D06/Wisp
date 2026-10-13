@@ -70,7 +70,6 @@ class IslandTokens:
 
     top: int = 6  # gap between the screen's top edge and the pill
     idle: tuple[int, int] = (180, 32)
-    sliver: tuple[int, int] = (120, 5)  # auto-hidden idle pill
     activity_height: int = 36
     activity_widths: tuple[tuple[str, int], ...] = (
         ("listening", 300), ("thinking", 280), ("speaking", 380), ("dictation", 300),
@@ -101,7 +100,12 @@ class IslandTokens:
     banner_hover_extra_ms: int = 1500  # banner stays this long after the pointer leaves it
     banner_max_age_ms: int = 30000  # a queued banner older than this is dropped
     banner_queue: int = 5
-    autohide_ms: int = 10000  # idle this long → sliver (when enabled in Settings)
+    autohide_ms: int = 6000  # idle this long → slides away (Settings: 3–15 s; D-049)
+    away_lift: int = 10  # px above the screen edge the hidden shape rests at
+    reveal_margin: int = 40  # the reveal hot zone: the idle pill's width plus this each side…
+    reveal_height: int = 3  # …and this many px from the screen's top edge
+    reveal_dwell_ms: int = 150  # the pointer must rest in the zone this long
+    reveal_poll_ms: int = 33  # cursor polling while hidden (~30 Hz)
     countdown_window_s: int = 600  # show a countdown for reminders due within 10 minutes
     idle_frame_ms: int = 125  # the orb's slow glow (8 fps); everything else is 16 ms
     meter_frame_ms: int = 50  # music equaliser (20 fps)

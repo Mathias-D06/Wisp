@@ -16,8 +16,10 @@ routines, controls volume and music, and remembers facts you tell it. It also ad
   a panel with the conversation and a text box (Chat), quick controls, the music player,
   to-dos, stats, clipboard history, an app launcher, wallpapers and power options. It never
   takes the keyboard from the app you're typing in, clicks beside it reach the app
-  underneath, and it hides while a full-screen app or game is in front. The Island works
-  without an API key.
+  underneath, and it hides while a full-screen app or game is in front. When nothing is
+  happening it slides up out of view after a few seconds (Settings → General); rest the pointer
+  on the top edge of the screen above its spot to bring it back. The Island works without an
+  API key.
 
 Everything Wisp stores stays on your PC, in `%APPDATA%\Wisp`.
 

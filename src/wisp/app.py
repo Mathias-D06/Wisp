@@ -188,6 +188,7 @@ class WispApp(QObject):
 
         self.confirm_card = ConfirmCard(self.confirmations)
         self.confirm_card.apply_palette(palette.surface, palette.border)
+        self.confirm_card.showing.connect(self.island.machine.set_confirming)
         self.voice.visual.connect(lambda state, _level, text: self.tray.set_state(state, text))
         self._settings_dialog: SettingsDialog | None = None
         self.settings_store.subscribe(lambda s: self.ui.call(lambda: self._on_settings_changed(s)))
@@ -215,7 +216,10 @@ class WispApp(QObject):
         self.island = Island(self.voice, settings.loadout.accent, self.keystore.has_key,
                              lambda action: self.media.command(action), tabs,
                              meter=OutputMeter())
-        self.island.configure(settings.general.island_monitor, settings.general.island_autohide)
+        self.island.configure(settings.general.island_monitor,
+                              settings.general.island_hide_when_idle,
+                              settings.general.island_hide_after_s,
+                              settings.general.island_keep_for_music)
         self.island.settings_requested.connect(lambda page: self.open_settings(page or None))
         self.island.console_requested.connect(self.console.open)
         self.island.quit_requested.connect(self.quit)
@@ -442,7 +446,10 @@ class WispApp(QObject):
         self.console.set_accent(settings.loadout.accent)
         palette = theme.palette(settings.loadout.theme, settings.loadout.accent)
         self.island.set_accent(settings.loadout.accent)
-        self.island.configure(settings.general.island_monitor, settings.general.island_autohide)
+        self.island.configure(settings.general.island_monitor,
+                              settings.general.island_hide_when_idle,
+                              settings.general.island_hide_after_s,
+                              settings.general.island_keep_for_music)
         self.island.set_enabled(settings.general.show_island)
         self.island.panel.sync_toggles(settings.audio.mic_muted, settings.audio.always_listening)
         self.confirm_card.apply_palette(palette.surface, palette.border)

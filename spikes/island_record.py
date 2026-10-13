@@ -6,7 +6,7 @@ simulated clock. Its windows never appear on screen (WA_DontShowOnScreen), so ev
 exact, no pointer can disturb it and nothing from this PC's screen can end up in an image. GIFs
 run at 50 fps: 20 ms is the shortest frame delay GIF viewers honour.
 
-Run: .venv\\Scripts\\python spikes\\island_record.py [OUT_DIR] [--stills] [--dpr 1.0]
+Run: .venv\\Scripts\\python spikes\\island_record.py [OUT_DIR] [--stills | --only NAME] [--dpr 1.0]
 """
 
 from __future__ import annotations
@@ -131,6 +131,9 @@ class Recorder:
         if island.shadow.isVisible():
             island.shadow.render(painter, QPoint(), renderFlags=QWidget.RenderFlag.DrawChildren)
         island.render(painter, QPoint(), renderFlags=QWidget.RenderFlag.DrawChildren)
+        if getattr(self, "annotate", None) is not None:
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+            self.annotate(painter)  # recording-only marks (the reveal zone, a pointer)
         painter.end()
         image = image.convertToFormat(QImage.Format.Format_RGB888)
         pil = Image.frombuffer("RGB", (image.width(), image.height()),
@@ -232,6 +235,48 @@ class Recorder:
         self.advance(0.9)
         self.save_gif("interrupted_expand")
 
+    def autohide_reveal(self) -> None:
+        """Idle for a moment, slides up and fades away; the pointer (drawn) rests in the
+        top-centre zone (dashed) and the island comes back."""
+        from PySide6.QtGui import QPen
+
+        from wisp.ui.island.reveal import hot_zone
+
+        island = self.island
+        island.configure("primary", hide_when_idle=True, hide_after_s=3)
+        self.settle()
+        self.annotate = None
+        self.advance(3.4)  # the quiet spell, then the slide
+        canvas_zone = hot_zone(QRect(0, 0, island.width(), island.height()))  # canvas coords
+        pointer = [QPoint(island.width() // 2 + 160, 90)]
+
+        def draw(painter: QPainter) -> None:
+            pen = QPen(QColor(255, 255, 255, 200), 1, Qt.PenStyle.DashLine)
+            painter.setPen(pen)
+            painter.drawRect(canvas_zone.adjusted(0, 0, 0, 4))
+            tip = pointer[0]
+            painter.setPen(QPen(QColor(0, 0, 0), 1))
+            painter.setBrush(QColor(255, 255, 255))
+            painter.drawPolygon([tip, tip + QPoint(0, 16), tip + QPoint(4, 12),
+                                 tip + QPoint(8, 19), tip + QPoint(10, 18), tip + QPoint(7, 11),
+                                 tip + QPoint(12, 11)])
+
+        self.annotate = draw
+        start, end = QPoint(pointer[0]), QPoint(island.width() // 2, 1)
+        steps = 30
+        for step in range(steps):  # the pointer travels to the zone
+            t = (step + 1) / steps
+            pointer[0] = QPoint(round(start.x() + (end.x() - start.x()) * t),
+                                round(start.y() + (end.y() - start.y()) * t))
+            self.advance(1 / 50)
+        self.advance(0.16)  # rests there for the dwell
+        island.machine.reveal()
+        island._apply_visibility()
+        self.advance(1.6)
+        self.annotate = None
+        self.save_gif("autohide_and_reveal", height=150)
+        island.configure("primary", hide_when_idle=False)
+
     def stills(self) -> None:
         from wisp.system.media import MediaState
 
@@ -275,19 +320,23 @@ class Recorder:
 
 def main() -> None:
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
-    if "--dpr" in sys.argv:
-        args = [a for a in args if a != sys.argv[sys.argv.index("--dpr") + 1]]
+    for option in ("--dpr", "--only"):
+        if option in sys.argv:
+            args = [a for a in args if a != sys.argv[sys.argv.index(option) + 1]]
     out = Path(args[0] if args else "spikes/out/island")
     out.mkdir(parents=True, exist_ok=True)
     recorder = Recorder(out)
     if "--stills" in sys.argv:
         recorder.stills()
+    elif "--only" in sys.argv:  # one recording by name, e.g. --only autohide_reveal
+        getattr(recorder, sys.argv[sys.argv.index("--only") + 1])()
     else:
         recorder.voice_flow()
         recorder.split()
         recorder.banner()
         recorder.expand_collapse()
         recorder.interrupt()
+        recorder.autohide_reveal()
     recorder.wisp.quit()
 
 

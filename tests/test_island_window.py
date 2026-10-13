@@ -513,3 +513,96 @@ def test_esc_watch_follows_expansion():
     keyboard.watch_escape = True
     result = keyboard._hook_proc(hook_module.HC_ACTION, hook_module.WM_KEYDOWN, pointer)
     assert events == [("escape", "press")] and result != 1  # passed on, not swallowed
+
+
+# ----- auto-hide and reveal (D-049) ------------------------------------------------------------
+def test_idle_island_slides_up_fades_and_then_hides_its_window(island):
+    motion.force(True)
+    show(island)
+    island.configure("primary", True, 3, True)
+    island.fake.now += 3.1
+    island.machine.update()
+    assert island.presentation.mode == "away"
+    tops, opacities = [], []
+    for _ in range(40):
+        island.fake.now += FRAME
+        island._tick()
+        tops.append(island._main.top())
+        opacities.append(island.springs["vis"])
+        if not island.isVisible():
+            break
+    assert min(tops) < 0  # slid up past the screen's edge…
+    assert opacities[-1] <= 0.01  # …and faded out
+    assert not island.isVisible() and not island.shadow.isVisible()  # nothing left to block
+    assert island._reveal.isActive() and not island._frame.isActive()
+
+
+def test_resting_in_the_top_centre_zone_reveals_it(island, monkeypatch):
+    from wisp.ui.island import island as module
+
+    motion.force(False)
+    show(island)
+    island.configure("primary", True, 3, True)
+    island.fake.now += 3.1
+    island.machine.update()
+    assert not island.isVisible() and island._reveal.isActive()
+    screen = QGuiApplication.primaryScreen().geometry()
+    at = {"pos": QPoint(screen.center().x() + 200, screen.top())}  # on the edge, off-centre
+    monkeypatch.setattr(module, "QCursor", SimpleNamespace(pos=lambda: at["pos"]))
+    for _ in range(10):
+        island.fake.now += 0.033
+        island._poll_reveal()
+    assert not island.isVisible()  # browser tabs beside the zone don't count
+    at["pos"] = QPoint(screen.center().x(), screen.top() + 1)
+    island._poll_reveal()
+    island.fake.now += 0.1
+    island._poll_reveal()
+    assert not island.isVisible()  # passing through: not long enough yet
+    island.fake.now += 0.06
+    island._poll_reveal()
+    assert island.isVisible() and island.presentation.mode == "idle"
+    assert not island._reveal.isActive()  # polling stops once it's back
+
+
+def test_hotkey_and_voice_reveal_a_hidden_island(island):
+    motion.force(False)
+    show(island)
+    island.configure("primary", True, 3, True)
+    island.fake.now += 3.1
+    island.machine.update()
+    assert not island.isVisible()
+    island.toggle()  # the island hotkey
+    assert island.isVisible() and island.machine.expanded
+    island.collapse()
+    island.fake.now += 3.1
+    island.machine.update()
+    assert not island.isVisible()
+    island.voice.visual.emit("listening", 0.3, "Listening…")
+    assert island.isVisible() and island.presentation.main.kind == "listening"
+
+
+def test_a_waiting_confirmation_keeps_it_visible(island):
+    motion.force(False)
+    show(island)
+    island.configure("primary", True, 3, True)
+    island.machine.set_confirming(True)
+    island.fake.now += 30
+    island.machine.update()
+    assert island.isVisible() and island.presentation.mode == "idle"
+
+
+def test_deadline_timer_follows_changes_that_dont_change_the_shape(island):
+    """Setting the delay or leaving a banner moves the next deadline without changing what's
+    shown; the timer must follow (otherwise the island never hides, or a banner sticks)."""
+    show(island)
+    island.configure("primary", True, 3, True)
+    assert island._deadline.isActive()
+    assert abs(island._deadline.interval() - 3000) <= 10
+    island.machine.post("Reminder", "Stretch")
+    island.machine.set_hover(True)
+    assert not island._deadline.isActive()  # nothing times out under the pointer
+    island.fake.now += 10  # hovered well past the banner's own hold
+    island.machine.update()
+    island.machine.set_hover(False)
+    assert island._deadline.isActive()
+    assert abs(island._deadline.interval() - ISLAND.banner_hover_extra_ms) <= 10

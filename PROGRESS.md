@@ -392,6 +392,19 @@ acceptance step needs real hardware/API key and is listed in `MANUAL_TESTS.md` (
   fonts only where widgets/painters set their own — `test_ui_design.py::test_app_font_is_point_sized_and_renders_at_the_body_size`,
   `::test_calendar_popup_raises_no_point_size_warning_with_the_app_font` (fails with the old font); probe
   over start-up, every tab, Settings and the menu; same 13 px at 100/125/150/200 %; D-048; MT-78
+- [x] P4.2 Auto-hide: the idle island slides up and fades after 3–15 s (default 6), never while voice, dictation,
+  a banner (showing or queued), a countdown, a confirmation, the pointer or the expanded panel is there, music
+  keeps it (setting); once out of view its window is hidden (nothing blocked) — `machine.hideable`,
+  `test_island_core.py::test_idle_island_slides_away_*`, `::test_never_hides_while_something_is_going_on`,
+  `::test_music_keeps_it_visible_unless_switched_off`, `::test_full_screen_doesnt_bring_a_hidden_island_back`,
+  `test_island_window.py::test_idle_island_slides_up_fades_and_then_hides_its_window`,
+  `::test_a_waiting_confirmation_keeps_it_visible`, `test_settings.py::test_island_hiding_defaults_and_range`; D-049
+- [~] P4.2b Reveal: pointer resting 150 ms in the top-centre zone (pill width + 40 px each side, top 3 px), in
+  device-independent px per display, polled ~30 Hz only while hidden; voice, banners, reminders, the hotkey reveal
+  at once — `reveal.py`; `test_island_core.py::test_hot_zone_*`, `::test_dwell_needs_a_short_rest_in_the_zone`,
+  `::test_activity_reveals_instantly`, `test_island_window.py::test_resting_in_the_top_centre_zone_reveals_it`,
+  `::test_hotkey_and_voice_reveal_a_hidden_island`; idle CPU 0.52 % of one core while slid away (the ~30 Hz reveal poll) against 0.36 % while visible and idle, with or without the orb's glow (in-process, 30 s warm-up, 60 s); real pointer, displays and scaling: MT-79…MT-81;
+  `docs/island/autohide_and_reveal.gif`
 
 ### Testing, packaging, definition of done
 - [x] T.1 Unit tests: dispatcher, safety tiers, scheduler parsing + persistence, memory, clipboard store,

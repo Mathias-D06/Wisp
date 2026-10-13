@@ -254,21 +254,109 @@ def test_expanded_wins_and_banners_wait(machine, clock):
     assert machine.presentation.mode == "banner"
 
 
-def test_autohide_shrinks_idle_to_a_sliver_and_hover_brings_it_back(machine, clock):
-    machine.set_autohide(True)
-    clock.now += ISLAND.autohide_ms / 1000 - 1
+def test_idle_island_slides_away_after_the_delay_and_reveal_brings_it_back(machine, clock):
+    machine.set_autohide(True, 6000)
+    clock.now += 5.9
     machine.update()
     assert machine.presentation.mode == "idle"
-    clock.now += 1.5
+    assert machine.next_deadline() == pytest.approx(clock.now + 0.1)
+    clock.now += 0.2
     machine.update()
-    assert machine.presentation.mode == "sliver"
+    assert machine.presentation.mode == "away"
+    machine.reveal()  # the pointer rested in the top-centre zone
+    assert machine.presentation.mode == "idle"
+    clock.now += 5.9
+    machine.update()
+    assert machine.presentation.mode == "idle"  # the quiet spell started over at the reveal
     machine.set_hover(True)
-    assert machine.presentation.mode == "idle"
-    machine.set_hover(False)
-    machine.set_voice("listening")
     clock.now += 60
     machine.update()
-    assert machine.presentation.mode == "activity"  # only an idle island hides
+    assert machine.presentation.mode == "idle"  # never while the pointer is on it
+    machine.set_hover(False)
+    clock.now += 6.1
+    machine.update()
+    assert machine.presentation.mode == "away"  # the delay after the pointer leaves
+
+
+def test_never_hides_while_something_is_going_on(machine, clock):
+    machine.set_autohide(True, 3000)
+
+    def stays_after(seconds=30.0):
+        clock.now += seconds
+        machine.update()
+        return machine.presentation.mode not in ("away",)
+
+    machine.set_voice("listening")
+    assert stays_after()
+    machine.set_voice("idle")
+    machine.show_status("dictation", "Dictating…", "success", "dictation")
+    assert stays_after()
+    machine.clear_status()
+    machine.set_countdown("Call the bank", 1.8e9)
+    assert stays_after()
+    machine.set_countdown(None)
+    machine.set_confirming(True)
+    assert stays_after()
+    machine.set_confirming(False)
+    machine.expand()
+    assert stays_after()
+    machine.collapse()
+    machine.set_voice("speaking")
+    machine.post("Reminder", "Call the bank")  # queued behind voice
+    machine.set_voice("idle")
+    machine.set_hover(True)  # keeps the banner up
+    assert stays_after() and machine.presentation.mode == "banner"
+    machine.set_hover(False)
+    clock.now += 2.0
+    machine.update()
+    assert machine.presentation.mode == "idle"  # the banner left; a new quiet spell starts
+    assert stays_after(2.9)
+    assert not stays_after(0.2)
+
+
+def test_activity_reveals_instantly(machine, clock):
+    machine.set_autohide(True, 3000)
+    clock.now += 4
+    machine.update()
+    assert machine.presentation.mode == "away"
+    machine.set_voice("listening")
+    assert machine.presentation.main.kind == "listening"
+    machine.set_voice("idle")
+    clock.now += 4
+    machine.update()
+    machine.post("Reminder", "Stretch")
+    assert machine.presentation.mode == "banner"
+
+
+def test_music_keeps_it_visible_unless_switched_off(machine, clock):
+    machine.set_autohide(True, 3000)
+    machine.set_music(PLAYING)
+    clock.now += 30
+    machine.update()
+    assert machine.presentation.main.kind == "music"
+    machine.set_autohide(True, 3000, keep_for_music=False)
+    clock.now += 3.1
+    machine.update()
+    assert machine.presentation.mode == "away"
+    machine.reveal()
+    assert machine.presentation.main.kind == "music"  # revealed: shows what's playing
+
+
+def test_full_screen_doesnt_bring_a_hidden_island_back(machine, clock):
+    machine.set_autohide(True, 3000)
+    clock.now += 4
+    machine.update()
+    machine.set_hidden(True)
+    assert machine.presentation.mode == "hidden"
+    clock.now += 60
+    machine.set_hidden(False)
+    assert machine.presentation.mode == "away"  # straight back, no surprise reappearance
+
+
+def test_autohide_off_never_hides(machine, clock):
+    clock.now += 3600
+    machine.update()
+    assert machine.presentation.mode == "idle"
 
 
 def test_fullscreen_hides_everything_and_collapses(machine):
@@ -385,3 +473,55 @@ def test_countdown_text():
     assert countdown_text(1000 + 272, 1000) == "4:32"
     assert countdown_text(1000 + 3725, 1000) == "1:02:05"
     assert countdown_text(990, 1000) == "0:00"
+
+
+# ----- reveal zone --------------------------------------------------------------------------------
+@pytest.mark.parametrize("screen", [
+    (0, 0, 1920, 1080),  # 100 %
+    (0, 0, 2194, 1234),  # 175 % on a 3840 × 2160 panel
+    (-1280, 0, 1280, 1024),  # a second display to the left
+    (1920, -200, 1707, 960),  # a display above-right, at 150 % of 2560 × 1440
+])
+def test_hot_zone_is_the_top_centre_edge_of_each_display(screen):
+    from PySide6.QtCore import QRect
+
+    from wisp.ui.island.reveal import hot_zone, in_zone
+
+    rect = QRect(*screen)
+    zone = hot_zone(rect)
+    assert zone.width() == ISLAND.idle[0] + 2 * ISLAND.reveal_margin
+    assert zone.height() == ISLAND.reveal_height and zone.top() == rect.top()
+    assert abs(zone.center().x() - rect.center().x()) <= 1
+    centre = QPoint(rect.center().x(), rect.top())
+    assert in_zone(centre, zone)
+    assert in_zone(QPoint(zone.right(), rect.top() + ISLAND.reveal_height - 1), zone)
+    assert not in_zone(QPoint(zone.right() + 1, rect.top()), zone)  # beside: browser tabs
+    assert not in_zone(QPoint(centre.x(), rect.top() + ISLAND.reveal_height), zone)  # below
+
+
+def test_hot_zone_keeps_its_size_on_screen_at_any_scaling():
+    """Device-independent pixels: the zone covers the same physical inches at every scale."""
+    from PySide6.QtCore import QRect
+
+    from wisp.ui.island.reveal import hot_zone
+
+    for scale in (1.0, 1.25, 1.5, 1.75, 2.0):
+        logical = QRect(0, 0, round(3840 / scale), round(2160 / scale))
+        zone = hot_zone(logical)
+        physical_width = zone.width() * scale
+        assert physical_width == pytest.approx((ISLAND.idle[0] + 80) * scale)
+
+
+def test_dwell_needs_a_short_rest_in_the_zone():
+    from wisp.ui.island.reveal import Dwell
+
+    dwell = Dwell(150)
+    assert not dwell.update(True, 10.00)
+    assert not dwell.update(True, 10.14)
+    assert dwell.update(True, 10.15)
+    dwell.reset()
+    assert not dwell.update(True, 20.0)
+    assert not dwell.update(False, 20.1)  # passing over (browser tabs): starts again
+    assert not dwell.update(True, 20.2)
+    assert not dwell.update(True, 20.3)
+    assert dwell.update(True, 20.36)

@@ -2,7 +2,8 @@
 
 Services report what they are doing (voice, dictation, media, reminders, notifications) and the
 user's hover/expand actions; the machine turns that into a ``Presentation``: one of the shapes
-idle, sliver, activity (with an optional split-off second activity), banner, expanded or hidden.
+idle, activity (with an optional split-off second activity), banner, expanded, away (auto-hidden
+after a quiet spell, D-049) or hidden (a full-screen app is in front).
 
 Priority, highest first (TIERS): active voice > banner > timer > music > idle. Banners wait in
 a short queue while voice is active and show one at a time. The user's own actions win over all
@@ -50,7 +51,7 @@ class Banner:
 
 @dataclass(frozen=True)
 class Presentation:
-    mode: str  # hidden | sliver | idle | activity | banner | expanded
+    mode: str  # hidden | away | idle | activity | banner | expanded
     main: Activity | None = None
     secondary: Activity | None = None  # split: shown as the detached circle
     banner: Banner | None = None
@@ -83,26 +84,41 @@ class IslandStateMachine:
         self.expanded = False
         self.hidden = False
         self.hovered = False
+        self.confirming = False  # a confirmation card is waiting
         self.autohide = False
+        self.autohide_ms = tokens.autohide_ms
+        self.keep_for_music = True
         self._idle_since = clock()
+        self._was_hideable = False
+        self._resume_away = False
         self._listeners: list[Callable[[Presentation], None]] = []
+        self._deadline_listeners: list[Callable[[], None]] = []
         self.presentation = Presentation("idle")
 
     # ----- listeners ---------------------------------------------------------------------------
     def subscribe(self, listener: Callable[[Presentation], None]) -> None:
         self._listeners.append(listener)
 
+    def subscribe_deadline(self, listener: Callable[[], None]) -> None:
+        """Called after every change: the next deadline may have moved even when the
+        presentation didn't (a banner's hold extended on hover, the quiet spell restarted)."""
+        self._deadline_listeners.append(listener)
+
     def _changed(self) -> None:
         now = self.clock()
         self._advance(now)
+        hideable = self.hideable()
+        if hideable and not self._was_hideable:
+            self._idle_since = now  # the quiet spell starts now
+        self._was_hideable = hideable
         new = self._compute(now)
         old = self.presentation
-        if new.mode in ("idle", "sliver") and old.mode not in ("idle", "sliver"):
-            self._idle_since = now
         if new != old:
             self.presentation = new
             for listener in list(self._listeners):
                 listener(new)
+        for listener in list(self._deadline_listeners):
+            listener()
 
     def update(self) -> None:
         """Process timeouts (banner hold, short statuses, auto-hide); call when a deadline
@@ -117,8 +133,8 @@ class IslandStateMachine:
             times.append(self._override_until)
         if self._showing is not None and not self.hovered and self._voice_activity() is None:
             times.append(self._banner_until)
-        if self.autohide and self.presentation.mode == "idle" and not self.hovered:
-            times.append(self._idle_since + self.tokens.autohide_ms / 1000)
+        if self.hideable() and self.presentation.mode != "away":
+            times.append(self._idle_since + self.autohide_ms / 1000)
         future = [t for t in times if t > now]
         return min(future) if future else (now if times else None)
 
@@ -209,15 +225,51 @@ class IslandStateMachine:
         self._changed()
 
     def set_hidden(self, hidden: bool) -> None:
+        """A full-screen app is in front (or no longer). If the island had slid away, it
+        goes straight back to away afterwards instead of reappearing for a while."""
+        if hidden and self.presentation.mode == "away":
+            self._resume_away = True
         self.hidden = hidden
         if hidden:
             self.expanded = False
+        elif self._resume_away:
+            self._resume_away = False
+            self._was_hideable = True  # keep the old quiet spell
         self._changed()
 
-    def set_autohide(self, enabled: bool) -> None:
+    def set_autohide(self, enabled: bool, after_ms: int | None = None,
+                     keep_for_music: bool | None = None) -> None:
+        """Hide the idle island after ``after_ms`` (Settings → General)."""
         self.autohide = enabled
+        if after_ms is not None:
+            self.autohide_ms = after_ms
+        if keep_for_music is not None:
+            self.keep_for_music = keep_for_music
         self._idle_since = self.clock()
         self._changed()
+
+    def set_confirming(self, confirming: bool) -> None:
+        """A confirmation card is waiting: never hide meanwhile."""
+        self.confirming = confirming
+        self._changed()
+
+    def reveal(self) -> None:
+        """The pointer rested in the reveal zone: show the island and start the quiet spell
+        over (it hides again after the delay, once the pointer isn't on it)."""
+        self._idle_since = self.clock()
+        self._changed()
+
+    def hideable(self) -> bool:
+        """May the island hide now? Only when auto-hide is on and nothing is going on: no voice,
+        dictation or status, no banner (showing or queued), no countdown, no confirmation, not
+        expanded or under the pointer, and no music unless keep_for_music is off."""
+        if not self.autohide or self.hidden or self.expanded or self.hovered or self.confirming:
+            return False
+        if self._voice_activity() is not None or self._timer is not None:
+            return False
+        if self._showing is not None or self._queue:
+            return False
+        return self._music is None or not self.keep_for_music
 
     # ----- internals ---------------------------------------------------------------------------
     def _voice_activity(self) -> Activity | None:
@@ -255,13 +307,11 @@ class IslandStateMachine:
             return Presentation("expanded", main=live[0] if live else None)
         if self._showing is not None:
             return Presentation("banner", banner=self._showing)
+        if self.hideable() and now - self._idle_since >= self.autohide_ms / 1000:
+            return Presentation("away")
         if live:
             return Presentation("activity", main=live[0],
                                 secondary=live[1] if len(live) > 1 else None)
-        idle_for = now - self._idle_since
-        if (self.autohide and not self.hovered and self.presentation.mode in ("idle", "sliver")
-                and idle_for >= self.tokens.autohide_ms / 1000):
-            return Presentation("sliver")
         return Presentation("idle")
 
 

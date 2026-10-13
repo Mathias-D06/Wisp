@@ -16,6 +16,8 @@ class _Bridge(QObject):
 
 
 class ConfirmCard(QWidget):
+    showing = Signal(bool)  # a confirmation is waiting (the island stays visible meanwhile)
+
     def __init__(self, confirmations: ConfirmationManager):
         super().__init__(None, Qt.WindowType.Tool | Qt.WindowType.FramelessWindowHint
                          | Qt.WindowType.WindowStaysOnTopHint)
@@ -81,6 +83,7 @@ class ConfirmCard(QWidget):
             self._render()
 
     def _render(self) -> None:
+        self.showing.emit(bool(self._items))
         if not self._items:
             self.hide()
             return

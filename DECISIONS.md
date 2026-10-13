@@ -789,3 +789,45 @@ Decisions:
     renders at exactly 13 px with the same line height as before.
 * **Pixel-sized fonts stay** for widgets and painters that set their own (`ui_font`: the
   island's content, the HUD, the overlay). No code copies a point size from them.
+
+## D-049 Auto-hide and the top-centre reveal (brief of 2026-10-13, part 4)
+* **Replaces the sliver** from D-045. When nothing is going on for a while, the idle island
+  slides up out of view and fades (springs `lift` and `vis` on the same frame loop). Once it
+  has settled out of view, its window is hidden, so nothing at the top of the screen (browser
+  tabs, title bars) is blocked.
+* **Settings → General.**
+  * "Hide the Island when nothing is happening" (default on), after 3–15 s (default 6).
+  * "Keep it visible while music plays" (default on).
+* **When hiding is allowed** (`IslandStateMachine.hideable`, one place). Only when auto-hide is
+  on and none of these holds:
+  * voice, dictation, Circle to Ask or a short status is active;
+  * a banner is showing or queued;
+  * a countdown is shown;
+  * a confirmation card is waiting;
+  * the island is expanded or under the pointer;
+  * music is playing (unless "keep visible" is off).
+
+  The delay counts from when the last of these ended. It restarts when the pointer leaves the
+  island and after a reveal.
+* **What brings it back.**
+  * Anything that isn't idle shows at once, because it's a new presentation: voice, dictation,
+    banners, reminders, countdowns, the island hotkey (expands it), a waiting confirmation.
+  * The pointer resting in the reveal zone for 150 ms. The zone is the idle pill's width plus
+    40 px on each side, and the top 3 px of the display's full geometry (the very edge, even
+    over a top taskbar). The dwell keeps a pointer passing over browser tabs from revealing it.
+* **Pointer detection.**
+  * `QCursor.pos()` against `QScreen.geometry()`, polled at about 30 Hz only while the island is
+    slid away. Qt reads the cursor with GetCursorPos and maps both to device-independent pixels
+    per display. On this PC, at 175 %, GetCursorPos (2244, 991) reads as Qt (1282, 566).
+    So the zone is the same size on screen at every scaling and on every display.
+  * In "display with the pointer" mode, the zone is on whichever display the pointer is on,
+    and the island is placed there before it reappears.
+  * A low-level mouse hook (WH_MOUSE_LL) would run on every mouse move system-wide the whole
+    time. A poll that runs only while hidden is lighter.
+  * GetDpiForMonitor isn't used: Microsoft says it "should not be used if the calling thread is
+    per-monitor DPI aware".
+* **Full screen.** While a full-screen app is in front the island stays hidden; the zone isn't
+  polled (D-046). If it had slid away before, it returns straight to away afterwards instead
+  of reappearing.
+* **Motion off.** The island disappears and reappears at once.
+* **Idle CPU, measured on this PC** (`spikes/island_idle_cpu.py`): 0.52 % of one core while slid away (the ~30 Hz reveal poll) against 0.36 % while visible and idle, with or without the orb's glow (in-process, 30 s warm-up, 60 s).

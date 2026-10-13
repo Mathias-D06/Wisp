@@ -70,3 +70,13 @@ def test_terminal_and_input_skills_off_by_default():
     assert settings.safety.allow_raw_input is False
     assert "terminal" not in settings.loadout.skills
     assert "input" not in settings.loadout.skills
+
+
+def test_island_hiding_defaults_and_range():
+    settings = Settings()
+    general = settings.general
+    assert (general.island_hide_when_idle, general.island_hide_after_s,
+            general.island_keep_for_music) == (True, 6, True)
+    for seconds, ok in ((2, False), (3, True), (15, True), (16, False)):
+        general.island_hide_after_s = seconds
+        assert (not any("hides after" in p for p in validate(settings))) is ok

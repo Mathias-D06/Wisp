@@ -82,7 +82,9 @@ class GeneralSettings:
     start_with_windows: bool = False
     show_island: bool = True
     island_monitor: str = "primary"  # primary | cursor (D-045)
-    island_autohide: bool = False  # shrink the idle island to a sliver after a while
+    island_hide_when_idle: bool = True  # slide the idle island away (D-049)
+    island_hide_after_s: int = 6
+    island_keep_for_music: bool = True  # music playing keeps it visible
     clipboard_history_size: int = 50
     typing_wpm: int = 40
     amazon_domain: str = "www.amazon.com"
@@ -209,6 +211,8 @@ def validate(settings: Settings) -> list[str]:
         problems.append("Typing speed must be between 10 and 200 words per minute.")
     if not 100 <= settings.hotkeys.hold_ms <= 2000:
         problems.append("Hotkey hold time must be between 100 and 2000 ms.")
+    if not 3 <= settings.general.island_hide_after_s <= 15:
+        problems.append("The island hides after 3–15 seconds.")
     if settings.general.island_monitor not in ISLAND_MONITORS:
         problems.append("The island's monitor must be 'primary' or 'cursor'.")
     if not 0 <= settings.scheduler.one_off_grace_hours <= 168:
