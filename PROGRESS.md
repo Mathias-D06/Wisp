@@ -9,13 +9,16 @@ acceptance step needs real hardware/API key and is listed in `MANUAL_TESTS.md` (
 
 ## Status
 
-- Current phase: 8 — F8 memory, F9 loadout, F10 stats (not started)
-- Phase 7 done (see commit "Phase 7: Island …"): tests `test_system_controls.py`,
-  `test_clipboard_history.py`, `test_island.py`; D-030/D-031; SOURCES phase 7; MT-29…MT-34.
-- Next step: phase 8. F8 memory (remember/recall/forget tools over SQLite, few relevant facts at
-  session start, Settings page), F9 loadout (voice, personality, appearance, skills + gap
-  decision), F10 stats (store + Stats tab already exist: `stores/stats.py`, `ui/island/stats_tab.py`;
-  check per-day/per-week coverage and add tests for `Stats`).
+- Current phase: 9 — F12 hardening (not started)
+- Phase 8 done: `stores/memory.py`, `tools/builtin/memory.py`, `ui/settings/{memories,loadout}_page.py`,
+  loadout validation in `settings.py`; tests `test_memory.py`, `test_loadout_memories_ui.py`,
+  `test_stats.py`; D-032/D-033; MT-35…MT-38.
+- Next step: phase 9 (F12 hardening + remaining F11). Needed: Settings → Safety page (terminal /
+  raw-input toggles F12.3, auto-approve list, taint minutes; the Loadout tooltip already points
+  to it), terminal + raw input tools behind those toggles, action-log viewer page (F12.5),
+  F12.4/F12.6 evidence, F11.2 (key test on save — `general_page._test_and_save` exists, check
+  coverage), F11.4 Settings for hotkeys/devices/risky tools/model/language (General page has
+  model/language/idle/startup; hotkeys + devices pages missing).
 - Known gap: `README.md` does not exist yet although `pyproject.toml` names it and F6.5 cites it
   (the policy itself is in D-029). Write it in phase 10 (D.3); `pip install .` needs it.
 - Safety note for automated runs: never toggle the user's Night Light/Wi-Fi/Bluetooth/theme/
@@ -47,7 +50,9 @@ acceptance step needs real hardware/API key and is listed in `MANUAL_TESTS.md` (
 - [x] 7 F7 Island — `system/{controls,media,radios,wallpaper,power,clipboard_monitor}.py`,
   `stores/clipboard_history.py`, `winapi/shell_icons.py`, `tools/builtin/system.py`, `ui/island/*`;
   tests `test_system_controls.py`, `test_clipboard_history.py`, `test_island.py`
-- [ ] 8 F8 memory, F9 loadout, F10 stats
+- [x] 8 F8 memory, F9 loadout, F10 stats — `stores/memory.py`, `tools/builtin/memory.py`,
+  `ui/settings/{memories,loadout}_page.py`, `stores/stats.py`; tests `test_memory.py`,
+  `test_loadout_memories_ui.py`, `test_stats.py`
 - [ ] 9 F12 hardening
 - [ ] 10 Packaging, installer, CI
 - [ ] 11 Final audit
@@ -191,20 +196,31 @@ acceptance step needs real hardware/API key and is listed in `MANUAL_TESTS.md` (
   features show "add your key" — `test_island.py::test_status_without_key_and_with_music`; MT-29
 
 ### F8 Memory
-- [ ] F8.1 remember / recall / forget tools backed by SQLite
-- [ ] F8.2 Only the few most relevant facts injected at session start
-- [ ] F8.3 View, edit, delete all memories in Settings
+- [x] F8.1 remember / recall / forget tools backed by SQLite — `test_memory.py::test_remember_recall_forget_tools`,
+  `::test_remember_replaces_older_fact`, `::test_add_search_update_delete`, `::test_search_survives_fts_operators`;
+  taint escalation `::test_tainted_session_asks_before_remember`; MT-35
+- [x] F8.2 Only the few most relevant facts injected at session start — D-032;
+  `test_memory.py::test_session_facts_pinned_then_used_then_recent`, `::test_session_facts_respect_character_budget`,
+  `::test_instruction_lists_facts_as_data_and_only_with_memory_skill`
+- [x] F8.3 View, edit, delete all memories in Settings — `ui/settings/memories_page.py`;
+  `test_loadout_memories_ui.py::test_memories_*`; MT-35
 
 ### F9 Loadout
-- [ ] F9.1 Voice slot (Gemini prebuilt voice)
-- [ ] F9.2 Personality slot (presets + custom)
-- [ ] F9.3 Appearance slot (theme + accent)
-- [ ] F9.4 Skills slot (tool groups enabled)
-- [ ] F9.5 Gap decision recorded
+- [x] F9.1 Voice slot (Gemini prebuilt voice) — `ui/settings/loadout_page.py`;
+  `test_loadout_memories_ui.py::test_loadout_round_trip`, `::test_voice_and_skills_reach_live_config`; MT-36
+- [x] F9.2 Personality slot (presets + custom) — `::test_loadout_round_trip`,
+  `::test_personality_reaches_instruction`, `::test_custom_accent_and_too_long_personality`; MT-36
+- [x] F9.3 Appearance slot (theme + accent) — `::test_loadout_round_trip`, `::test_validate_loadout_values`;
+  applied live by `WispApp._on_settings_changed`; MT-36
+- [x] F9.4 Skills slot (tool groups enabled) — `::test_voice_and_skills_reach_live_config`; dispatcher
+  denial `test_dispatcher.py::test_disabled_skill_is_denied_in_dispatcher`; MT-37 (terminal/input also
+  need the Safety page, phase 9)
+- [x] F9.5 Gap decision recorded — DECISIONS.md D-033
 
 ### F10 Stats
-- [ ] F10.1 Words dictated, time saved (stated typing speed), commands run, routines executed — per
-  day and per week
+- [x] F10.1 Words dictated, time saved (stated typing speed), commands run, routines executed — per
+  day and per week — `stores/stats.py`, Island Stats tab; `test_stats.py` (all),
+  `test_island.py::test_stats_tab_shows_today_and_week`; MT-38
 
 ### F11 Settings and secrets
 - [x] F11.1 API key stored with DPAPI, never logged or shown in full — tests
@@ -246,3 +262,4 @@ acceptance step needs real hardware/API key and is listed in `MANUAL_TESTS.md` (
   with user approval. Project at `C:\Users\mathi\Documents\Wisp`.
 - 2026-10-13: Phase 7 finished (tests, D-030/D-031, sources, MT-29…MT-34). Added
   `winrt-Windows.Foundation.Collections` to pyproject; clipboard search now treats % and _ literally.
+- 2026-10-13: Phase 8 finished (memory, loadout page, stats tests, D-032/D-033, MT-35…MT-38).

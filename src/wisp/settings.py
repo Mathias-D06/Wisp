@@ -48,6 +48,10 @@ VOICES = [
 ]
 """Gemini prebuilt voices (https://ai.google.dev/gemini-api/docs/speech-generation)."""
 
+PERSONALITY_PRESETS = ["friendly", "professional", "playful", "minimal", "custom"]
+THEMES = ["system", "dark", "light"]
+CUSTOM_PERSONALITY_MAX = 600
+
 
 @dataclass
 class GeneralSettings:
@@ -184,6 +188,15 @@ def validate(settings: Settings) -> list[str]:
         problems.append("Live model name cannot be empty.")
     if not settings.ai.text_model.strip():
         problems.append("Text model name cannot be empty.")
+    loadout = settings.loadout
+    if loadout.personality not in PERSONALITY_PRESETS:
+        problems.append(f"Unknown personality {loadout.personality!r}.")
+    if len(loadout.custom_personality) > CUSTOM_PERSONALITY_MAX:
+        problems.append(f"Custom personality must be at most {CUSTOM_PERSONALITY_MAX} characters.")
+    if loadout.theme not in THEMES:
+        problems.append(f"Unknown theme {loadout.theme!r}.")
+    if not re.fullmatch(r"#[0-9a-fA-F]{6}", loadout.accent):
+        problems.append("Accent colour must look like #7c5cff.")
     unknown = [s for s in settings.loadout.skills if s not in TOOL_GROUPS]
     if unknown:
         problems.append(f"Unknown skill groups: {', '.join(unknown)}.")

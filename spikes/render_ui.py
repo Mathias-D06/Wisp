@@ -42,6 +42,9 @@ def _sample_data(wisp_app) -> None:
     services.todos.add("Call the dentist", due_at=now.replace(hour=15, minute=0))
     services.todos.add("Buy gift wrap")
     services.todos.add("Send invoice to Ana", due_at=now + timedelta(days=1))
+    services.memory.add("My sister Hana's birthday is 3 May", pinned=True)
+    services.memory.add("I work from home on Fridays")
+    services.memory.add("I prefer metric units and 24-hour times")
 
 
 def render_settings(app: QApplication) -> None:

@@ -30,6 +30,7 @@ from wisp.settings import Settings, SettingsStore
 from wisp.single_instance import SingleInstance
 from wisp.stores.action_log import ActionLog
 from wisp.stores.clipboard_history import ClipboardHistory
+from wisp.stores.memory import MemoryStore
 from wisp.stores.stats import Stats
 from wisp.stores.todos import TodoStore
 from wisp.system import clipboard
@@ -40,6 +41,7 @@ from wisp.tools.base import Origin
 from wisp.tools.builtin import apps as apps_tools
 from wisp.tools.builtin import core as core_tools
 from wisp.tools.builtin import files as files_tools
+from wisp.tools.builtin import memory as memory_tools
 from wisp.tools.builtin import schedule as schedule_tools
 from wisp.tools.builtin import screen as screen_tools
 from wisp.tools.builtin import system as system_tools
@@ -69,6 +71,8 @@ from wisp.ui.island.today_tab import TodayTab
 from wisp.ui.island.wallpaper_tab import WallpaperTab
 from wisp.ui.settings.dialog import SettingsDialog
 from wisp.ui.settings.general_page import GeneralPage
+from wisp.ui.settings.loadout_page import LoadoutPage
+from wisp.ui.settings.memories_page import MemoriesPage
 from wisp.ui.settings.routines_page import RoutinesPage
 from wisp.ui.tray import Tray
 from wisp.voice import VoiceController, VoiceSignals, make_callbacks
@@ -110,6 +114,7 @@ class WispApp(QObject):
             stats=Stats(self.db, lambda: peek().general.typing_wpm),
             app_index=AppIndex(self.db),
             todos=TodoStore(self.db),
+            memory=MemoryStore(self.db),
             tasks=TaskStore(self.db),
             clipboard=ClipboardHistory(self.db, lambda: peek().general.clipboard_history_size),
         )
@@ -199,7 +204,7 @@ class WispApp(QObject):
     # ----- tools -----------------------------------------------------------------------------
     def _register_tools(self) -> None:
         for module in (core_tools, apps_tools, windows_tools, web_tools, screen_tools, ui_tools,
-                       files_tools, todo_tools, system_tools):
+                       files_tools, todo_tools, memory_tools, system_tools):
             self.registry.register_all(module.tools())
         self.registry.register_all(schedule_tools.tools(self.registry))
 
@@ -260,7 +265,8 @@ class WispApp(QObject):
 
     def _live_config(self, handle: str | None):
         settings = self.settings_store.get()
-        facts = self.services.memory.session_facts() if self.services.memory else []
+        facts = (self.services.memory.session_facts()
+                 if "memory" in settings.loadout.skills else [])
         instruction = system_instruction(settings, facts, datetime.now().astimezone())
         return build_live_config(settings, self.registry.declarations(settings), instruction,
                                  handle)
@@ -333,6 +339,8 @@ class WispApp(QObject):
     def settings_pages(self) -> list:
         return [
             GeneralPage(self.settings_store, self.keystore),
+            LoadoutPage(self.registry),
+            MemoriesPage(self.services.memory),
             RoutinesPage(self.services.tasks, self.services.scheduler),
         ]
 

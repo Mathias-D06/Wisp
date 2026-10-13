@@ -147,3 +147,12 @@ from `.venv`. Dates are when checked.
 | https://learn.microsoft.com/en-us/windows/win32/dataxchg/clipboard-formats | (see phase 4) exclusion markers honoured by clipboard history | 2026-10-12 |
 | https://doc.qt.io/qt-6/qclipboard.html | `dataChanged` signal; `setText`, `setImage`, `image()` | 2026-10-12 |
 | spike `spikes/system_probe.py` (read-only) | volume/mute, output devices, brightness (none on a desktop monitor), radios, dark mode and Night Light blob read on this PC | 2026-10-12 |
+
+## Memory, loadout, stats (phase 8)
+
+| URL | Confirmed | Checked |
+|---|---|---|
+| https://www.sqlite.org/fts5.html | external-content tables (`content=`, `content_rowid=`) kept in sync with triggers incl. the `'delete'` command; `MATCH` with quoted strings and trailing `*` prefix terms joined by `OR`; `bm25()` (lower = better) | 2026-10-13 |
+| spike `spikes/sqlite_fts5.py`, tests `test_memory.py` | bundled SQLite has FTS5 + bm25; index follows inserts, edits and deletes; operator-laden input is neutralised | 2026-10-13 |
+| https://ai.google.dev/gemini-api/docs/speech-generation | (see phase 2) prebuilt voice names used by the Loadout voice list | 2026-10-12 |
+| https://ai.google.dev/gemini-api/docs/live-api/capabilities | (see phase 2) `speech_config.voice_config.prebuilt_voice_config.voice_name` | 2026-10-12 |

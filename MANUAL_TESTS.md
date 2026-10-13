@@ -70,6 +70,15 @@ General, paste your key and click **Save and test** (expect "Key works…").
 | MT-33 | Today tab: add "test to-do" with a due time; tick it; add another and delete it. Say "what's on my to-do list?" | Changes show at once; the voice answer matches the tab. "Coming up" lists routines from Settings → Routines. |
 | MT-34 | Power tab: click Restart and choose **No**; click Lock. Wallpaper tab: click a thumbnail. | No restart; the PC locks (unlock again); the wallpaper changes (set it back afterwards). |
 
+## F8–F10 Memory, loadout, stats
+
+| ID | Steps | Expected |
+|---|---|---|
+| MT-35 | Say "remember that my sister Hana's birthday is the 3rd of May". Tray → Quit, start Wisp again, ask "when is Hana's birthday?" | Wisp confirms it remembered; after the restart it answers 3 May. Settings → Memories lists the fact; edit it to 4 May, ask again → 4 May. Say "forget Hana's birthday" → the row disappears. |
+| MT-36 | Settings → Loadout: voice **Puck**, personality **Minimal**, accent teal, Apply. Ask "what did I just ask you?" | The Island/console turn teal at once; the next reply uses the new voice and is very short, and it still knows the previous question (or, if resumption is refused, the log shows a fresh session). |
+| MT-37 | Loadout → untick **Music and video controls**, Apply. Say "pause the music". | Wisp says it can't do that (skill switched off); the Island's music buttons still work. Tick it again afterwards. |
+| MT-38 | Dictate one sentence (MT-18) and run one voice command. Island → Stats. | Today and This week show the words, a time-saved figure and 1 command; the 7-day chart has today's bar. |
+
 ## Hotkeys
 
 | ID | Steps | Expected |

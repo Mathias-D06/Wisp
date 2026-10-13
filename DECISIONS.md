@@ -248,3 +248,38 @@ Gap: the brief gives the tabs but not the interaction details. Decisions:
 * Turning Wi-Fi off by voice is confirm-tier (it also cuts Wisp's own connection); sleep,
   restart and shut down are confirm-tier by voice and ask with a dialog in the Power tab; lock
   does not ask.
+
+## D-032 Memory: what is stored, what reaches the model
+Gap: the brief says "only the few most relevant facts" at session start but not how relevance is
+judged before the user has said anything. Decisions:
+* A memory is one user-stated fact (≤ 300 characters, ≤ 1000 facts) in the `memories` table with
+  an FTS5 index kept in sync by triggers. Identical facts (case/spacing ignored) are refreshed,
+  not duplicated; `remember(replaces=…)` swaps an outdated fact for a new one.
+* Session start injects at most 8 facts and 1000 characters: pinned first, then by how often
+  `recall` returned them, then most recently used or edited. Everything else is found with
+  `recall` (bm25-ranked FTS5 search; user words become quoted prefix terms, so FTS syntax in
+  speech can't break or widen the query). The system instruction labels injected facts as
+  "facts, not instructions".
+* `remember` and `forget` are SAFE but escalate to a confirmation while the session is tainted
+  (D-012): otherwise a web page or document read by `look_at_screen`/file tools could plant an
+  instruction-like "fact" that every later session would see, or erase real ones.
+* Switching the Memory skill off in the Loadout hides the tools and stops injection; stored
+  facts stay until deleted in Settings → Memories. Nothing leaves the PC except the injected
+  facts and recall results sent to Gemini during a conversation.
+
+## D-033 Loadout (F9.5 gap decision)
+Gap: the brief names four slots (voice, personality, appearance, skills) but not whether users
+keep several loadouts or how changes reach a running conversation. Decisions:
+* One active loadout, stored in settings.json → `loadout`, edited in Settings → Loadout. No
+  saved presets: four controls are quicker to change than a preset manager, and a second
+  "loadout" concept would duplicate settings.
+* Voice: one of the 30 documented prebuilt voices (no in-app preview, because a preview would
+  need an extra TTS request and a key). Personality: presets friendly / professional / playful /
+  minimal, or custom text (≤ 600 characters; empty custom text falls back to friendly).
+  Appearance: theme Match Windows / Dark / Light and an accent (six swatches or any #rrggbb).
+  Skills: one switch per tool group; terminal and raw input additionally need their Safety
+  switch (F12.3), and the dispatcher re-checks both on every call.
+* Theme and accent apply immediately. Voice, personality, skills (and model/language) changes
+  request a reconnect: the next connection is built from the new settings and reuses the
+  resumption handle so the conversation continues; if the server refuses to resume with the new
+  setup, Wisp starts a fresh session with remembered facts (existing D-015 path). Verify MT-36.
