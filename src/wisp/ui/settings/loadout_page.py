@@ -40,7 +40,7 @@ SKILLS = {
     "web": "Web, YouTube and Amazon searches",
     "screen": "Look at the screen",
     "ui": "Click and type in apps (UI Automation)",
-    "files": "Open, find and delete files",
+    "files": "Files: find, open, share, phone link",
     "todos": "To-dos and reminders",
     "calendar": "Google Calendar (what's on, add events)",
     "schedule": "Scheduled tasks and routines",

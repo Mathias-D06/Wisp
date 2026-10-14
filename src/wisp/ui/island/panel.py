@@ -56,6 +56,7 @@ def island_stylesheet(p: theme.Palette) -> str:
     QPushButton#Flat:hover {{ background: {p.hover}; color: {p.text}; }}
     QListWidget#Flat {{ background: transparent; border: none; }}
     QListWidget#Flat::item {{ padding: 6px; border-radius: {rc}px; }}
+    QListWidget#Flat[dense="true"]::item {{ padding: 2px 6px; }}
     QListWidget#Flat::item:hover {{ background: {p.hover}; }}
     QListWidget#Flat::item:selected {{ background: {p.accent_soft}; color: {p.text}; }}
     QProgressBar#Thin {{ background: {p.border}; border: none; border-radius: 2px; }}
@@ -126,7 +127,7 @@ class ExpandedPanel(QWidget):
         self.chat = ChatPanel(voice)
         self.tabs = [("Chat", self.chat), *tabs]
         for index, (name, widget) in enumerate(self.tabs):
-            button = QPushButton(name)
+            button = QPushButton(name.replace("&", "&&"))  # "&" would be a mnemonic
             button.setObjectName("Tab")
             button.setCheckable(True)
             button.setCursor(Qt.CursorShape.PointingHandCursor)

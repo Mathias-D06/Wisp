@@ -97,3 +97,14 @@ def test_calendar_settings_defaults_and_range():
     assert (settings.calendar.heads_up_min, settings.calendar.allow_create) == (10, False)
     settings.calendar.heads_up_min = 61
     assert any("heads-up" in p for p in validate(settings))
+
+
+def test_phone_link_size_limit_default_range_and_old_files():
+    settings = Settings()
+    assert settings.share.phone_max_upload_mb == 2048 and validate(settings) == []
+    for bad in (0, 20481):
+        settings.share.phone_max_upload_mb = bad
+        assert any("phone link" in p for p in validate(settings))
+    assert Settings.from_dict({"general": {}}).share.phone_max_upload_mb == 2048  # saved before
+    assert Settings.from_dict({"share": {"phone_max_upload_mb": "big"}}).share \
+        .phone_max_upload_mb == 2048

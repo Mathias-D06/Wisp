@@ -36,6 +36,11 @@ class Services:
     clipboard: Any = None
     media: Any = None
     calendar: Any = None  # CalendarService (D-050)
+    shelf: Any = None  # files.shelf.Shelf (D-051)
+    finder: Any = None  # files.finder.FileFinder
+    phone: Any = None  # phone.service.PhoneLink
+    share_files: Any = None  # callable(list[Path]): the Windows share sheet
+    open_files_tab: Any = None  # callable(): show the island's Files & Share tab
     system: Any = None
     overlay: Any = None
     last_capture: Any = None

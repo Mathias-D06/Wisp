@@ -16,6 +16,7 @@ import math
 import os
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 os.environ.setdefault("WISP_DATA_DIR", tempfile.mkdtemp(prefix="wisp-island-"))
@@ -71,7 +72,7 @@ def sample_art() -> bytes:
 def gif_palette(frames: list[Image.Image]) -> Image.Image:
     """One palette for the whole recording. Median cut (Pillow's default) keeps gradients smooth
     but merges small areas of colour, such as calendar dots, into their neighbours; fast octree
-    keeps those. So: 200 median-cut colours plus the octree colours furthest from all of them."""
+    keeps those. So: 232 median-cut colours plus the octree colours furthest from all of them."""
     picks = frames[:: max(1, len(frames) // 12)]
     sheet = Image.new("RGB", (frames[0].width, frames[0].height * len(picks)))
     for index, frame in enumerate(picks):
@@ -81,13 +82,13 @@ def gif_palette(frames: list[Image.Image]) -> Image.Image:
         flat = image.getpalette()[: count * 3]
         return [tuple(flat[i:i + 3]) for i in range(0, len(flat), 3)]
 
-    base = colours(sheet.quantize(200, Image.Quantize.MEDIANCUT), 200)
+    base = colours(sheet.quantize(232, Image.Quantize.MEDIANCUT), 232)
     octree = colours(sheet.quantize(255, Image.Quantize.FASTOCTREE), 255)
 
     def gap(colour: tuple[int, ...]) -> int:
         return min(sum((a - b) ** 2 for a, b in zip(colour, other, strict=True)) for other in base)
 
-    extra = sorted(octree, key=gap, reverse=True)[:55]
+    extra = sorted(octree, key=gap, reverse=True)[:23]
     palette = Image.new("P", (1, 1))
     palette.putpalette([value for colour in base + extra for value in colour])
     return palette
@@ -334,6 +335,55 @@ class Recorder:
         island.collapse()
         self.settle()
 
+    def wait_real(self, seconds: float) -> None:
+        """Let background work that runs in real time (shell thumbnails) finish."""
+        end = time.monotonic() + seconds
+        while time.monotonic() < end:
+            self.app.processEvents()
+            time.sleep(0.02)
+
+    def files_tab(self) -> None:
+        """The Files & Share tab with made-up files: a file dropped on the island lands on the
+        shelf, Downloads, a search, then the phone link (QR code, a file from the phone to
+        accept) and the island's "Phone link" countdown once collapsed."""
+        import sample_files
+
+        island = self.island
+        tab, phone, (_documents, downloads) = sample_files.install(
+            self.wisp, wall=lambda: WALL0 + self.clock.now)
+        index = next(i for i, (name, _w) in enumerate(island.panel.tabs)
+                     if name == "Files & Share")
+        tab._fill_places()
+        tab.lists.button(1).click()  # ask for every icon and thumbnail up front
+        tab.add_to_shelf([downloads / "mountain-lake.png"])
+        self.wait_real(2.5)
+        tab.shelf.remove(downloads / "mountain-lake.png")
+        tab.lists.button(0).click()
+        self.settle()
+        island.expand()
+        self.advance(0.6)
+        island.panel.show_tab(index)
+        self.advance(1.4)
+        island.files_dropped.emit([downloads / "mountain-lake.png"])
+        self.advance(1.2)
+        tab.lists.button(1).click()
+        self.advance(1.2)
+        tab.search.setText("report")
+        tab._run_search()
+        self.advance(1.6)
+        tab.search.clear()
+        phone.start([downloads / "invoice-0912.pdf"])
+        self.advance(1.4)
+        phone.ask("IMG_2041.jpg", 3_400_000)
+        self.advance(1.6)
+        phone.accept(phone.waiting[0])
+        self.advance(0.6)
+        island.collapse()
+        self.advance(1.8)
+        self.save_gif("files_and_share")
+        phone.stop()
+        self.settle()
+
     def stills(self) -> None:
         from wisp.system.media import MediaState
 
@@ -395,6 +445,7 @@ def main() -> None:
         recorder.interrupt()
         recorder.autohide_reveal()
         recorder.calendar_tab()
+        recorder.files_tab()
     recorder.wisp.quit()
 
 

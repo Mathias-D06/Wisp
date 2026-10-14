@@ -97,6 +97,18 @@ class SafetyPage(SettingsPage):
         form.addRow("After Wisp reads the screen, a file or a web page, ask before every "
                     "risky action for", self.taint_minutes)
         layout.addWidget(taint)
+
+        phone = QGroupBox("Phone link")
+        phone_form = QFormLayout(phone)
+        self.phone_max_mb = QSpinBox()
+        self.phone_max_mb.setRange(1, 20480)
+        self.phone_max_mb.setSingleStep(100)
+        self.phone_max_mb.setSuffix(" MB")
+        phone_form.addRow("Largest file a phone may send", self.phone_max_mb)
+        phone_form.addRow(hint("The phone link only opens on a Private network, stops after 10 "
+                               "minutes, and every file from the phone needs your OK. Files "
+                               "arrive in Downloads\\Wisp."))
+        layout.addWidget(phone)
         layout.addStretch(1)
 
     def load(self, settings: Settings) -> None:
@@ -107,6 +119,7 @@ class SafetyPage(SettingsPage):
         for name, box in self.auto.items():
             box.setChecked(name in safety.auto_approve)
         self.taint_minutes.setValue(safety.taint_minutes)
+        self.phone_max_mb.setValue(settings.share.phone_max_upload_mb)
 
     def apply(self, settings: Settings) -> None:
         safety = settings.safety
@@ -122,3 +135,4 @@ class SafetyPage(SettingsPage):
                 if n not in self.auto and n not in NEVER_AUTO_APPROVE]
         safety.auto_approve = kept + [n for n, box in self.auto.items() if box.isChecked()]
         safety.taint_minutes = self.taint_minutes.value()
+        settings.share.phone_max_upload_mb = self.phone_max_mb.value()

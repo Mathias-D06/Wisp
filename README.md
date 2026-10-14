@@ -95,6 +95,7 @@ Things to try:
 - "Remember that my sister's birthday is the 3rd of May", "forget my sister's birthday"
 - "Turn the volume down", "pause the music", "turn on Night Light", "lock the PC"
 - "What's on my calendar tomorrow?", "add lunch with Ana on Friday at 1 pm"
+- "Send this to my phone", "share the file I just downloaded"
 - "Set my wallpaper to the mountain one"
 
 **Settings** (tray → Settings…):
@@ -148,6 +149,39 @@ tab, and your events stay visible until you do. To avoid it:
 
 The heads-up in the Island (the next event's countdown, 10 minutes before by default) is set
 in Settings → Accounts.
+
+## Files & Share
+
+The Island's **Files & Share** tab (where Apps used to be):
+
+- **Search** apps and files in one box. Files come from the Windows Search index, so results
+  are instant and small typos are forgiven.
+- **The shelf:** drop files or folders on the Island to park them; drag them out again into
+  Explorer, an email or a chat. The shelf keeps a link to the file, not a copy, and survives
+  restarts.
+- **Recent** files and your newest **Downloads**.
+- **Right-click** a file to open it, show it in Explorer, copy it or its path, rename it, move
+  it, share it, send it to your phone, or move it to the Recycle Bin. Wisp never deletes
+  permanently.
+- **Share…** opens the Windows share sheet: Nearby Sharing (switch it on in Settings → System →
+  Nearby sharing, or System → Multitasking on newer builds), Mail and other apps.
+
+**Phone link.** The phone button (or "send this to my phone") shows a QR code. Scan it with
+your phone's camera and the phone can download what you sent and send files back.
+
+- It only works on a **Private** network. If Windows treats your home Wi-Fi as Public, change
+  it: Settings → Network & internet → Wi-Fi (or Ethernet) → your network → Network profile
+  type → Private network.
+- The first time, **Windows Firewall** asks whether to allow Wisp: tick Private networks and
+  allow. If you said no, allow it later in Windows Security → Firewall & network protection →
+  Allow an app through firewall.
+- Every file from the phone needs your **Accept** in the Island. Files arrive in
+  `Downloads\Wisp`. The size limit is in Settings → Safety.
+- The link stops after **10 minutes** or when you click Stop. While it's open the Island
+  shows "Phone link" with the time left.
+- The link uses plain HTTP on your home network: someone able to watch your Wi-Fi traffic
+  could see the files in transit. For anything sensitive use Nearby Sharing, a cable or a
+  cloud drive.
 
 ## Scheduled tasks
 
@@ -225,8 +259,8 @@ Everything else stays in `%APPDATA%\Wisp`:
 - `secrets.bin` holds the API key, encrypted;
 - `google_client.bin` and `google_token.bin` hold your Google OAuth client and sign-in,
   encrypted, if you connect Google Calendar;
-- `wisp.sqlite3` holds to-dos, memories, clipboard history, stats, the action log, routines and
-  the copy of your calendar;
+- `wisp.sqlite3` holds to-dos, memories, clipboard history, stats, the action log, routines,
+  the copy of your calendar and the shelf (links to files, not the files);
 - `jobs.sqlite3` holds the schedules;
 - `logs\` holds the logs, with API keys removed.
 
@@ -246,6 +280,9 @@ pastes are kept out of both Windows clipboard history and Wisp's.
 - **The Island disappeared.** When nothing is happening it slides up out of view: rest the
   pointer at the top edge of the screen above its centre to bring it back. It also hides while
   a full-screen app, video or game is in front. Check Settings → General → Show the Island.
+- **The phone can't open the link.** The PC's network must be Private, the phone on the same
+  Wi-Fi, and Wisp allowed through Windows Firewall on Private networks (see Files & Share).
+  Some guest networks keep devices apart; use your main Wi-Fi.
 - **Calendar says "Reconnect".** See [Google Calendar](#google-calendar): in Testing status Google
   ends the sign-in after 7 days.
 - **Windows look wrong (blank or see-through areas).** Set the environment variable

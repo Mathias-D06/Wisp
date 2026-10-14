@@ -30,12 +30,12 @@ METERS = {"listening": "mic", "speaking": "output"}
 class Activity:
     """Something live, shown at a glance: kind decides the content, tier the priority."""
 
-    kind: str  # listening | thinking | speaking | dictation | status | music | countdown
+    kind: str  # listening | thinking | speaking | dictation | status | music | countdown | sharing
     tier: str  # voice | timer | music
     text: str = ""
     tone: str = "accent"  # theme tone for the icon/orb: accent, success, warning, danger, muted
     meter: str | None = None  # which level the view draws: mic | output | dictation | media
-    data: object = None  # MediaState for music, due time (epoch seconds) for countdown
+    data: object = None  # MediaState for music, due/end time (epoch seconds) for countdown/sharing
 
 
 @dataclass(frozen=True)
@@ -77,6 +77,7 @@ class IslandStateMachine:
         self._override_until: float | None = None
         self._music: Activity | None = None
         self._timer: Activity | None = None
+        self._sharing: Activity | None = None  # the phone link while it runs (D-051)
         self._queue: list[Banner] = []
         self._showing: Banner | None = None
         self._banner_until = 0.0
@@ -175,6 +176,13 @@ class IslandStateMachine:
                        if title and due is not None else None)
         self._changed()
 
+    def set_sharing(self, text: str | None, until: float | None = None) -> None:
+        """The phone link is open until ``until`` (epoch seconds), or None when it stops. It
+        stays on screen the whole time: a server on the network is never out of sight."""
+        self._sharing = (Activity("sharing", "timer", text, tone="success", data=until)
+                         if text and until is not None else None)
+        self._changed()
+
     def post(self, title: str, line: str = "", icon: str = "info", tone: str = "accent",
              action: Callable[[], None] | None = None) -> Banner:
         """Queue a banner. The same title and line already waiting (or showing) is refreshed
@@ -261,11 +269,12 @@ class IslandStateMachine:
 
     def hideable(self) -> bool:
         """May the island hide now? Only when auto-hide is on and nothing is going on: no voice,
-        dictation or status, no banner (showing or queued), no countdown, no confirmation, not
+        dictation or status, no banner (showing or queued), no countdown, no phone link, no
+        confirmation, not
         expanded or under the pointer, and no music unless keep_for_music is off."""
         if not self.autohide or self.hidden or self.expanded or self.hovered or self.confirming:
             return False
-        if self._voice_activity() is not None or self._timer is not None:
+        if self._voice_activity() is not None or self._timer is not None or self._sharing:
             return False
         if self._showing is not None or self._queue:
             return False
@@ -301,7 +310,8 @@ class IslandStateMachine:
     def _compute(self, now: float) -> Presentation:
         if self.hidden:
             return Presentation("hidden")
-        live = [a for a in (self._voice_activity(), self._timer, self._music) if a is not None]
+        live = [a for a in (self._voice_activity(), self._sharing, self._timer, self._music)
+                if a is not None]
         live.sort(key=lambda activity: tier_rank(activity.tier))
         if self.expanded:
             return Presentation("expanded", main=live[0] if live else None)

@@ -141,6 +141,11 @@ class CalendarSettings:
 
 
 @dataclass
+class ShareSettings:
+    phone_max_upload_mb: int = 2048  # the largest file a phone may send over the phone link
+
+
+@dataclass
 class SafetySettings:
     allow_terminal: bool = False
     allow_raw_input: bool = False
@@ -164,6 +169,7 @@ class Settings:
     safety: SafetySettings = field(default_factory=SafetySettings)
     scheduler: SchedulerSettings = field(default_factory=SchedulerSettings)
     calendar: CalendarSettings = field(default_factory=CalendarSettings)
+    share: ShareSettings = field(default_factory=ShareSettings)
 
     def to_dict(self) -> dict[str, Any]:
         return dataclasses.asdict(self)
@@ -239,6 +245,8 @@ def validate(settings: Settings) -> list[str]:
         problems.append("Hotkey hold time must be between 100 and 2000 ms.")
     if not 0 <= settings.calendar.heads_up_min <= 60:
         problems.append("The calendar heads-up must be 0–60 minutes.")
+    if not 1 <= settings.share.phone_max_upload_mb <= 20480:
+        problems.append("The phone link's size limit must be 1–20480 MB.")
     if not 3 <= settings.general.island_hide_after_s <= 15:
         problems.append("The island hides after 3–15 seconds.")
     if settings.general.island_monitor not in ISLAND_MONITORS:

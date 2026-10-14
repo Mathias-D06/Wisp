@@ -1,5 +1,7 @@
 """App icons via the documented IShellItemImageFactory::GetImage (SIIGBF_ICONONLY), for both
-Store apps (parsing name ``shell:AppsFolder\\<AUMID>``) and files.
+Store apps (parsing name ``shell:AppsFolder\\<AUMID>``) and files. With ``thumbnail=True`` the
+flag is left out (SIIGBF_RESIZETOFIT only), so the shell returns a file's thumbnail (a photo's
+picture, a document's first page) where it has one and its icon otherwise.
 
 The interface IID {bcc18b79-ba16-442f-80c4-8a59c30c463b} is registered on the system and
 confirmed functionally by ``spikes/shell_icon_probe.py`` (QueryInterface succeeds and icons are
@@ -84,15 +86,16 @@ def parsing_name(target: str, kind: str) -> str:
     return f"shell:AppsFolder\\{target}" if kind == "aumid" else target
 
 
-def icon_png(name: str, size: int = 48) -> bytes | None:
-    """PNG bytes of the item's icon, or None if the shell has none."""
+def icon_png(name: str, size: int = 48, thumbnail: bool = False) -> bytes | None:
+    """PNG bytes of the item's icon (or thumbnail), or None if the shell has none."""
     from PySide6.QtCore import QBuffer, QByteArray, QIODevice
 
     factory = POINTER(IShellItemImageFactory)()
     try:
         _shell32.SHCreateItemFromParsingName(name, None, byref(IID_IShellItemImageFactory),
                                              byref(factory))
-        hbitmap = factory.GetImage(SIZE(size, size), SIIGBF_RESIZETOFIT | SIIGBF_ICONONLY)
+        flags = SIIGBF_RESIZETOFIT | (0 if thumbnail else SIIGBF_ICONONLY)
+        hbitmap = factory.GetImage(SIZE(size, size), flags)
     except OSError:
         return None
     try:

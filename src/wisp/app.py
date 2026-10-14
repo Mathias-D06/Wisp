@@ -17,6 +17,8 @@ from wisp.audio.playback import Player
 from wisp.circle import CircleController
 from wisp.db import Database
 from wisp.dictation import DictationController, DictationDeps
+from wisp.files.finder import FileFinder
+from wisp.files.shelf import Shelf
 from wisp.gcal.service import CalendarService
 from wisp.gcal.store import CalendarStore
 from wisp.hotkeys.manager import HotkeyManager
@@ -26,6 +28,7 @@ from wisp.live.connector import GenaiConnector
 from wisp.live.session import LiveSessionManager
 from wisp.logging_setup import configure as configure_logging
 from wisp.loop import LoopThread
+from wisp.phone.service import PhoneLink
 from wisp.scheduling.scheduler import TaskScheduler
 from wisp.scheduling.tasks import TaskStore
 from wisp.services import Services
@@ -50,6 +53,7 @@ from wisp.tools.builtin import memory as memory_tools
 from wisp.tools.builtin import raw_input as raw_input_tools
 from wisp.tools.builtin import schedule as schedule_tools
 from wisp.tools.builtin import screen as screen_tools
+from wisp.tools.builtin import share as share_tools
 from wisp.tools.builtin import system as system_tools
 from wisp.tools.builtin import terminal as terminal_tools
 from wisp.tools.builtin import todos as todo_tools
@@ -67,12 +71,12 @@ from wisp.ui.confirm_card import ConfirmCard
 from wisp.ui.console import ConsoleWindow
 from wisp.ui.hud import Hud
 from wisp.ui.icons import orb_icon
-from wisp.ui.island.apps_tab import AppsTab
 from wisp.ui.island.calendar_tab import CalendarTab
 from wisp.ui.island.clipboard_tab import ClipboardTab
 from wisp.ui.island.common import Background
 from wisp.ui.island.controls_tab import ControlsTab
 from wisp.ui.island.feedback import IslandBubble, IslandFeedback
+from wisp.ui.island.files_tab import FilesTab
 from wisp.ui.island.island import Island
 from wisp.ui.island.machine import pick_countdown
 from wisp.ui.island.music import MediaSignals
@@ -95,6 +99,7 @@ from wisp.winapi import input as winput
 from wisp.winapi import windows as win
 
 log = logging.getLogger(__name__)
+FILES_TAB = "Files & Share"
 
 RECONNECT_FIELDS = ("voice", "personality", "custom_personality", "skills")
 
@@ -138,6 +143,15 @@ class WispApp(QObject):
             SecretJson(paths.google_client_file(), b"Wisp/google-client/v1", "Google OAuth client"),
             SecretJson(paths.google_token_file(), b"Wisp/google-token/v1", "Google sign-in"))
         self.services.calendar = self.calendar
+        self.shelf = Shelf(self.db)
+        self.finder = FileFinder()
+        self.phone = PhoneLink(lambda: self.finder.downloads_folder() / "Wisp",
+                               lambda: peek().share.phone_max_upload_mb * 1024 * 1024)
+        self._share_sheet = None
+        self.services.shelf, self.services.finder = self.shelf, self.finder
+        self.services.phone = self.phone
+        self.services.share_files = self._share_files
+        self.services.open_files_tab = self._open_files_tab
         self.services.scheduler = TaskScheduler(
             self.services.tasks, f"sqlite:///{paths.jobs_database_file()}", peek,
             self._execute_task, self.notify,
@@ -220,7 +234,8 @@ class WispApp(QObject):
             ("Calendar", CalendarTab(self.calendar)),
             ("Stats", StatsTab(services.stats, self.settings_store, settings.loadout.accent)),
             ("Clipboard", ClipboardTab(services.clipboard, self.clipboard_monitor)),
-            ("Apps", AppsTab(services.app_index, self.background, palette)),
+            (FILES_TAB, FilesTab(self.finder, self.shelf, services.app_index, self.phone,
+                                 self.background, palette, share=self._share_files)),
             ("Power", PowerTab(self.background, palette, services.action_log)),
         ]
         self.island = Island(self.voice, settings.loadout.accent, self.keystore.has_key,
@@ -237,6 +252,12 @@ class WispApp(QObject):
         calendar_tab = next(w for name, w in tabs if name == "Calendar")
         calendar_tab.open_accounts.connect(lambda: self.open_settings("Accounts"))
         self.calendar.changed.connect(self._update_countdown)
+        files_tab = next(w for name, w in tabs if name == FILES_TAB)
+        self.island.files_dropped.connect(files_tab.add_to_shelf)
+        self.phone.changed.connect(self._update_phone_activity)
+        self.phone.upload_requested.connect(lambda _upload: self.island.open_tab(FILES_TAB))
+        self.phone.received.connect(lambda upload: self.notify(
+            "Saved from your phone", f"{upload.saved.name} is in Downloads\\Wisp"))
         # Esc anywhere collapses the expanded island (the key still reaches the app in front).
         self.island.machine.subscribe(
             lambda p: setattr(self.hotkeys.hook, "watch_escape", p.mode == "expanded"))
@@ -244,8 +265,8 @@ class WispApp(QObject):
     # ----- tools -----------------------------------------------------------------------------
     def _register_tools(self) -> None:
         for module in (core_tools, apps_tools, windows_tools, web_tools, screen_tools, ui_tools,
-                       files_tools, todo_tools, calendar_tools, memory_tools, system_tools,
-                       terminal_tools, raw_input_tools):
+                       files_tools, share_tools, todo_tools, calendar_tools, memory_tools,
+                       system_tools, terminal_tools, raw_input_tools):
             self.registry.register_all(module.tools())
         self.registry.register_all(schedule_tools.tools(self.registry))
 
@@ -367,8 +388,33 @@ class WispApp(QObject):
             else:
                 self.console.open()
 
+    def _update_phone_activity(self) -> None:
+        """While the phone link runs, the island shows it with the time left (and stays up)."""
+        running = self.phone.running
+        self.island.machine.set_sharing("Phone link" if running else None,
+                                        self.phone.ends_at if running else None)
+
+    def _open_files_tab(self) -> bool:
+        """Show the Files & Share tab; False when the island is switched off."""
+        if not self.island.enabled:
+            return False
+        self.island.open_tab(FILES_TAB)
+        return True
+
+    def _share_files(self, paths) -> None:
+        """The Windows share sheet for ``paths``, attached to the island's window (D-051)."""
+        from wisp.winapi.share import ShareSheet
+
+        if self._share_sheet is None:
+            self._share_sheet = ShareSheet(int(self.island.winId()))
+        title = paths[0].name if len(paths) == 1 else f"{len(paths)} files"
+        self._share_sheet.share(list(paths), title)
+
     def quit(self) -> None:
         log.info("Wisp quitting")
+        self.phone.stop()
+        if self._share_sheet is not None:
+            self._share_sheet.close()
         self.services.scheduler.shutdown()
         self.clipboard_monitor.close()
         self.media.stop()
@@ -476,6 +522,8 @@ class WispApp(QObject):
                               settings.general.island_hide_after_s,
                               settings.general.island_keep_for_music)
         self.island.set_enabled(settings.general.show_island)
+        if not settings.general.show_island:
+            self.phone.stop()  # its QR code and indicator live in the island
         self.island.panel.sync_toggles(settings.audio.mic_muted, settings.audio.always_listening)
         self.confirm_card.apply_palette(palette.surface, palette.border)
         self.island_bubble.apply_palette(palette.surface, palette.border)

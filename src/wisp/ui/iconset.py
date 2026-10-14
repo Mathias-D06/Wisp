@@ -33,7 +33,9 @@ ICONS = {
     "chevron-down": "chevron-down", "chevron-up": "chevron-up", "close": "x",
     "send": "send-horizontal", "retry": "refresh-cw", "folder": "folder-open",
     "listen": "ear", "today": "list-checks", "controls": "sliders-horizontal",
-    "speaking": "audio-lines", "copy": "copy",
+    "speaking": "audio-lines", "copy": "copy", "phone": "smartphone", "share": "share-2",
+    "file": "file", "rename": "pencil", "move": "folder-input", "download": "download",
+    "upload": "upload", "open": "external-link",
 }
 
 

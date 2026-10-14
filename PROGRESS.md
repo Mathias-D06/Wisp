@@ -415,6 +415,18 @@ acceptance step needs real hardware/API key and is listed in `MANUAL_TESTS.md` (
   request parameters, connect/disconnect/reconnect/create), `test_calendar_ui.py` (9: tools and confirm text,
   tab states, month, click → browser, Accounts page, wallpaper tool/picker, app tabs), `test_settings.py`;
   self-check `google_calendar`; `docs/island/calendar_tab.gif` (made-up data); D-050; a real account: MT-82…MT-89
+- [~] P4.4 Files & Share tab (replaces Apps) — `files/{finder,shelf,actions,names,resolve}.py`,
+  `phone/{network,server,service,qr}.py`, `winapi/{share,winrt_abi}.py`, `ui/island/files_tab.py`, island drops,
+  `tools/builtin/share.py`. Search via the Windows Search index (ADO) with fuzzy ranking and a folder-walk
+  fallback; shelf in SQLite with thumbnails, drag in/out; Recent and Downloads; quick actions (Recycle Bin only,
+  confirmed); share sheet via IDataTransferManagerInterop (ctypes, metadata-checked slots, probe opened it); phone
+  link: Private network only, 256-bit token, first device owns it, 10 minutes, ask-then-send with Accept on the PC,
+  size limit (Settings → Safety), sanitised names in Downloads\Wisp, banner, island "Phone link" activity, never
+  logged — `test_files.py` (32: names, shelf persistence, actions incl. Recycle-Bin-only, SQL escaping, fuzzy
+  ranking, fallback, Downloads, "this"), `test_phone.py` (19: network rule, token, device, approval flow,
+  timeout/size/short uploads, downloads, auto-stop, no token in logs, service, QR), `test_files_ui.py` (11: tab,
+  drop on the island, activity, tools, WinRT IIDs, Python COM objects, StorageFile); self-check `files_share`;
+  `docs/island/files_and_share.gif` (made-up files); D-051; real phone, share targets, firewall: MT-90…MT-97
 
 ### Testing, packaging, definition of done
 - [x] T.1 Unit tests: dispatcher, safety tiers, scheduler parsing + persistence, memory, clipboard store,
@@ -492,3 +504,7 @@ acceptance step needs real hardware/API key and is listed in `MANUAL_TESTS.md` (
   painted the palette's grey (transparent like the rest), event creation allowed calendars shared with write
   access that `calendar.events.owned` can't reach (owned only), incremental syncs left out `showDeleted`
   (same parameters now). GIF recordings use one palette across frames (small colours kept).
+- 2026-10-14: Part 4.4 Files & Share. This PC's network is Public, so the phone link refuses here (as required);
+  the server was tested on 127.0.0.1 and with a real phone it is MT-94…MT-96. The share sheet opened from a probe.
+  Found while testing: refused uploads were answered before the body was read (browsers report a dropped
+  connection), so uploads now ask first and send after Accept; "&" in the tab name showed as a mnemonic.

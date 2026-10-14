@@ -921,3 +921,142 @@ Decisions:
 * **Packaging.** google-api-python-client's discovery cache holds 605 documents (112 MB). Wisp
   builds the client with `static_discovery=True`, which reads only `calendar.v3.json`, so the
   spec keeps just that one. The self-check builds the client offline from it.
+
+## D-051 Files & Share in the island (brief of 2026-10-13, part 4)
+* **Files & Share replaces the Apps tab.** One search box finds apps (the app index, as before;
+  apps can still be pinned from the right-click menu) and files. Voice "open X" is unchanged
+  (the apps tools). Under the search box: the shelf, then Recent and Downloads.
+* **File search: the Windows Search index first.** Microsoft documents several ways to query
+  the index: Windows Search SQL through its OLE DB provider (directly or through ADO),
+  ISearchQueryHelper (which turns Advanced Query Syntax into that SQL), and the search-ms
+  protocol (which opens File Explorer, so it can't fill a list in the island).
+  * Wisp sends Windows Search SQL through ADO (pywin32, already a dependency), with the
+    documented connection string `Provider=Search.CollatorDSO;Extended
+    Properties='Application=Windows';`.
+  * `SELECT TOP 200 System.ItemPathDisplay, System.DateModified FROM SystemIndex WHERE
+    SCOPE='file:<the user's profile>' AND System.FileName LIKE '%word%' …`, newest first.
+    Quotes in what the person typed are doubled, and `%`, `_` and `[` are put in brackets so
+    they match literally (both rules from the Windows Search SQL reference).
+  * Results are ranked with rapidfuzz (WRatio on the name, plus a little for recent files), so
+    word order and small typos are forgiven. When the exact query finds few files, a looser one
+    (the first three letters of each word) feeds the same ranking. Two letters at least,
+    180 ms after the last key.
+  * On this PC a query answers in tens of milliseconds, where walking the folders takes
+    seconds. If the index can't be queried (the Windows Search service is off), Wisp walks
+    the main folders as the `search_files` tool always did, and says so.
+* **The shelf.**
+  * Files or folders dropped anywhere on the island (compact or open) are parked: the island
+    opens on Files & Share as soon as a drag with files enters it, and counts as hovered for
+    the drag, so it can't slide away mid-drag.
+  * The shelf keeps references, not copies, in SQLite (newest first, at most 50), so it
+    survives restarts. Items that were moved or deleted elsewhere show as missing. Renaming or
+    moving from Wisp keeps them on the shelf.
+  * Dragging out of the shelf or the lists carries file URLs, which Qt turns into CF_HDROP,
+    so Explorer, mail and chat apps take them as files.
+  * Thumbnails come from IShellItemImageFactory::GetImage without SIIGBF_ICONONLY, which
+    returns the thumbnail and falls back to the icon. This runs on worker threads, as the docs
+    require.
+* **Recent and Downloads.** Recent is the Recent Items folder (as the `find_recent_files`
+  tool). Downloads is FOLDERID_Downloads (SHGetKnownFolderPath, so a moved Downloads folder is
+  found), newest first, without unfinished downloads (.crdownload, .part …) or desktop.ini.
+* **Quick actions** (right-click): open, show in Explorer, copy (files on the clipboard as
+  CF_HDROP), copy path, rename, move to…, share, send to phone, add to or remove from the
+  shelf, and move to the Recycle Bin.
+  * The Recycle Bin is the only delete. It asks first, uses SHFileOperation with FOF_ALLOWUNDO
+    as the existing delete tool does, and refuses Windows and program folders and the
+    personal top-level folders.
+  * Rename and move never overwrite; they say what's in the way. Windows' naming rules are
+    checked before renaming.
+* **The Windows share sheet: IDataTransferManagerInterop.** A desktop app gets the
+  DataTransferManager for its window with `GetForWindow`, fills the DataPackage in the
+  DataRequested event, and opens the sheet with `ShowShareUIForWindow`. Nearby Sharing appears
+  there when it's on in Windows.
+  * PyWinRT doesn't project that interop interface, and its objects can't be built from a raw
+    pointer (`_from` only casts between projected objects). So `wisp/winapi/winrt_abi.py`
+    makes the calls itself with ctypes: HSTRINGs, RoGetActivationFactory, calls through vtable
+    slots, polling IAsyncInfo for StorageFile.GetFileFromPathAsync, and small COM objects
+    written in Python (the TypedEventHandler delegate, IIterable/IIterator<IStorageItem>).
+    Exceptions in them return E_FAIL instead of a silent success.
+  * Vtable slots and interface GUIDs were read from Windows' own metadata
+    (C:\Windows\System32\WinMetadata, what the SDK headers are generated from) with
+    `spikes/winmd_dump.py`. IIDs of generic instances use the WinRT type system's documented
+    algorithm (a version 5 UUID of the type signature). It reproduces the published
+    IIterable<String> IID, and the real IAsyncOperation<StorageFile> accepts the computed
+    IID.
+  * `spikes/share_probe.py --show` on this PC: the sheet opened for a real window and the
+    DataRequested handler filled the package (S_OK).
+  * The sheet is attached to the island's window and runs on the UI thread. The package is the
+    file(s), read-only, titled with the file name.
+* **Phone link: a short-lived web page on the home network, opened with a QR code.** Every rule
+  from the brief, and where it is enforced:
+  * *Private networks only.* The Network List Manager gives each connection's adapter,
+    whether it is connected, and its network's category (Public 0, Private 1, Domain 2).
+    WinRT `NetworkInformation.GetHostNames` gives each local IP with its adapter ID.
+    The server binds to the IPv4 address (a private range, not loopback) of a connected
+    adapter on a **Private** network, never 0.0.0.0, on a random free port.
+    On a Public network it refuses and says how to make a home network Private. It isn't used
+    on work (domain) networks either. This PC's own network is Public, so the link refuses
+    here, as it should; the tests use 127.0.0.1.
+  * *A long random one-time token.* `secrets.token_urlsafe(32)` (256 bits, the amount the
+    Python docs call sufficient) starts every URL, compared with `hmac.compare_digest`.
+    Anything else gets a bare 404. A new token per start, dead when the link stops.
+    The first device to use it owns the link; another address gets 403.
+  * *Stops after 10 minutes or when closed:* a timer, the Stop button, the
+    `stop_phone_link` tool, quitting Wisp, or switching the island off.
+  * *Every upload needs a click on the PC.*
+    * The phone first asks with the name and size (`POST ask`). Accept/Decline appear in the
+      tab, which opens by itself. No answer in 2 minutes counts as no.
+    * Only then may the file be sent (`PUT upload/<id>`): once, from the same device, with
+      exactly the size asked for, within a minute.
+    * The body is never read before Accept. Three questions may wait at a time.
+  * *Size limit setting:* Settings → Safety → Phone link (default 2048 MB, 1–20480). It is
+    checked on the phone, at the ask, and against the upload's length.
+  * *Safe names:* only the last component of the name is kept. Reserved and control
+    characters are removed, device names (CON, NUL.txt, COM¹ …) get an underscore, and the
+    name can't end in a space or period. Existing files are never overwritten
+    ("name (2).ext"). Data goes to a hidden `.part` file, renamed only when complete; a short
+    upload leaves nothing.
+  * *Received files* go to Downloads\Wisp, followed by a banner.
+  * *A clear indicator:* while the link runs, the island shows "Phone link" with the time
+    left, and it can't auto-hide. The tab shows the QR code, the address, the countdown and
+    Stop. Without the island (switched off) the link won't start.
+  * *Nothing logged with the token:* request lines are never logged. The page sends
+    `Referrer-Policy: no-referrer`, `Cache-Control: no-store`, `X-Content-Type-Options:
+    nosniff` and a Content-Security-Policy with a per-link script nonce. File names on the
+    page are HTML-escaped. The download header's name is percent-encoded, so no CR/LF can
+    reach a header.
+  * *Python's http.server* is "not recommended for production" and "only implements basic
+    security checks". Wisp uses BaseHTTPRequestHandler only, for three routes behind the
+    token. It never uses SimpleHTTPRequestHandler (no directory listing or file paths from the
+    phone), and serves only files the person offered, by number.
+* **Windows Firewall prompt.**
+  * The first time Wisp listens on the network, Windows Defender Firewall asks whether to allow
+    it (Microsoft: a dialog "the first time the app … tries to communicate in the network"). Tick
+    **Private networks** and allow.
+  * If someone answers No, cancels, or isn't an administrator, Windows creates block rules and
+    the phone can't connect. Allowing Wisp in Windows Security → Firewall & network protection →
+    Allow an app through firewall fixes it.
+  * Wisp never changes firewall rules itself: it installs per user, without administrator
+    rights.
+  * When run from source the prompt names python.exe.
+* **Plain HTTP, and why.** A phone can't trust a certificate for an address on a home network:
+  no public certificate authority issues one, and a self-signed one shows a full-page warning
+  that teaches people to click through. So the link is plain HTTP, made safe enough for a few
+  minutes on a home network by the rules above.
+  * The trade-off: someone who can watch traffic on that Wi-Fi could see the files in
+    transit and the address.
+  * For anything sensitive, use the share sheet (Nearby Sharing), a cable, or a cloud drive.
+    The README says so.
+* **Voice.**
+  * `share_file` opens the share sheet. It's safe tier: the person picks the destination.
+  * `send_to_phone` is confirm-tier: the card says what the phone will be able to download.
+    It can't be scheduled.
+  * `stop_phone_link`.
+  * "This" is the selection in the File Explorer window in front (Shell.Application.Windows(),
+    the window's HWND, Document.SelectedItems(), FolderItem.Path), else the newest file on the
+    shelf. "The file I just downloaded" is the newest finished file in Downloads. A name has
+    to be a clear search match, otherwise Wisp asks which.
+* **Packaging.** New dependencies: segno 1.6.6 (QR codes, BSD) and winrt-Windows.Networking
+  and winrt-Windows.Networking.Connectivity 3.2.1. The Network List type library's comtypes
+  wrapper is generated at build time, like UI Automation's. Self-check `files_share` covers
+  a QR code, the network list (counts only), a StorageFile and the interop factory.

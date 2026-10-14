@@ -61,9 +61,11 @@ def main() -> None:
     run([python, str(PACKAGING / "make_icon.py")])
     run([python, str(PACKAGING / "notices.py")])
 
-    step("Generate the UI Automation wrapper (comtypes)")
+    step("Generate the UI Automation and Network List wrappers (comtypes)")
     run([python, "-c", "import comtypes.client; comtypes.client.GetModule('UIAutomationCore.dll');"
          " from comtypes.gen import UIAutomationClient; print(UIAutomationClient.__file__)"])
+    run([python, "-c", "import comtypes.client; from wisp.phone.network import "
+         "NETWORK_LIST_LIBRARY as lib; print(comtypes.client.GetModule(lib).__file__)"])
 
     step(f"PyInstaller (Wisp {__version__})")
     run([python, "-m", "PyInstaller", "--noconfirm", "--clean",

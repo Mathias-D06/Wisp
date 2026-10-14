@@ -21,6 +21,7 @@ from __future__ import annotations
 import logging
 import time
 from dataclasses import dataclass, field
+from pathlib import Path
 
 from PySide6.QtCore import QEvent, QPointF, QRect, QRectF, Qt, QTimer, Signal
 from PySide6.QtGui import (
@@ -174,6 +175,8 @@ class Island(QWidget):
     settings_requested = Signal(str)
     console_requested = Signal()
     quit_requested = Signal()
+    files_dropped = Signal(list)  # paths dropped on the island: they go on the shelf (D-051)
+    drop_tab = "Files & Share"
 
     def __init__(self, voice, accent: str, has_key, media_command, tabs: list,
                  machine: IslandStateMachine | None = None, meter=None):
@@ -183,6 +186,7 @@ class Island(QWidget):
         self.setProperty(theme.DARK_SURFACE_PROPERTY, True)
         self.setWindowTitle("Wisp Island")
         self.setFocusPolicy(Qt.FocusPolicy.ClickFocus)
+        self.setAcceptDrops(True)
         self.voice = voice
         self.has_key = has_key
         self.media_command = media_command
@@ -573,6 +577,47 @@ class Island(QWidget):
             self._leave.start()
             self._outside.start()
         super().leaveEvent(event)
+
+    # ----- files dropped on the island go on the shelf (D-051) ---------------------------------
+    @staticmethod
+    def _local_files(event) -> list[Path]:
+        mime = event.mimeData()
+        if not mime.hasUrls():
+            return []
+        return [Path(url.toLocalFile()) for url in mime.urls() if url.isLocalFile()]
+
+    def dragEnterEvent(self, event) -> None:
+        if not self._local_files(event):
+            event.ignore()
+            return
+        event.setDropAction(Qt.DropAction.CopyAction)
+        event.accept()
+        self._leave.stop()
+        self._set_hover(True)  # no enter/leave events during a drag: hold it open ourselves
+        if not self.machine.expanded:
+            self.open_tab(self.drop_tab)
+
+    def dragMoveEvent(self, event) -> None:
+        if self._local_files(event):
+            event.setDropAction(Qt.DropAction.CopyAction)
+            event.accept()
+        else:
+            event.ignore()
+
+    def dragLeaveEvent(self, event) -> None:
+        self._set_hover(False)
+        if self.machine.expanded:
+            self._leave.start()
+        super().dragLeaveEvent(event)
+
+    def dropEvent(self, event) -> None:
+        paths = self._local_files(event)
+        if not paths:
+            event.ignore()
+            return
+        event.setDropAction(Qt.DropAction.CopyAction)
+        event.accept()
+        self.files_dropped.emit(paths)
 
     def mousePressEvent(self, event) -> None:
         if event.button() == Qt.MouseButton.LeftButton:

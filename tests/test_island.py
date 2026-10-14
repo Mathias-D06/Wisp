@@ -1,4 +1,4 @@
-"""Island tabs: music strip (F7.9), Today (F5.2/F5.4/F7.3), Power (F7.8), Apps, wallpaper helpers,
+"""Island tabs: music strip (F7.9), Today (F5.2/F5.4/F7.3), Power (F7.8), wallpaper helpers,
 Stats. The island window itself: tests/test_island_window.py (D-045)."""
 
 from __future__ import annotations
@@ -131,7 +131,7 @@ def test_power_tab_lock_needs_no_question(qtbot, palette):
     assert bg.calls == [power.lock]
 
 
-# ----- Apps tab and the wallpaper helpers --------------------------------------------------------
+# ----- fakes shared with test_files_ui.py, and the wallpaper helpers ----------------------------
 class FakeIndex:
     def __init__(self):
         from wisp.system.app_index import AppEntry
@@ -161,24 +161,6 @@ class RunningBackground:
             return
         if on_done:
             on_done(result)
-
-
-def test_apps_tab_search_and_launch(qtbot, palette, monkeypatch):
-    from wisp.ui.island import apps_tab
-    from wisp.ui.island.apps_tab import AppsTab
-
-    monkeypatch.setattr(apps_tab, "icon_png", lambda name, size: None)  # fallback glyph
-    index = FakeIndex()
-    tab = AppsTab(index, RunningBackground(), palette)
-    qtbot.addWidget(tab)
-    tab.refresh()
-    assert tab.grid.count() == 3
-    tab.search.setText("calc")
-    assert [tab.grid.item(i).text() for i in range(tab.grid.count())] == ["Calculator"]
-    tab.search.returnPressed.emit()
-    assert index.launched == ["Calculator"]
-    tab.search.setText("zzzqqq")
-    assert tab.grid.count() == 0 and "No apps found" in tab.status.text()
 
 
 def test_wallpaper_rejects_non_images(tmp_path):

@@ -1,8 +1,9 @@
 """``Wisp.exe --self-check [report.json]``: prove that a build (source or PyInstaller bundle) has
 everything it needs — every module imports, Qt plugins, SQLite FTS5, DPAPI, PortAudio, WinRT,
 UI Automation (comtypes code generation), APScheduler's SQLite job store, Pillow/mss, the Google
-Calendar client, the Gemini SDK types and the tool declarations. Nothing touches the network, the
-user's data folder, audio output, settings or the clipboard; data goes to a temporary folder.
+Calendar client, the phone link and share sheet pieces, the Gemini SDK types and the tool
+declarations. Nothing touches the network, the user's data folder, audio output, settings or the
+clipboard; data goes to a temporary folder.
 
 Exit code 0 when every required check passes. Optional checks (audio devices, media session)
 may fail on machines without that hardware and are reported only.
@@ -224,6 +225,29 @@ def _google_calendar() -> str:
     return f"Calendar v3 client ok; {documents} discovery document(s) bundled"
 
 
+@check("files_share")
+def _files_share() -> str:
+    """D-051 pieces, offline and without opening anything: a QR code, the network list (counts
+    only: no names or addresses in the report), a WinRT StorageFile for a temporary file, and
+    the share sheet's interop factory."""
+    from wisp.phone import network, qr
+    from wisp.winapi import share
+    from wisp.winapi import winrt_abi as abi
+
+    if len(qr.modules("http://192.168.1.2:50000/" + "t" * 43 + "/")) < 29:
+        raise RuntimeError("QR code too small")
+    connections = network.system_connections()
+    hosts = network.system_hosts()
+    sample = Path(tempfile.mkdtemp(prefix="wisp-check-")) / "share.txt"
+    sample.write_text("Wisp self-check", encoding="utf-8")
+    items = share.storage_items([sample])
+    for item in items:
+        abi.release(item)
+    abi.release(abi.activation_factory(share.MANAGER_CLASS, share.IID_INTEROP))
+    return (f"QR ok; {len(connections)} network connection(s), {len(hosts)} IPv4 address(es); "
+            "StorageFile and share sheet interop ok")
+
+
 @check("gemini_config")
 def _gemini() -> str:
     import ssl
@@ -245,6 +269,7 @@ def _gemini() -> str:
         raw_input,
         schedule,
         screen,
+        share,
         system,
         terminal,
         todos,
@@ -253,8 +278,8 @@ def _gemini() -> str:
         windows,
     )
 
-    for module in (core, apps, windows, web, screen, ui, files, todos, calendar, memory, system,
-                   terminal, raw_input):
+    for module in (core, apps, windows, web, screen, ui, files, share, todos, calendar, memory,
+                   system, terminal, raw_input):
         registry.register_all(module.tools())
     registry.register_all(schedule.tools(registry))
     settings = Settings()

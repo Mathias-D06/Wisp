@@ -36,7 +36,8 @@ def test_accent_buttons_are_readable_for_any_accent(qapp):
 
 
 def test_no_hard_coded_colours_outside_the_theme():
-    allowed = {"ui/theme.py", "settings.py", "selfcheck.py"}  # tokens; data defaults
+    # tokens; data defaults; the phone link's web page (HTML for the phone, not a Qt surface)
+    allowed = {"ui/theme.py", "settings.py", "selfcheck.py", "phone/server.py"}
     offenders = []
     for path in SRC.rglob("*.py"):
         rel = path.relative_to(SRC).as_posix()

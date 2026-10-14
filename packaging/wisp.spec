@@ -45,8 +45,9 @@ hiddenimports = (
     + collect_submodules("comtypes.gen")
     + ["sqlalchemy.dialects.sqlite"]
 )
-if "comtypes.gen.UIAutomationClient" not in hiddenimports:
-    raise SystemExit("comtypes.gen.UIAutomationClient missing: run packaging/build.py")
+for wrapper in ("comtypes.gen.UIAutomationClient", "comtypes.gen.NETWORKLIST"):
+    if wrapper not in hiddenimports:
+        raise SystemExit(f"{wrapper} missing: run packaging/build.py")
 datas = (
     copy_metadata("APScheduler")  # trigger/executor aliases are entry points
     + copy_metadata("google-genai")

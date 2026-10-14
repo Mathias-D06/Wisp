@@ -2,8 +2,8 @@
 
 Run: .venv\\Scripts\\python spikes\\render_ui.py [--out DIR] [--docs] [name ...]
 Images go to spikes/out/ (or DIR). Uses a temporary data folder so real settings are untouched.
-``--docs`` skips the Island's Apps tab, which shows the PC's own apps. The Calendar tab shows a
-made-up calendar (spikes/sample_calendar.py).
+The Calendar and Files & Share tabs show made-up data (spikes/sample_calendar.py,
+spikes/sample_files.py), never this PC's own calendar, files or apps.
 ``--dpr 1.25`` renders at exactly 125 % display scaling (relative to this PC's own).
 """
 
@@ -32,7 +32,7 @@ from PySide6.QtWidgets import QApplication
 
 OUT = Path(__file__).parent / "out"
 DOCS = False
-PERSONAL_TABS = ("Apps",)
+PERSONAL_TABS: tuple[str, ...] = ()  # every tab shows made-up data
 
 
 def _sample_data(wisp_app) -> None:
@@ -161,10 +161,11 @@ def render_island(app: QApplication) -> None:
     services.stats.record("dictation", words=180, seconds=60)
     services.stats.record("command")
     services.stats.record("routine")
-    services.app_index.refresh()
     import sample_calendar
+    import sample_files
 
     sample_calendar.fill(wisp_app.calendar)
+    sample_files.install(wisp_app)
     island = wisp_app.island
     island._poll.stop()  # no full-screen checks against the real desktop
     for widget in (island, island.shadow):  # never on screen: no pointer can hover it
@@ -179,7 +180,7 @@ def render_island(app: QApplication) -> None:
         if DOCS and name in PERSONAL_TABS:
             continue
         island.panel.show_tab(index)
-        _pump(app, 2.0 if name in ("Controls", "Apps") else 0.4)
+        _pump(app, 2.0 if name in ("Controls", "Files & Share") else 0.4)
         island.grab().save(str(OUT / f"island_{name.lower()}.png"))
     wisp_app.quit()
 

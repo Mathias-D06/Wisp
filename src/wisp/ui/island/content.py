@@ -192,12 +192,13 @@ def paint_activity(painter: QPainter, rect: QRectF, activity: Activity, look: Lo
         else:
             _bars(painter, right, look.media.values, QColor(p.accent), look.moving)
         return
-    if kind == "countdown":
-        _icon(painter, left, "calendar", QColor(p.warning))
+    if kind in ("countdown", "sharing"):
+        color = p.warning if kind == "countdown" else tone_color(activity.tone, p).name()
+        _icon(painter, left, "calendar" if kind == "countdown" else "phone", QColor(color))
         due = activity.data if isinstance(activity.data, (int, float)) else look.wall
         clock = countdown_text(due, look.wall)
         clock_rect = QRectF(rect.right() - pad - h * 1.9, rect.top(), h * 1.9, h)
-        _text(painter, clock_rect, clock, p.warning, theme.BODY, Qt.AlignmentFlag.AlignRight)
+        _text(painter, clock_rect, clock, color, theme.BODY, Qt.AlignmentFlag.AlignRight)
         _text(painter, QRectF(text_rect.left(), rect.top(), clock_rect.left() - text_rect.left()
                               - pad * 0.5, h), activity.text, p.text, theme.BODY)
         return
@@ -223,6 +224,8 @@ def paint_secondary(painter: QPainter, circle: QRectF, activity: Activity, look:
         minutes = max(0, int((due - look.wall + 59) // 60))
         _text(painter, circle, f"{minutes}m", p.warning, theme.CAPTION,
               Qt.AlignmentFlag.AlignHCenter)
+    elif activity.kind == "sharing":
+        _icon(painter, inner, "phone", tone_color(activity.tone, p))
     else:
         _icon(painter, inner, "mic", tone_color(activity.tone, p))
 
