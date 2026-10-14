@@ -103,3 +103,52 @@ class KeyStore:
             # Happens if the file was copied from another user/PC; the user must re-enter it.
             log.error("Stored API key could not be decrypted: %s", type(exc).__name__)
             return None
+
+
+class SecretJson:
+    """A small JSON document (the Google OAuth client and tokens) encrypted with DPAPI, like the
+    API key: only this Windows user on this PC can read it. Never logged."""
+
+    def __init__(self, path: Path, entropy: bytes, description: str):
+        self._path = path
+        self._entropy = entropy
+        self._description = description
+        self._lock = threading.Lock()
+
+    def load(self) -> dict | None:
+        import json
+
+        with self._lock:
+            if not self._path.exists():
+                return None
+            try:
+                import win32crypt
+
+                _description, data = win32crypt.CryptUnprotectData(
+                    self._path.read_bytes(), self._entropy, None, None,
+                    CRYPTPROTECT_UI_FORBIDDEN)
+                value = json.loads(data.decode("utf-8"))
+                return value if isinstance(value, dict) else None
+            except Exception as exc:
+                log.error("%s could not be read: %s", self._description, type(exc).__name__)
+                return None
+
+    def save(self, value: dict) -> None:
+        import json
+
+        import win32crypt
+
+        blob = win32crypt.CryptProtectData(json.dumps(value).encode("utf-8"), self._description,
+                                           self._entropy, None, None, CRYPTPROTECT_UI_FORBIDDEN)
+        with self._lock:
+            tmp = self._path.with_suffix(".tmp")
+            tmp.write_bytes(blob)
+            tmp.replace(self._path)
+
+    def clear(self) -> None:
+        with self._lock:
+            if self._path.exists():
+                self._path.unlink()
+
+    def exists(self) -> bool:
+        return self._path.exists()

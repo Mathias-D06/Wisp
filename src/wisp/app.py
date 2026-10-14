@@ -17,8 +17,10 @@ from wisp.audio.playback import Player
 from wisp.circle import CircleController
 from wisp.db import Database
 from wisp.dictation import DictationController, DictationDeps
+from wisp.gcal.service import CalendarService
+from wisp.gcal.store import CalendarStore
 from wisp.hotkeys.manager import HotkeyManager
-from wisp.keystore import KeyStore
+from wisp.keystore import KeyStore, SecretJson
 from wisp.live.config import build_live_config, is_extended_thinking, system_instruction
 from wisp.live.connector import GenaiConnector
 from wisp.live.session import LiveSessionManager
@@ -41,6 +43,7 @@ from wisp.system.clipboard_monitor import ClipboardMonitor
 from wisp.system.media import MediaWatcher
 from wisp.tools.base import Origin
 from wisp.tools.builtin import apps as apps_tools
+from wisp.tools.builtin import calendar as calendar_tools
 from wisp.tools.builtin import core as core_tools
 from wisp.tools.builtin import files as files_tools
 from wisp.tools.builtin import memory as memory_tools
@@ -65,6 +68,7 @@ from wisp.ui.console import ConsoleWindow
 from wisp.ui.hud import Hud
 from wisp.ui.icons import orb_icon
 from wisp.ui.island.apps_tab import AppsTab
+from wisp.ui.island.calendar_tab import CalendarTab
 from wisp.ui.island.clipboard_tab import ClipboardTab
 from wisp.ui.island.common import Background
 from wisp.ui.island.controls_tab import ControlsTab
@@ -75,7 +79,7 @@ from wisp.ui.island.music import MediaSignals
 from wisp.ui.island.power_tab import PowerTab
 from wisp.ui.island.stats_tab import StatsTab
 from wisp.ui.island.today_tab import TodayTab
-from wisp.ui.island.wallpaper_tab import WallpaperTab
+from wisp.ui.settings.accounts_page import AccountsPage
 from wisp.ui.settings.action_log_page import ActionLogPage
 from wisp.ui.settings.dialog import SettingsDialog
 from wisp.ui.settings.general_page import GeneralPage
@@ -85,6 +89,7 @@ from wisp.ui.settings.memories_page import MemoriesPage
 from wisp.ui.settings.routines_page import RoutinesPage
 from wisp.ui.settings.safety_page import SafetyPage
 from wisp.ui.tray import Tray
+from wisp.ui.wallpaper_picker import WallpaperDialog
 from wisp.voice import VoiceController, VoiceSignals, make_callbacks
 from wisp.winapi import input as winput
 from wisp.winapi import windows as win
@@ -128,6 +133,11 @@ class WispApp(QObject):
             tasks=TaskStore(self.db),
             clipboard=ClipboardHistory(self.db, lambda: peek().general.clipboard_history_size),
         )
+        self.calendar = CalendarService(
+            CalendarStore(self.db),
+            SecretJson(paths.google_client_file(), b"Wisp/google-client/v1", "Google OAuth client"),
+            SecretJson(paths.google_token_file(), b"Wisp/google-token/v1", "Google sign-in"))
+        self.services.calendar = self.calendar
         self.services.scheduler = TaskScheduler(
             self.services.tasks, f"sqlite:///{paths.jobs_database_file()}", peek,
             self._execute_task, self.notify,
@@ -207,10 +217,10 @@ class WispApp(QObject):
         tabs = [
             ("Controls", ControlsTab(self.background, palette)),
             ("Today", TodayTab(services.todos, services.scheduler)),
+            ("Calendar", CalendarTab(self.calendar)),
             ("Stats", StatsTab(services.stats, self.settings_store, settings.loadout.accent)),
             ("Clipboard", ClipboardTab(services.clipboard, self.clipboard_monitor)),
             ("Apps", AppsTab(services.app_index, self.background, palette)),
-            ("Wallpaper", WallpaperTab(self.background)),
             ("Power", PowerTab(self.background, palette, services.action_log)),
         ]
         self.island = Island(self.voice, settings.loadout.accent, self.keystore.has_key,
@@ -224,6 +234,9 @@ class WispApp(QObject):
         self.island.console_requested.connect(self.console.open)
         self.island.quit_requested.connect(self.quit)
         self.media_signals.changed.connect(self.island.show_media)
+        calendar_tab = next(w for name, w in tabs if name == "Calendar")
+        calendar_tab.open_accounts.connect(lambda: self.open_settings("Accounts"))
+        self.calendar.changed.connect(self._update_countdown)
         # Esc anywhere collapses the expanded island (the key still reaches the app in front).
         self.island.machine.subscribe(
             lambda p: setattr(self.hotkeys.hook, "watch_escape", p.mode == "expanded"))
@@ -231,8 +244,8 @@ class WispApp(QObject):
     # ----- tools -----------------------------------------------------------------------------
     def _register_tools(self) -> None:
         for module in (core_tools, apps_tools, windows_tools, web_tools, screen_tools, ui_tools,
-                       files_tools, todo_tools, memory_tools, system_tools, terminal_tools,
-                       raw_input_tools):
+                       files_tools, todo_tools, calendar_tools, memory_tools, system_tools,
+                       terminal_tools, raw_input_tools):
             self.registry.register_all(module.tools())
         self.registry.register_all(schedule_tools.tools(self.registry))
 
@@ -272,14 +285,21 @@ class WispApp(QObject):
             self.notify("Reminder", f"{todo.text} (due {when})")
 
     def _update_countdown(self) -> None:
-        """The island's countdown: the next reminder or routine due within 10 minutes."""
+        """The island's countdown: the next reminder or routine due within 10 minutes, or the
+        next calendar event within the heads-up time (Settings → Accounts)."""
+        now = datetime.now().astimezone()
         items = [(todo.text, todo.due_at) for todo in self.services.todos.list()
                  if todo.remind and not todo.reminded and todo.due_at]
         try:
             items += [(task.title, when) for task, when in self.services.scheduler.upcoming(5)]
         except Exception as exc:
             log.info("No upcoming tasks for the countdown: %s", type(exc).__name__)
-        picked = pick_countdown(items, datetime.now().astimezone())
+        candidates = [pick_countdown(items, now)]
+        heads_up = self.settings_store.peek().calendar.heads_up_min
+        event = self.calendar.next_event(now, heads_up) if self.calendar.connected else None
+        if event is not None:
+            candidates.append((event.title, event.start.timestamp()))
+        picked = min((c for c in candidates if c), key=lambda c: c[1], default=None)
         self.island.machine.set_countdown(*(picked or (None, None)))
 
     def _dictation_deps(self) -> DictationDeps:
@@ -328,6 +348,7 @@ class WispApp(QObject):
         self._reminder_timer.start(20_000)
         QTimer.singleShot(3000, self._check_reminders)
         self.media.start()
+        self.calendar.start()
         self.island.update_key_prompt()
         self.island.set_enabled(self.settings_store.peek().general.show_island)
         error = self.hotkeys.start()
@@ -400,13 +421,17 @@ class WispApp(QObject):
     def settings_pages(self) -> list:
         return [
             GeneralPage(self.settings_store, self.keystore),
-            LoadoutPage(self.registry),
+            AccountsPage(self.calendar),
+            LoadoutPage(self.registry, open_wallpaper=self._open_wallpaper),
             HotkeysAudioPage(self.mic),
             SafetyPage(self.registry),  # after Loadout: it may tick the terminal/input skills
             MemoriesPage(self.services.memory),
             RoutinesPage(self.services.tasks, self.services.scheduler),
             ActionLogPage(self.services.action_log, str(paths.log_dir())),
         ]
+
+    def _open_wallpaper(self, parent) -> None:
+        WallpaperDialog(self.background, parent).exec()
 
     def open_settings(self, page: str | None = None) -> None:
         if self._settings_dialog is None:

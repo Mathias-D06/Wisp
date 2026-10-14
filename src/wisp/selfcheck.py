@@ -1,8 +1,8 @@
 """``Wisp.exe --self-check [report.json]``: prove that a build (source or PyInstaller bundle) has
 everything it needs — every module imports, Qt plugins, SQLite FTS5, DPAPI, PortAudio, WinRT,
-UI Automation (comtypes code generation), APScheduler's SQLite job store, Pillow/mss, the Gemini
-SDK types and the tool declarations. Nothing touches the network, the user's data folder, audio
-output, settings or the clipboard; data goes to a temporary folder.
+UI Automation (comtypes code generation), APScheduler's SQLite job store, Pillow/mss, the Google
+Calendar client, the Gemini SDK types and the tool declarations. Nothing touches the network, the
+user's data folder, audio output, settings or the clipboard; data goes to a temporary folder.
 
 Exit code 0 when every required check passes. Optional checks (audio devices, media session)
 may fail on machines without that hardware and are reported only.
@@ -204,6 +204,26 @@ def _scheduler() -> str:
     return "SQLAlchemy job store ok"
 
 
+@check("google_calendar")
+def _google_calendar() -> str:
+    """The Calendar client builds from the one bundled discovery document (D-050) and the
+    OAuth flow imports. Offline: a dummy token, and nothing is executed."""
+    import google_auth_oauthlib.flow  # noqa: F401
+    from googleapiclient import discovery_cache
+
+    from wisp.gcal.google import SCOPES_READ, GoogleCalendarApi
+
+    api = GoogleCalendarApi({"token": "self-check", "refresh_token": "self-check",
+                             "client_id": "self-check", "client_secret": "self-check",
+                             "token_uri": "https://oauth2.googleapis.com/token",
+                             "scopes": list(SCOPES_READ)})
+    request = api._service.events().list(calendarId="primary", syncToken="x")
+    if "calendar/v3/calendars/primary/events" not in request.uri:
+        raise RuntimeError(f"unexpected request URI {request.uri}")
+    documents = len(list(Path(discovery_cache.DISCOVERY_DOC_DIR).glob("*.json")))
+    return f"Calendar v3 client ok; {documents} discovery document(s) bundled"
+
+
 @check("gemini_config")
 def _gemini() -> str:
     import ssl
@@ -218,6 +238,7 @@ def _gemini() -> str:
     registry = ToolRegistry()
     from wisp.tools.builtin import (
         apps,
+        calendar,
         core,
         files,
         memory,
@@ -232,7 +253,7 @@ def _gemini() -> str:
         windows,
     )
 
-    for module in (core, apps, windows, web, screen, ui, files, todos, memory, system,
+    for module in (core, apps, windows, web, screen, ui, files, todos, calendar, memory, system,
                    terminal, raw_input):
         registry.register_all(module.tools())
     registry.register_all(schedule.tools(registry))

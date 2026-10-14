@@ -264,6 +264,7 @@ def stylesheet(p: Palette) -> str:
     QTabBar {{ background: transparent; qproperty-drawBase: 0; }}
     QScrollArea {{ background: transparent; border: none; }}
     QScrollArea > QWidget > QWidget#SettingsPage {{ background: transparent; }}
+    QScrollArea > QWidget > QWidget#ScrollList {{ background: transparent; }}
     QTabBar::tab {{ background: transparent; color: {p.secondary}; padding: 6px 12px;
         margin: 0 2px 6px 0; border: none; border-radius: {rc}px; }}
     QTabBar::tab:hover {{ color: {p.text}; background: {p.hover}; }}

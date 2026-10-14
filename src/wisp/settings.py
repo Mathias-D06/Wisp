@@ -29,6 +29,7 @@ TOOL_GROUPS = [
     "ui",
     "files",
     "todos",
+    "calendar",
     "schedule",
     "memory",
     "system",
@@ -39,6 +40,9 @@ TOOL_GROUPS = [
     "input",
 ]
 """Skill groups the user can switch on or off in the Loadout (terminal/input also need Safety)."""
+LEGACY_GROUPS = [g for g in TOOL_GROUPS if g != "calendar"]
+"""The groups that existed before ``known_skills`` was saved: any group not in a saved
+``known_skills`` is new, so it starts switched on (2026-10-13, part 4)."""
 
 VOICES = [
     "Zephyr", "Puck", "Charon", "Kore", "Fenrir", "Leda", "Orus", "Aoede", "Callirrhoe",
@@ -127,6 +131,13 @@ class LoadoutSettings:
     skills: list[str] = field(
         default_factory=lambda: [g for g in TOOL_GROUPS if g not in ("terminal", "input")]
     )
+    known_skills: list[str] = field(default_factory=lambda: list(TOOL_GROUPS))
+
+
+@dataclass
+class CalendarSettings:
+    heads_up_min: int = 10  # show the next event in the island this long before (0 = off)
+    allow_create: bool = False  # ask Google for calendar.events.owned when connecting (D-050)
 
 
 @dataclass
@@ -152,6 +163,7 @@ class Settings:
     loadout: LoadoutSettings = field(default_factory=LoadoutSettings)
     safety: SafetySettings = field(default_factory=SafetySettings)
     scheduler: SchedulerSettings = field(default_factory=SchedulerSettings)
+    calendar: CalendarSettings = field(default_factory=CalendarSettings)
 
     def to_dict(self) -> dict[str, Any]:
         return dataclasses.asdict(self)
@@ -159,10 +171,24 @@ class Settings:
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> Settings:
         settings = _from_dict(cls, data)
+        loadout_data = data.get("loadout") if isinstance(data, dict) else None
+        if not isinstance(loadout_data, dict) or "known_skills" not in loadout_data:
+            settings.loadout.known_skills = list(LEGACY_GROUPS)  # saved before it existed
+        _switch_on_new_skills(settings.loadout)
         if settings.ai.language == "English":
             # The only English option before D-040 (not a choice of variant): use the new default.
             settings.ai.language = "English (UK)"
         return settings
+
+
+def _switch_on_new_skills(loadout: LoadoutSettings) -> None:
+    """Skill groups added since the settings were saved start on (terminal and input never:
+    they also need a Safety switch)."""
+    for group in TOOL_GROUPS:
+        if (group not in loadout.known_skills and group not in ("terminal", "input")
+                and group not in loadout.skills):
+            loadout.skills.append(group)
+    loadout.known_skills = list(TOOL_GROUPS)
 
 
 def _coerce(default: Any, value: Any, path: str) -> Any:
@@ -211,6 +237,8 @@ def validate(settings: Settings) -> list[str]:
         problems.append("Typing speed must be between 10 and 200 words per minute.")
     if not 100 <= settings.hotkeys.hold_ms <= 2000:
         problems.append("Hotkey hold time must be between 100 and 2000 ms.")
+    if not 0 <= settings.calendar.heads_up_min <= 60:
+        problems.append("The calendar heads-up must be 0–60 minutes.")
     if not 3 <= settings.general.island_hide_after_s <= 15:
         problems.append("The island hides after 3–15 seconds.")
     if settings.general.island_monitor not in ISLAND_MONITORS:

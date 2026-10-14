@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from rapidfuzz import fuzz
 
-from wisp.system import controls, power, radios
+from wisp.system import controls, power, radios, wallpaper
 from wisp.tools.base import Risk, Tool, ToolContext, ToolError, boolean, integer, obj, string
 
 
@@ -134,6 +134,31 @@ def clipboard_history_tool(ctx: ToolContext, args: dict) -> dict:
     return {"items": [{"id": i.id, "kind": i.kind, "preview": i.preview} for i in items]}
 
 
+def wallpaper_tool(ctx: ToolContext, args: dict) -> dict:
+    """The desktop wallpaper. ``set`` only picks among the images Wisp lists (Pictures and
+    Windows' own wallpapers), matched by name."""
+    action = args.get("action", "current")
+    if action == "current":
+        from pathlib import Path
+
+        return {"current": Path(wallpaper.current()).name or "a solid colour"}
+    images = wallpaper.list_images()
+    if action == "list":
+        return {"images": [image.stem for image in images[:40]], "more": len(images) > 40}
+    wanted = (args.get("image") or "").strip().lower()
+    if not wanted:
+        raise ToolError("Say which image (call wallpaper with action=list to see them).")
+    scored = [(fuzz.WRatio(wanted, image.stem.lower()), image) for image in images]
+    score, best = max(scored, default=(0, None), key=lambda pair: pair[0])
+    if best is None or score < 70:
+        raise ToolError(f"No wallpaper image matches '{wanted}'.")
+    try:
+        wallpaper.set_wallpaper(str(best))
+    except (OSError, ValueError) as exc:
+        raise ToolError(str(exc)) from exc
+    return {"wallpaper": best.name}
+
+
 def tools() -> list[Tool]:
     amount = integer("Level 0-100 for set, or step for up/down (default 10)")
     return [
@@ -150,6 +175,12 @@ def tools() -> list[Tool]:
                   "on": boolean("true = on")}, ["setting", "on"]),
              toggle_tool, "system", runs_on="async", risk_fn=_toggle_risk,
              summary=_toggle_summary),
+        Tool("wallpaper", "The desktop wallpaper: what it is, which images there are "
+             "(Pictures and Windows wallpapers), or set one by name.",
+             obj({"action": string("What to do", ["current", "list", "set"]),
+                  "image": string("For set: the image's name")}, ["action"]),
+             wallpaper_tool, "system", summary=lambda a: f"set the wallpaper to "
+             f"'{a.get('image')}'" if a.get("action") == "set" else "check the wallpaper"),
         Tool("output_device", "List audio output devices, or switch the default to one by name.",
              obj({"name": string("Device to switch to; omit to list")}), output_device_tool,
              "system"),

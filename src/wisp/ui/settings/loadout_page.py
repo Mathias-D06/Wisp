@@ -42,6 +42,7 @@ SKILLS = {
     "ui": "Click and type in apps (UI Automation)",
     "files": "Open, find and delete files",
     "todos": "To-dos and reminders",
+    "calendar": "Google Calendar (what's on, add events)",
     "schedule": "Scheduled tasks and routines",
     "memory": "Remember things about you",
     "system": "Volume, brightness, Wi-Fi, Bluetooth, theme",
@@ -58,9 +59,10 @@ class LoadoutPage(SettingsPage):
     title = "Loadout"
     reload_after_apply = True  # Settings → Safety can tick the terminal/input skills
 
-    def __init__(self, registry=None):
+    def __init__(self, registry=None, open_wallpaper=None):
         super().__init__()
         self.registry = registry
+        self._open_wallpaper = open_wallpaper  # opens the wallpaper picker (or None)
         layout = QVBoxLayout(self)
         layout.addWidget(hint("Your loadout shapes how Wisp sounds, behaves and looks, and which "
                               "skills it may use. Voice, personality and skill changes start a "
@@ -119,6 +121,15 @@ class LoadoutPage(SettingsPage):
         look_form.addRow("Theme", self.theme)
         look_form.addRow("Accent colour", accents)
         look_form.addRow("", self.reduce_motion)
+        if open_wallpaper is not None:
+            wallpaper_row = QHBoxLayout()
+            self.wallpaper = QLabel()
+            self.wallpaper.setProperty("secondary", True)
+            change = QPushButton("Change…")
+            change.clicked.connect(self._change_wallpaper)
+            wallpaper_row.addWidget(self.wallpaper, 1)
+            wallpaper_row.addWidget(change)
+            look_form.addRow("Wallpaper", wallpaper_row)
         layout.addWidget(look_box)
 
         skills_box = QGroupBox("Skills")
@@ -186,6 +197,7 @@ class LoadoutPage(SettingsPage):
             box.setChecked(group in loadout.skills)
         self._sync_custom()
         self._custom_count()
+        self._show_wallpaper()
 
     def apply(self, settings: Settings) -> None:
         loadout = settings.loadout
@@ -196,3 +208,16 @@ class LoadoutPage(SettingsPage):
         loadout.accent = self.accent
         loadout.reduce_motion = self.reduce_motion.isChecked()
         loadout.skills = [g for g, box in self.skills.items() if box.isChecked()]
+
+    def _change_wallpaper(self) -> None:
+        self._open_wallpaper(self)
+        self._show_wallpaper()
+
+    def _show_wallpaper(self) -> None:
+        if self._open_wallpaper is None:
+            return
+        from pathlib import Path
+
+        from wisp.system import wallpaper
+
+        self.wallpaper.setText(Path(wallpaper.current()).name or "a solid colour")

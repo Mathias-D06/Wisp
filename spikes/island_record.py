@@ -68,6 +68,31 @@ def sample_art() -> bytes:
     return buffer.getvalue()
 
 
+def gif_palette(frames: list[Image.Image]) -> Image.Image:
+    """One palette for the whole recording. Median cut (Pillow's default) keeps gradients smooth
+    but merges small areas of colour, such as calendar dots, into their neighbours; fast octree
+    keeps those. So: 200 median-cut colours plus the octree colours furthest from all of them."""
+    picks = frames[:: max(1, len(frames) // 12)]
+    sheet = Image.new("RGB", (frames[0].width, frames[0].height * len(picks)))
+    for index, frame in enumerate(picks):
+        sheet.paste(frame, (0, frame.height * index))
+
+    def colours(image: Image.Image, count: int) -> list[tuple[int, ...]]:
+        flat = image.getpalette()[: count * 3]
+        return [tuple(flat[i:i + 3]) for i in range(0, len(flat), 3)]
+
+    base = colours(sheet.quantize(200, Image.Quantize.MEDIANCUT), 200)
+    octree = colours(sheet.quantize(255, Image.Quantize.FASTOCTREE), 255)
+
+    def gap(colour: tuple[int, ...]) -> int:
+        return min(sum((a - b) ** 2 for a, b in zip(colour, other, strict=True)) for other in base)
+
+    extra = sorted(octree, key=gap, reverse=True)[:55]
+    palette = Image.new("P", (1, 1))
+    palette.putpalette([value for colour in base + extra for value in colour])
+    return palette
+
+
 class Recorder:
     def __init__(self, out: Path) -> None:
         from wisp.app import WispApp
@@ -146,6 +171,8 @@ class Recorder:
             ratio = self.island.devicePixelRatioF()
             frames = [f.crop((0, 0, f.width, int(height * ratio))) for f in frames]
         path = self.out / f"{name}.gif"
+        palette = gif_palette(frames)
+        frames = [f.quantize(palette=palette, dither=Image.Dither.NONE) for f in frames]
         frames[0].save(path, save_all=True, append_images=frames[1:], duration=1000 // FPS,
                        loop=0, optimize=True, disposal=1)
         self.frames = []
@@ -277,6 +304,36 @@ class Recorder:
         self.save_gif("autohide_and_reveal", height=150)
         island.configure("primary", hide_when_idle=False)
 
+    def calendar_tab(self) -> None:
+        """The Calendar tab with a made-up calendar: agenda, month view, a day picked."""
+        from datetime import timedelta
+
+        import sample_calendar
+
+        from wisp.ui.island.calendar_tab import CalendarTab
+
+        sample_calendar.fill(self.wisp.calendar)
+        island = self.island
+        panel = island.panel
+        index = next(i for i, (name, _w) in enumerate(panel.tabs) if name == "Calendar")
+        tab = next(w for _name, w in panel.tabs if isinstance(w, CalendarTab))
+        self.settle()
+        island.expand()
+        self.advance(0.6)
+        panel.show_tab(index)
+        self.advance(2.0)
+        tab.views.button(1).click()
+        self.advance(1.6)
+        tab.grid.selected = tab.grid.today + timedelta(days=3)
+        tab.grid.update()
+        tab._fill_day()
+        self.advance(1.8)
+        tab.views.button(0).click()
+        self.advance(1.0)
+        self.save_gif("calendar_tab")
+        island.collapse()
+        self.settle()
+
     def stills(self) -> None:
         from wisp.system.media import MediaState
 
@@ -337,6 +394,7 @@ def main() -> None:
         recorder.expand_collapse()
         recorder.interrupt()
         recorder.autohide_reveal()
+        recorder.calendar_tab()
     recorder.wisp.quit()
 
 

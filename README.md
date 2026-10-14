@@ -94,14 +94,18 @@ Things to try:
 - "Every weekday at 9, open Outlook and Teams", "what routines do I have?"
 - "Remember that my sister's birthday is the 3rd of May", "forget my sister's birthday"
 - "Turn the volume down", "pause the music", "turn on Night Light", "lock the PC"
+- "What's on my calendar tomorrow?", "add lunch with Ana on Friday at 1 pm"
+- "Set my wallpaper to the mountain one"
 
 **Settings** (tray → Settings…):
 
 - **General:** API key, models, language, idle timeout, start with Windows, the Island (show
-  it, which display it sits on, and whether it shrinks to a thin line when idle), clipboard
-  history size, typing speed (used for Stats).
+  it, which display it sits on, whether it hides when nothing is happening and after how long,
+  and whether music keeps it visible), clipboard history size, typing speed (used for Stats).
+- **Accounts:** Google Calendar (see [Google Calendar](#google-calendar)).
 - **Loadout:** the voice (30 Gemini voices), personality (a preset or your own description),
-  theme and accent colour, **Reduce motion**, and which skills Wisp may use. Wisp also turns its
+  theme and accent colour, **Reduce motion**, the desktop wallpaper, and which skills Wisp may
+  use. Wisp also turns its
   animations off when Windows' Animation effects setting is off.
 - **Hotkeys and audio:** the four hold-to-use hotkeys (clashes are flagged as you type), hold
   time, microphone, speaker and always listening.
@@ -109,6 +113,41 @@ Things to try:
 - **Memories:** everything Wisp remembers. You can search, edit, pin and delete.
 - **Routines:** scheduled tasks. You can switch them on or off, edit, run now and delete.
 - **Action log:** every action Wisp took or refused.
+
+## Google Calendar
+
+The Island's Calendar tab shows today and the next 7 days (or a month), and you can ask Wisp
+what's on and have it add events. It uses your own Google Cloud project, so nothing goes through
+anyone else's servers:
+
+1. Open [console.cloud.google.com](https://console.cloud.google.com/) and create a project.
+2. APIs & Services → Library: enable the **Google Calendar API**.
+3. Google Auth platform → Branding: give the app a name and your email. Audience: **External**,
+   and add your own Google address under **Test users**.
+4. Clients → Create client → **Desktop app** → Download JSON.
+5. In Wisp: Settings → Accounts → **Import client JSON…**, then **Connect Google Calendar** and
+   sign in in your browser. Google warns that it hasn't verified the app: it's your own, so
+   continue.
+
+Wisp asks only to *see* your calendars and events. To let it add events, tick **Let Wisp add
+events** and connect again: Google then asks to let it create, change and delete events on
+calendars you own (Wisp only ever adds them, and only after you click Allow on its card).
+
+Wisp keeps a copy of the next six months so the tab works offline, and syncs every 5 minutes.
+**Disconnect** revokes Wisp's access at Google and deletes the copy and the sign-in.
+
+**Why it asks you to reconnect every week.** While your project's publishing status is
+**Testing**, Google ends the sign-in after 7 days. Wisp then shows Reconnect in the Calendar
+tab, and your events stay visible until you do. To avoid it:
+
+- keep Testing and reconnect weekly (a click and a sign-in); or
+- Google Auth platform → Audience → **Publish app** ("In production"). Sign-ins then don't
+  expire after 7 days. Until Google verifies the app you'll see an "unverified app" warning
+  when you sign in; see Google's help on publishing status and verification; or
+- with a Google Workspace account, choose the **Internal** audience, which has no 7-day limit.
+
+The heads-up in the Island (the next event's countdown, 10 minutes before by default) is set
+in Settings → Accounts.
 
 ## Scheduled tasks
 
@@ -176,11 +215,18 @@ These are sent to Google's Gemini API, and only while you use the matching featu
 
 The voice connection closes after 5 idle minutes.
 
+If you connect Google Calendar, Wisp talks to Google's Calendar API directly with your own
+project's sign-in. When you ask about your calendar, the events Wisp reads out also go to Gemini
+as the tool's result.
+
 Everything else stays in `%APPDATA%\Wisp`:
 
 - `settings.json` holds your settings;
 - `secrets.bin` holds the API key, encrypted;
-- `wisp.sqlite3` holds to-dos, memories, clipboard history, stats, the action log and routines;
+- `google_client.bin` and `google_token.bin` hold your Google OAuth client and sign-in,
+  encrypted, if you connect Google Calendar;
+- `wisp.sqlite3` holds to-dos, memories, clipboard history, stats, the action log, routines and
+  the copy of your calendar;
 - `jobs.sqlite3` holds the schedules;
 - `logs\` holds the logs, with API keys removed.
 
@@ -197,8 +243,11 @@ pastes are kept out of both Windows clipboard history and Wisp's.
   different chord in Settings → Hotkeys and audio.
 - **Nothing happens in an administrator window.** Windows doesn't let normal apps control
   elevated apps. Use the app directly.
-- **The Island disappeared.** It hides while a full-screen app, video or game is in front, and
-  comes back when you leave full screen. Check Settings → General → Show the Island.
+- **The Island disappeared.** When nothing is happening it slides up out of view: rest the
+  pointer at the top edge of the screen above its centre to bring it back. It also hides while
+  a full-screen app, video or game is in front. Check Settings → General → Show the Island.
+- **Calendar says "Reconnect".** See [Google Calendar](#google-calendar): in Testing status Google
+  ends the sign-in after 7 days.
 - **Windows look wrong (blank or see-through areas).** Set the environment variable
   `WISP_NO_MICA=1` and restart Wisp. Wisp then uses a solid background instead of Mica.
 - **Logs.** Open them from Settings → Action log → Open log folder (`%APPDATA%\Wisp\logs`).

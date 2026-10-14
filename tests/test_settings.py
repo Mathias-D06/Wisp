@@ -80,3 +80,20 @@ def test_island_hiding_defaults_and_range():
     for seconds, ok in ((2, False), (3, True), (15, True), (16, False)):
         general.island_hide_after_s = seconds
         assert (not any("hides after" in p for p in validate(settings))) is ok
+
+
+def test_new_skill_groups_start_on_once_but_stay_off_if_switched_off(tmp_path):
+    old = {"loadout": {"skills": ["apps", "todos", "memory"]}}  # saved before "calendar"
+    settings = Settings.from_dict(old)
+    assert "calendar" in settings.loadout.skills and "terminal" not in settings.loadout.skills
+    assert "calendar" in settings.loadout.known_skills
+    settings.loadout.skills.remove("calendar")  # the user switches it off
+    again = Settings.from_dict(json.loads(json.dumps(settings.to_dict())))
+    assert "calendar" not in again.loadout.skills  # stays off
+
+
+def test_calendar_settings_defaults_and_range():
+    settings = Settings()
+    assert (settings.calendar.heads_up_min, settings.calendar.allow_create) == (10, False)
+    settings.calendar.heads_up_min = 61
+    assert any("heads-up" in p for p in validate(settings))

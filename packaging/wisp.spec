@@ -67,10 +67,16 @@ a = Analysis(  # noqa: F821
 # is an x64 build; sounddevice loads libportaudio64bit.dll).
 UNUSED = ("opengl32sw.dll", "PySide6/translations/", "portaudio-binaries/libportaudio.dylib",
           "portaudio-binaries/libportaudio32bit", "portaudio-binaries/libportaudioarm64")
+# The googleapiclient hook bundles all ~600 discovery documents (112 MB); Wisp builds only the
+# Calendar v3 client with static_discovery=True, which reads just this one file (D-050).
+DISCOVERY = "googleapiclient/discovery_cache/documents/"
+KEEP_DISCOVERY = DISCOVERY + "calendar.v3.json"
 
 
 def wanted(entry) -> bool:
     name = entry[0].replace(chr(92), "/")  # chr(92) is a backslash
+    if DISCOVERY in name:
+        return name.endswith(KEEP_DISCOVERY)
     return not any(part in name for part in UNUSED)
 
 

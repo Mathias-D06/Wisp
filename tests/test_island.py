@@ -1,4 +1,4 @@
-"""Island tabs: music strip (F7.9), Today (F5.2/F5.4/F7.3), Power (F7.8), Apps, Wallpaper,
+"""Island tabs: music strip (F7.9), Today (F5.2/F5.4/F7.3), Power (F7.8), Apps, wallpaper helpers,
 Stats. The island window itself: tests/test_island_window.py (D-045)."""
 
 from __future__ import annotations
@@ -131,7 +131,7 @@ def test_power_tab_lock_needs_no_question(qtbot, palette):
     assert bg.calls == [power.lock]
 
 
-# ----- Apps and Wallpaper tabs -------------------------------------------------------------------
+# ----- Apps tab and the wallpaper helpers --------------------------------------------------------
 class FakeIndex:
     def __init__(self):
         from wisp.system.app_index import AppEntry

@@ -831,3 +831,93 @@ Decisions:
   of reappearing.
 * **Motion off.** The island disappears and reappears at once.
 * **Idle CPU, measured on this PC** (`spikes/island_idle_cpu.py`): 0.52 % of one core while slid away (the ~30 Hz reveal poll) against 0.36 % while visible and idle, with or without the orb's glow (in-process, 30 s warm-up, 60 s).
+
+## D-050 Google Calendar in the island (brief of 2026-10-13, part 4)
+* **Calendar replaces the Wallpaper tab.** The wallpaper picker moves to Settings → Loadout →
+  Appearance (a Wallpaper row; "Change…" opens the same picker in a dialog). There was no
+  wallpaper voice tool, so one was added: `wallpaper` (group "system") says which picture is
+  current, lists the pictures the picker shows, and sets one by name. It matches the name
+  fuzzily (rapidfuzz WRatio ≥ 70) and only ever picks from that list, never a path from the
+  model.
+* **The user's own Google Cloud project and a Desktop app client.** Settings → Accounts walks
+  through it: create a project, enable the Calendar API, set up the consent screen (External,
+  with yourself as a test user), create a Desktop app client and import its JSON. Only
+  "installed" (Desktop app) clients are accepted; a "web" client is refused with a message.
+  Wisp ships no client of its own: a shared one would need Google's verification and would put
+  every user under one quota.
+* **Sign-in: loopback redirect with PKCE**, through google-auth-oauthlib's
+  `InstalledAppFlow.run_local_server(host="127.0.0.1", port=0)`. That is a one-shot listener on
+  a random free port on 127.0.0.1, with the system browser and a 5-minute timeout. Google
+  recommends the loopback redirect for Windows desktop apps. The library (1.5.0) adds an S256
+  `code_challenge` and `access_type=offline` itself. `prompt=consent` makes every connect return
+  a refresh token. It runs on a thread while the UI says it's waiting for the browser.
+* **Scopes, narrowest first.**
+  * Reading: `calendar.calendarlist.readonly` (which calendars, their colours and time zones)
+    plus `calendar.events.readonly` (their events). Not `calendar.readonly`.
+  * Adding events, only when "Let Wisp add events" is ticked: `calendar.events.owned`, "create,
+    change, and delete events on calendars you own". It is the narrowest scope events.insert
+    accepts. The others are `calendar.events` (every calendar you can edit) and `calendar`
+    (everything, including sharing and deleting calendars); `calendar.app.created` only covers
+    calendars the app created. So Wisp adds events only to calendars whose access role is
+    "owner"; a calendar merely shared with write access is refused before Google is asked.
+  * Google doesn't support incremental authorization for installed apps. Switching event
+    creation on therefore means connecting again; the Accounts page and the voice tool say so.
+* **Tokens.** The OAuth client and the tokens are kept like the API key: DPAPI
+  (CryptProtectData, current user), each file with its own entropy (`google_client.bin`,
+  `google_token.bin` in `%APPDATA%\Wisp`). They are never logged; log lines carry exception
+  class names only. Access tokens that google-auth refreshes during a sync are saved back.
+* **Reconnect and Disconnect.**
+  * A failed refresh (`RefreshError`: expired or revoked) or a 401 switches to "reconnect":
+    the Calendar tab and Settings → Accounts show Reconnect, and the cache stays readable.
+  * Disconnect deletes the token and the cached calendar at once, then revokes the token at
+    `https://oauth2.googleapis.com/revoke` on a thread. Revoking the refresh token also ends its
+    access tokens.
+* **Testing status means 7-day refresh tokens.** Google issues a refresh token "expiring in 7
+  days" to an External app whose publishing status is Testing (unless it asks only for basic
+  profile scopes). A personal project left in Testing therefore asks to reconnect about once a
+  week. The README lists the ways round it.
+* **Sync**, per calendar the user can read (calendarList roles reader, writer,
+  writerWithoutPrivateAccess and owner; freeBusyReader has no events):
+  * Full sync: `events.list` from 7 days back to 180 days ahead (timeMin/timeMax), with
+    `singleEvents=true` (recurring events as instances), `showDeleted=true` and
+    `maxResults=2500`, page by page. The last page's `nextSyncToken` is saved.
+  * Incremental sync: the same parameters with `syncToken` instead of the time window
+    (events.list doesn't combine them). Cancelled events are removed from the cache.
+  * 410 Gone: that calendar's cache and token are dropped and it gets a full sync. Google: "a
+    full wipe of the client's store and a new full sync".
+  * Once a week a full sync moves the window forward.
+  * When: every 5 minutes, when the Calendar tab opens (if the last sync is over a minute old),
+    and with its Sync button. After a failure it waits 5, 10, 20, 40, then 60 minutes.
+* **Offline cache.** SQLite tables `gcal_calendars` and `gcal_events` in `wisp.sqlite3`, and
+  `gcal_last_synced` in `meta`. The tab, the voice tools and the island read only the cache, so
+  they work offline and say when it was last synced.
+* **Several calendars.** Each keeps its Google colour (`backgroundColor`). New calendars are
+  shown when Google shows them (`selected`) or are the primary one; the user's choice in
+  Settings → Accounts is kept across syncs.
+* **Time zones and daylight saving.** Times are shown in the primary calendar's time zone
+  (Europe/London here), or the PC's if there is none, using zoneinfo.
+  * Timed events are converted from their UTC offset. All-day events are plain dates with an
+    exclusive end, so a 2-day event is on 2 days whatever the zone.
+  * A wall time for a new event takes the first of two repeated times (01:30 on 25 Oct 2026 is
+    BST), and a skipped time moves forward (01:30 on 29 Mar 2026 becomes 02:30 BST).
+  * Durations are elapsed time: 2 hours from 00:30 on 25 Oct ends at 01:30 GMT.
+  * events.insert bodies carry an explicit offset and the IANA `timeZone`.
+* **The tab.**
+  * Agenda: today and the next 7 days, all-day events first, then by start time; multi-day
+    events on each of their days.
+  * Month: six weeks from Monday, up to three colour dots per day; click a day for its events.
+  * Each row: the calendar's colour, the time ("09:30–09:45", "All day", "from 22:00", "until
+    02:00") and the title. A click opens the event in Google Calendar in the browser.
+* **Island heads-up.** The next timed event on a shown calendar, within the heads-up time
+  (Settings → Accounts; default 10 minutes, 0 is off), becomes the island's countdown. It shares
+  the countdown with reminders and routines; the earliest wins.
+* **Voice.**
+  * `calendar_list` (start today, tomorrow or a date; 1–31 days) reads the cache and says when
+    it last synced.
+  * `calendar_create` is confirm-tier. The card reads, for example, "add “Dentist” to Me, Wed
+    14 Oct 15:00–15:30". It can't be scheduled: a routine shouldn't add events unseen.
+  * Skill group "calendar" in Settings → Loadout. It starts switched on once for existing users
+    (`known_skills`), and stays off if they switch it off.
+* **Packaging.** google-api-python-client's discovery cache holds 605 documents (112 MB). Wisp
+  builds the client with `static_discovery=True`, which reads only `calendar.v3.json`, so the
+  spec keeps just that one. The self-check builds the client offline from it.

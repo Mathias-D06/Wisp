@@ -58,3 +58,11 @@ def launch_command() -> str:
     pythonw = Path(sys.executable).with_name("pythonw.exe")
     interpreter = pythonw if pythonw.exists() else Path(sys.executable)
     return f'"{interpreter}" -m wisp --background'
+
+
+def google_client_file() -> Path:
+    return data_dir() / "google_client.bin"
+
+
+def google_token_file() -> Path:
+    return data_dir() / "google_token.bin"

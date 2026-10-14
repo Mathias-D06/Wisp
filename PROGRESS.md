@@ -405,6 +405,16 @@ acceptance step needs real hardware/API key and is listed in `MANUAL_TESTS.md` (
   `::test_activity_reveals_instantly`, `test_island_window.py::test_resting_in_the_top_centre_zone_reveals_it`,
   `::test_hotkey_and_voice_reveal_a_hidden_island`; idle CPU 0.52 % of one core while slid away (the ~30 Hz reveal poll) against 0.36 % while visible and idle, with or without the orb's glow (in-process, 30 s warm-up, 60 s); real pointer, displays and scaling: MT-79…MT-81;
   `docs/island/autohide_and_reveal.gif`
+- [~] P4.3 Calendar tab (replaces Wallpaper; wallpaper → Settings → Loadout and a new `wallpaper` voice tool) —
+  `gcal/{google,sync,store,times,service}.py`, `ui/island/calendar_tab.py`, `ui/settings/accounts_page.py`,
+  `tools/builtin/calendar.py`, `ui/wallpaper_picker.py`. Own Desktop app client, loopback + PKCE, read-only scopes
+  (`calendar.events.owned` only when switched on; owned calendars only), DPAPI tokens, reconnect/disconnect +
+  revoke; sync tokens, 410 → full sync, weekly window, 5-min schedule with backoff; SQLite cache; colours and
+  shown calendars; agenda + month; island heads-up; Europe/London DST — `test_gcal.py` (21: sync merge, 410,
+  window, offline after restart, backoff, DST gap/overlap/durations, all-day, encrypted tokens, error mapping,
+  request parameters, connect/disconnect/reconnect/create), `test_calendar_ui.py` (9: tools and confirm text,
+  tab states, month, click → browser, Accounts page, wallpaper tool/picker, app tabs), `test_settings.py`;
+  self-check `google_calendar`; `docs/island/calendar_tab.gif` (made-up data); D-050; a real account: MT-82…MT-89
 
 ### Testing, packaging, definition of done
 - [x] T.1 Unit tests: dispatcher, safety tiers, scheduler parsing + persistence, memory, clipboard store,
@@ -477,3 +487,8 @@ acceptance step needs real hardware/API key and is listed in `MANUAL_TESTS.md` (
   hotkey Ctrl+Alt+Space, album art (new dependency winrt-Windows.Storage.Streams 3.2.1) and a real output
   meter. 62 fps morphs; idle CPU 0.44 % of one core while visible and idle with the orb's glow (0.42 % with Reduce motion) against 5.99 % for the old island measured the same way (`spikes/island_idle_cpu.py`: in-process, island visible, 30 s warm-up, 60 s); 0.21 % while hidden behind a full-screen app (`spikes/idle_cpu.py`). Recordings in docs/island
   (rendered from the widget). D-045…D-047, MT-64…MT-77.
+- 2026-10-14: Part 4.3 Calendar. Bugs found while testing: `EventRow.event` hid `QWidget.event()` (TypeError
+  on every event; renamed), cleared rows painted until deleted (now hidden first), the agenda's scroll area
+  painted the palette's grey (transparent like the rest), event creation allowed calendars shared with write
+  access that `calendar.events.owned` can't reach (owned only), incremental syncs left out `showDeleted`
+  (same parameters now). GIF recordings use one palette across frames (small colours kept).

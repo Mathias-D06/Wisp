@@ -35,6 +35,7 @@ class Services:
     scheduler: Any = None
     clipboard: Any = None
     media: Any = None
+    calendar: Any = None  # CalendarService (D-050)
     system: Any = None
     overlay: Any = None
     last_capture: Any = None

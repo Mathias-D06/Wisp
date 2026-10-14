@@ -1,4 +1,6 @@
-"""Wallpaper tab: pick from Pictures and Windows wallpapers, or browse for an image."""
+"""Wallpaper picker (Settings → Loadout → Appearance → Change…): pick from Pictures and Windows
+wallpapers, or browse for an image. It was the island's Wallpaper tab until the Calendar tab took
+its place (2026-10-13, part 4); the "wallpaper" voice tool does the same by name."""
 
 from __future__ import annotations
 
@@ -7,6 +9,8 @@ from pathlib import Path
 from PySide6.QtCore import QSize, Qt, Signal
 from PySide6.QtGui import QIcon, QImage, QImageReader, QPixmap
 from PySide6.QtWidgets import (
+    QDialog,
+    QDialogButtonBox,
     QFileDialog,
     QHBoxLayout,
     QLabel,
@@ -31,7 +35,7 @@ def load_thumbnail(path: str) -> QImage:
     return reader.read()
 
 
-class WallpaperTab(QWidget):
+class WallpaperPicker(QWidget):
     _thumb = Signal(str, QImage)
 
     def __init__(self, background):
@@ -99,3 +103,19 @@ class WallpaperTab(QWidget):
 
         self.bg.run(lambda: wallpaper.set_wallpaper(path), done,
                     lambda exc: self.status.setText(str(exc)))
+
+
+class WallpaperDialog(QDialog):
+    """The picker in a window of its own."""
+
+    def __init__(self, background, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Wallpaper")
+        self.resize(640, 480)
+        layout = QVBoxLayout(self)
+        self.picker = WallpaperPicker(background)
+        layout.addWidget(self.picker, 1)
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+        self.picker.refresh()
