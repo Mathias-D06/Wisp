@@ -10,10 +10,12 @@ acceptance step needs real hardware/API key and is listed in `MANUAL_TESTS.md` (
 ## Status
 
 - Current phase: all phases done (0–11), plus the briefs of 2026-10-13 (speech fix, part 1; UI polish,
-  part 2; Dynamic Island, part 3; part 4: font warning, auto-hide, Calendar tab, Files & Share tab).
-  Remaining work needs a person: the MANUAL_TESTS core run (API key + microphone, now including
-  MT-50…MT-97: a Google account for MT-82…MT-89, a phone on a Private Wi-Fi for MT-94…MT-96), pushing to
-  GitHub so CI runs, choosing a licence. See FINAL_REPORT.md.
+  part 2; Dynamic Island, part 3; part 4: font warning, auto-hide, Calendar tab, Files & Share tab) and
+  of 2026-10-14 (Screen Assist + Watch mode, part 1; Discreet mode, part 2). Remaining work needs a
+  person: the MANUAL_TESTS core run (API key + microphone, now including MT-50…MT-114: a Google account
+  for MT-82…MT-89, a phone on a Private Wi-Fi for MT-94…MT-96, Gemini answering for MT-98…MT-114 — it
+  returned 503 "high demand" during the build), pushing to GitHub so CI runs, choosing a licence. See
+  FINAL_REPORT.md.
 - Safety note for automated runs: never toggle the user's Night Light/Wi-Fi/Bluetooth/theme/
   volume/output device in tests on this PC; test write paths with pure functions + manual tests.
 - Environment: Windows 11, Python 3.12.10 venv in `.venv`, Git 2.55, Inno Setup 6.7.3 (per-user,
