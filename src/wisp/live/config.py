@@ -56,6 +56,8 @@ def system_instruction(settings: Settings, facts: list[str], now: datetime) -> s
         "- For reminders and schedules call get_current_time first; use ISO 8601 local times.",
         "- Circle to Ask: an image sent with a spoken question is the screen area the user "
         "circled; answer about it in one to three sentences (if no question, say what it is).",
+        "- Questions about the screen ('explain this', 'check this') and their follow-ups: "
+        "call screen_assist; its answer is on screen, so say the gist.",
         f"Session started {now.strftime('%A %d %B %Y, %H:%M')} local time.",
     ]
     if "memory" in settings.loadout.skills:

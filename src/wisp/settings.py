@@ -19,6 +19,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from wisp.assist.privacy import DEFAULT_APPS as DEFAULT_BLOCKED_APPS
+from wisp.assist.privacy import DEFAULT_TITLES as DEFAULT_BLOCKED_TITLES
+
 log = logging.getLogger(__name__)
 
 TOOL_GROUPS = [
@@ -98,6 +101,7 @@ class GeneralSettings:
 class AISettings:
     live_model: str = "gemini-3.8-live"
     text_model: str = "gemini-3.8-flash"
+    tts_model: str = "gemini-3.8-flash-tts"  # reads Screen Assist answers aloud (D-052)
     language: str = "English (UK)"
     idle_timeout_min: int = 5
 
@@ -116,7 +120,9 @@ class HotkeySettings:
     push_to_talk: str = "alt+win"
     dictation: str = "ctrl+win"
     circle: str = "ctrl+shift"
-    island: str = "ctrl+alt+space"  # expand / collapse the island (D-045)
+    island: str = "ctrl+alt+i"  # expand / collapse the island (D-045; Ctrl+Alt+Space until D-052)
+    screen_assist: str = "ctrl+alt+space"  # ask about the active window (D-052)
+    watch: str = "ctrl+alt+w"  # Watch mode on/off (D-052)
     hold_ms: int = 250
 
 
@@ -146,6 +152,18 @@ class ShareSettings:
 
 
 @dataclass
+class ScreenAssistSettings:
+    capture: str = "window"  # "window" | "screen": what a question looks at by default
+    speak_answers: bool = True  # read answers aloud (Discreet mode has its own switch)
+    blocked_apps: list[str] = field(default_factory=lambda: list(DEFAULT_BLOCKED_APPS))
+    blocked_titles: list[str] = field(default_factory=lambda: list(DEFAULT_BLOCKED_TITLES))
+    watch_interval_s: int = 20
+    watch_comment_gap_s: int = 60
+    watch_auto_stop_min: int = 30
+    watch_speak: bool = False  # Watch comments are shown; spoken only if this is on
+
+
+@dataclass
 class SafetySettings:
     allow_terminal: bool = False
     allow_raw_input: bool = False
@@ -170,6 +188,7 @@ class Settings:
     scheduler: SchedulerSettings = field(default_factory=SchedulerSettings)
     calendar: CalendarSettings = field(default_factory=CalendarSettings)
     share: ShareSettings = field(default_factory=ShareSettings)
+    screen_assist: ScreenAssistSettings = field(default_factory=ScreenAssistSettings)
 
     def to_dict(self) -> dict[str, Any]:
         return dataclasses.asdict(self)
@@ -181,6 +200,10 @@ class Settings:
         if not isinstance(loadout_data, dict) or "known_skills" not in loadout_data:
             settings.loadout.known_skills = list(LEGACY_GROUPS)  # saved before it existed
         _switch_on_new_skills(settings.loadout)
+        hotkeys = data.get("hotkeys") if isinstance(data, dict) else None
+        if (isinstance(hotkeys, dict) and "screen_assist" not in hotkeys
+                and str(hotkeys.get("island", "")).replace(" ", "").lower() == "ctrl+alt+space"):
+            settings.hotkeys.island = HotkeySettings.island  # Screen Assist took it (D-052)
         if settings.ai.language == "English":
             # The only English option before D-040 (not a choice of variant): use the new default.
             settings.ai.language = "English (UK)"
@@ -245,6 +268,17 @@ def validate(settings: Settings) -> list[str]:
         problems.append("Hotkey hold time must be between 100 and 2000 ms.")
     if not 0 <= settings.calendar.heads_up_min <= 60:
         problems.append("The calendar heads-up must be 0–60 minutes.")
+    assist = settings.screen_assist
+    if assist.capture not in ("window", "screen"):
+        problems.append("Screen Assist looks at the 'window' or the 'screen'.")
+    if not 10 <= assist.watch_interval_s <= 600:
+        problems.append("Watch mode looks every 10–600 seconds.")
+    if not 15 <= assist.watch_comment_gap_s <= 3600:
+        problems.append("Watch mode comments at most every 15–3600 seconds.")
+    if not 1 <= assist.watch_auto_stop_min <= 480:
+        problems.append("Watch mode stops after 1–480 minutes.")
+    if not settings.ai.tts_model.strip():
+        problems.append("Speech model name cannot be empty.")
     if not 1 <= settings.share.phone_max_upload_mb <= 20480:
         problems.append("The phone link's size limit must be 1–20480 MB.")
     if not 3 <= settings.general.island_hide_after_s <= 15:
@@ -291,6 +325,8 @@ def validate(settings: Settings) -> list[str]:
                 "Dictation": settings.hotkeys.dictation,
                 "Circle to Ask": settings.hotkeys.circle,
                 "Island": settings.hotkeys.island,
+                "Screen Assist": settings.hotkeys.screen_assist,
+                "Watch mode": settings.hotkeys.watch,
             }
         )
     )

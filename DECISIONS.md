@@ -659,8 +659,8 @@ Decisions:
     * anywhere else: expand.
   * Swiping up on a banner dismisses it.
   * Right-click opens a menu: Settings…, Mute microphone, Open in window, Quit Wisp.
-  * A hold hotkey (default Ctrl+Alt+Space, Settings → Hotkeys and audio) toggles the expanded
-    panel.
+  * A hold hotkey (default Ctrl+Alt+Space, Ctrl+Alt+I since D-052; Settings → Hotkeys and
+    audio) toggles the expanded panel.
   * Esc is reported by the keyboard hook while the island is expanded. It is never swallowed.
 * **What stays separate.** The confirmation card (D-011) stays its own window. It is a safety
   prompt that must not be queued behind banners or time out with them, and it sits below the
@@ -1060,3 +1060,119 @@ Decisions:
   and winrt-Windows.Networking.Connectivity 3.2.1. The Network List type library's comtypes
   wrapper is generated at build time, like UI Automation's. Self-check `files_share` covers
   a QR code, the network list (counts only), a StorageFile and the interop factory.
+
+## D-052 Screen Assist and Watch mode (brief "Screen Assist + Discreet mode", part 1)
+* **Answers come from generateContent, not the voice session.** Screen Assist sends the
+  screenshot and the question to the text model (Settings → General, default
+  gemini-3.8-flash) as one stateless `generate_content` request, as dictation does (D-023):
+  * nothing is stored as an Interaction;
+  * the model gets no tools, so nothing on screen can make it act;
+  * answers are real text: code blocks, a reply to paste.
+
+  The voice session's own `look_at_screen` (D-017) stays, for operating apps (finding a
+  button, a position for a click). Questions about the screen go to Screen Assist.
+* **Reading answers aloud.** Gemini TTS (`gemini-3.8-flash-tts`, Settings `ai.tts_model`) via
+  `generate_content` with `response_modalities=["AUDIO"]` and `speech_config` set to the
+  Loadout voice, so it sounds like Wisp.
+  * Only the gist is read: no code blocks, at most about 700 characters, then "The rest is on
+    screen."
+  * Questions asked through the voice session are spoken by that session instead.
+  * The speech-generation page shows TTS through the Interactions API. The installed SDK's
+    `GenerateContentConfig` has `response_modalities` and `speech_config`, but a real call
+    could not be checked while building (Google answered 503 "high demand" both times).
+    MT-98 covers it, and a failure leaves the answer on screen.
+* **Hotkey.** Hold Ctrl+Alt+Space (Settings → Hotkeys and audio). The person chose to give
+  Screen Assist this chord and move the Island's to Ctrl+Alt+I; saved settings that still had
+  Ctrl+Alt+Space for the Island move once.
+  * The press captures the window in front at once, before Wisp shows anything.
+  * Speaking while holding asks a question: the audio goes in the same request (WAV, as
+    dictation).
+  * A tap asks the default: "Briefly explain what's shown, then point out anything that looks
+    wrong, unclear or worth acting on."
+  * Voice: `screen_assist` ("what's on my screen?", "explain this", "check this", "what do you
+    think?") and `watch_screen`. The voice model's instruction sends screen questions and
+    their follow-ups there.
+* **The answer card** (the island's Screen tab):
+  * a thumbnail of exactly what was sent, its size and how many areas were hidden;
+  * short answers, with More for the detailed version (a different system instruction);
+  * mode chips: Explain, Review (proofread, bugs, numbers), Summarise, Reply;
+  * Copy; Speak it / Stop; code in a monospace block (Cascadia Mono, then Consolas);
+  * a follow-up box.
+
+  Reply's Insert pastes the draft into the window the screenshot came from, only after a
+  click, and never presses Enter. It shares `insert_text` with dictation, including the
+  clipboard restore and the administrator-window rule (D-025).
+* **Follow-ups.** A conversation lasts while used (15 minutes idle ends it).
+  * A follow-up looks at the window in front again (or the conversation's window when Wisp
+    itself is in front).
+  * It sends a new screenshot only if the window is a different one, or more than 2 % of a
+    64×40 grid of average brightness moved by more than 10 levels. Otherwise the earlier
+    screenshot stands.
+  * Only the newest screenshot is sent with the history (at most 16 turns).
+  * A gradient hash (dHash) was tried first. It missed a large dialog on a flat background,
+    where neighbouring cells are nearly equal and their comparison bits are noise; the
+    brightness grid catches it and still ignores a blinking caret.
+* **Watch mode**, off by default.
+  * Turned on with Ctrl+Alt+W, by voice ("keep an eye on my screen") or from the Screen tab.
+  * Every 20 s (setting) it captures the active window at ≤768 px.
+  * It sends a look only when more than 1 % of the grid changed; the rest are counted as
+    skipped.
+  * Each request uses `media_resolution` LOW and a JSON schema: {comment, kind, text}. The
+    instruction says to speak up only for errors, failed builds or tests, obvious typos and
+    wrong numbers.
+  * Comments are throttled to one a minute (setting), and a repeat is dropped.
+  * It stops after 30 minutes (setting).
+  * Comments come as island banners (a tray notification when the island is off or hidden),
+    and are read aloud only with "Read Watch comments aloud" on.
+* **Why periodic single frames rather than Live video.** The Live API limits audio-video
+  sessions to 2 minutes without context-window compression (audio-only: 15), and a connection
+  lasts about 10 minutes. Streaming sends a frame a second whether or not anything changed,
+  and Watch mode would tie up the voice session.
+
+  Single `generate_content` requests have no session to keep alive. They cost tokens only when
+  the window changed, answer "nothing to say" in a structured way, and leave the voice session
+  alone.
+* **Usage and cost.**
+  * Every request's `usage_metadata` (prompt, response and thinking tokens) goes into an
+    `ai_usage` table by feature; skipped Watch looks are counted at zero cost.
+  * Stats → "Gemini use today" shows answers, looks and tokens, and an estimate from Google's
+    paid-tier prices (page of 2026-10-13):
+    * gemini-3.8-flash: $0.75 in / $3.75 out per million tokens until 2026-12-31, then
+      $1.50 / $7.50;
+    * the TTS model: $0.50 / $9.00.
+  * A model without a known price shows tokens only.
+* **Privacy and safety.**
+  * *Untrusted data.* Screenshots go in the user's turn, framed as untrusted data, never in
+    the system instruction, which forbids following instructions found in them.
+    * The assist model has no tools, and links in answers are never opened.
+    * `screen_assist` and `look_at_screen` taint the voice session (D-012), so any action
+      proposed afterwards asks first. `watch_screen` escalates when tainted.
+  * *No screenshots on disk.* They live in memory for the current exchange. With Settings →
+    Hotkeys and audio → "Save the audio and screenshots sent to Gemini" on, a copy of each
+    JPEG goes to the debug folder (newest 20).
+  * *Blocklist* (Settings → Screen Assist), applied to Screen Assist, Watch mode,
+    `look_at_screen` and Circle to Ask.
+    * Default apps: password managers (1Password, Bitwarden, KeePass(XC), Dashlane, LastPass,
+      NordPass, Keeper, RoboForm, Enpass, Proton Pass) and Windows credential and sign-in
+      prompts.
+    * Default title words: private browsing (Incognito, InPrivate, Private Browsing, Private
+      window, Tor Browser), banking and payment words and UK banks, and password pages.
+    * Apps match by program name; title words match whole words in any case, so "bank" doesn't
+      match "Bankside".
+    * Private-browsing detection relies on the words browsers put in window titles:
+      UNDOCUMENTED and liable to change, which is why the list is editable.
+    * A blocked window in front is never captured ("I don't look at that window"). On a
+      whole-screen look, visible blocked windows are painted over.
+  * *Circle to Ask* paints blocked windows over its frozen screenshot. Qt screens are matched
+    to Windows monitors by device name (`QScreen::name()` equals MONITORINFOEX `szDevice` on
+    this PC; Qt doesn't document what `name()` holds on Windows: UNDOCUMENTED). If a screen
+    can't be matched while a blocked window is visible, Circle to Ask refuses rather than risk
+    it.
+  * *Smaller images.* Uniform borders are trimmed (`trim`), then the image is downscaled to
+    ≤1024 px (≤768 for Watch) and sent as JPEG q72. Gemini tiles images into 768 px tiles of
+    258 tokens, so a window is a handful of tiles.
+  * *Watch indicator.* The island shows "Watching" with the time left and never auto-hides
+    meanwhile. Hovering shows "Stop", and a click on the right half stops it. The tray icon
+    gets a coloured dot, a tooltip line and a "Stop watching the screen" menu item.
+  * *Action log.* Every capture, and every refusal, is logged: time, window title, whole
+    window or screen, mode, size sent and areas hidden. The image is never logged.

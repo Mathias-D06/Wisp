@@ -15,10 +15,11 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable
 
-from PySide6.QtCore import QObject, QTimer
-from PySide6.QtGui import QGuiApplication
+from PySide6.QtCore import QObject, QRectF, QTimer
+from PySide6.QtGui import QColor, QGuiApplication, QPainter, QPixmap
 
 from wisp.ai.gemini import NO_KEY_MESSAGE
+from wisp.assist.privacy import REFUSAL, intersect
 from wisp.audio.capture import MicError
 from wisp.ui.overlay import CircleOverlay
 
@@ -28,11 +29,36 @@ IMAGE_LEAD_MS = 300
 BUBBLE_TIMEOUT_MS = 30000
 
 
+def mask_shot(shot: QPixmap, monitor: tuple[int, int, int, int] | None,
+              hidden: list[tuple[int, int, int, int]]) -> QPixmap | None:
+    """Paint blocklisted windows (physical-pixel rectangles) over the frozen screenshot of one
+    monitor (D-052). ``monitor`` is that monitor's physical rectangle, matched by device name;
+    None when it couldn't be matched, and then None comes back if anything would need hiding,
+    so nothing private is shown or sent."""
+    if monitor is None:
+        return None if hidden else shot
+    covered = [overlap for rect in hidden if (overlap := intersect(rect, monitor))]
+    if not covered:
+        return shot
+    width = shot.width() / shot.devicePixelRatio()  # QPainter works in logical pixels
+    height = shot.height() / shot.devicePixelRatio()
+    sx = width / max(1, monitor[2] - monitor[0])
+    sy = height / max(1, monitor[3] - monitor[1])
+    painter = QPainter(shot)
+    for left, top, right, bottom in covered:
+        painter.fillRect(QRectF((left - monitor[0]) * sx, (top - monitor[1]) * sy,
+                                (right - left) * sx, (bottom - top) * sy), QColor(32, 32, 32))
+    painter.end()
+    return shot
+
+
 class CircleController(QObject):
     def __init__(self, voice, live, mic, hud, bubble, has_key: Callable[[], bool],
                  accent: Callable[[], str],
                  screens: Callable[[], list] = QGuiApplication.screens,
-                 overlay_factory=CircleOverlay):
+                 overlay_factory=CircleOverlay,
+                 hidden_rects: Callable[[], list] = lambda: [],
+                 monitors: Callable[[], dict] = lambda: {}):
         super().__init__()
         self.voice = voice
         self.live = live
@@ -43,6 +69,8 @@ class CircleController(QObject):
         self.accent = accent
         self.screens = screens
         self.overlay_factory = overlay_factory
+        self.hidden_rects = hidden_rects  # blocklisted windows on screen (physical px)
+        self.monitors = monitors  # device name -> physical rectangle
         self.overlays: list = []
         self.active = False
         self._buffered = False
@@ -70,7 +98,14 @@ class CircleController(QObject):
         if not self.has_key():
             self.hud.flash(NO_KEY_MESSAGE, 4000, "muted")
             return
-        shots = [(screen, screen.grabWindow(0)) for screen in self.screens()]
+        hidden = self.hidden_rects()
+        monitors = self.monitors() if hidden else {}
+        shots = [(screen, mask_shot(screen.grabWindow(0),
+                                    monitors.get(screen.name()) if hidden else None, hidden))
+                 for screen in self.screens()]
+        if any(shot is None for _screen, shot in shots):
+            self.hud.flash(REFUSAL + " A private window is on screen.", 4000, "muted")
+            return
         try:
             self.mic.acquire("circle")
         except MicError as exc:

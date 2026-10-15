@@ -30,6 +30,7 @@ ACCENTS = {
 FONT_SMALL = ["Segoe UI Variable Small", "Segoe UI"]
 FONT_TEXT = ["Segoe UI Variable Text", "Segoe UI"]
 FONT_DISPLAY = ["Segoe UI Variable Display", "Segoe UI"]
+FONT_MONO = ["Cascadia Mono", "Consolas", "Courier New"]  # code in answers (D-052)
 CAPTION, BODY, TITLE, DISPLAY = 12, 13, 15, 20  # px
 REGULAR, SEMIBOLD = 400, 600  # Semibold only for titles (TITLE and up)
 LINE_HEIGHT = 1.45  # transcript and long text

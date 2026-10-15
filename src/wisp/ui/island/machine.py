@@ -78,6 +78,7 @@ class IslandStateMachine:
         self._music: Activity | None = None
         self._timer: Activity | None = None
         self._sharing: Activity | None = None  # the phone link while it runs (D-051)
+        self._watching: Activity | None = None  # Watch mode while it runs (D-052)
         self._queue: list[Banner] = []
         self._showing: Banner | None = None
         self._banner_until = 0.0
@@ -183,6 +184,17 @@ class IslandStateMachine:
                          if text and until is not None else None)
         self._changed()
 
+    def set_watching(self, text: str | None, until: float | None = None) -> None:
+        """Watch mode is on until ``until`` (epoch seconds), or None when it stops. Like the
+        phone link it keeps the island on screen: Wisp looking at the screen is never hidden."""
+        self._watching = (Activity("watching", "timer", text, tone="warning", data=until)
+                          if text and until is not None else None)
+        self._changed()
+
+    @property
+    def watching(self) -> bool:
+        return self._watching is not None
+
     def post(self, title: str, line: str = "", icon: str = "info", tone: str = "accent",
              action: Callable[[], None] | None = None) -> Banner:
         """Queue a banner. The same title and line already waiting (or showing) is refreshed
@@ -274,7 +286,8 @@ class IslandStateMachine:
         expanded or under the pointer, and no music unless keep_for_music is off."""
         if not self.autohide or self.hidden or self.expanded or self.hovered or self.confirming:
             return False
-        if self._voice_activity() is not None or self._timer is not None or self._sharing:
+        if (self._voice_activity() is not None or self._timer is not None or self._sharing
+                or self._watching):
             return False
         if self._showing is not None or self._queue:
             return False
@@ -310,8 +323,8 @@ class IslandStateMachine:
     def _compute(self, now: float) -> Presentation:
         if self.hidden:
             return Presentation("hidden")
-        live = [a for a in (self._voice_activity(), self._sharing, self._timer, self._music)
-                if a is not None]
+        live = [a for a in (self._voice_activity(), self._watching, self._sharing, self._timer,
+                            self._music) if a is not None]
         live.sort(key=lambda activity: tier_rank(activity.tier))
         if self.expanded:
             return Presentation("expanded", main=live[0] if live else None)

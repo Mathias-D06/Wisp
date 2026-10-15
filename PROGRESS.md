@@ -429,6 +429,24 @@ acceptance step needs real hardware/API key and is listed in `MANUAL_TESTS.md` (
   drop on the island, activity, tools, WinRT IIDs, Python COM objects, StorageFile); self-check `files_share`;
   `docs/island/files_and_share.gif` (made-up files); D-051; real phone, share targets, firewall: MT-90…MT-97
 
+### Brief of 2026-10-14: Screen Assist + Discreet mode
+- [~] S.1 Screen Assist — `assist/{engine,client,prompts,privacy,imaging,service}.py`, `ui/island/assist_tab.py`
+  (Screen tab), `ui/settings/assist_page.py`, `tools/builtin/screen.py` (screen_assist, watch_screen; blocklist in
+  look_at_screen), Circle to Ask masking, `stores/usage.py`. Hotkey Ctrl+Alt+Space (capture on press, spoken
+  question, tap = quick look; Island moved to Ctrl+Alt+I by the user's choice, migrated), generateContent with no
+  tools, short answers + More, Explain/Review/Summarise/Reply, Insert on click only, Copy, monospace code, TTS in the
+  Loadout voice, follow-ups that re-capture only when the window changed (brightness-grid diff), blocklist with
+  masking, ≤1024 px trimmed JPEGs and a thumbnail, Action-log rows, never on disk — `test_screen_assist.py` (32:
+  change detection, crop/downscale, blocklist, masking, capture/refusal logging, follow-up reuse vs re-capture,
+  more/retry, spoken question, prompt-injection fixture, no tools in the request, TTS audio, Watch
+  analyse/skip/throttle/repeat/blocked/auto-stop, usage and cost, what's read aloud), `test_screen_assist_ui.py`
+  (14: hotkey tap/hold, Insert only on click, refusal, voice tool from a worker thread, watch tool,
+  look_at_screen blocklist, Screen tab, Watching indicator + one-click stop, tray badge, Circle masking, settings
+  and hotkey migration, settings page); `docs/island/screen_assist.gif`; D-052; real use: MT-98…MT-106
+- [~] S.2 Watch mode — `assist/service.Watcher`, `engine.WatchCheck`; 20 s, change-gated, JSON verdicts at low media
+  resolution, one comment a minute, 30-minute auto-stop, island "Watching" (never hides, click Stop), tray dot +
+  menu, Stats estimate — tests above; MT-104/MT-105
+
 ### Testing, packaging, definition of done
 - [x] T.1 Unit tests: dispatcher, safety tiers, scheduler parsing + persistence, memory, clipboard store,
   settings (Windows-only tests marked) — `test_dispatcher.py`, `test_tools_core.py`, `test_hardening.py`,
@@ -509,3 +527,7 @@ acceptance step needs real hardware/API key and is listed in `MANUAL_TESTS.md` (
   the server was tested on 127.0.0.1 and with a real phone it is MT-94…MT-96. The share sheet opened from a probe.
   Found while testing: refused uploads were answered before the body was read (browsers report a dropped
   connection), so uploads now ask first and send after Accept; "&" in the tab name showed as a mnemonic.
+- 2026-10-15: Screen Assist (brief of 2026-10-14, part 1). Gemini answered 503 "high demand" to both real-API
+  probes, so the live check is MT-98. Found while testing: a dHash missed a big dialog on a flat background (switched
+  to a brightness grid); fenced code from Qt's Markdown import used the generic "monospace" family (now Cascadia
+  Mono/Consolas); the voice model's instruction outgrew its length budget (shortened).

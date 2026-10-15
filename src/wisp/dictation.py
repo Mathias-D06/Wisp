@@ -53,6 +53,41 @@ class DictationDeps:
     extra: dict = field(default_factory=dict)
 
 
+def insert_text(deps: DictationDeps, target, text: str) -> str:
+    """Paste ``text`` into ``target`` (a WindowInfo, or None for the window in front) and put the
+    previous clipboard back afterwards, unless something else changed it meanwhile. Returns
+    "pasted", or "copied" when the target is an administrator window (Windows blocks automatic
+    paste there, D-025). Also used by Screen Assist's Insert (D-052). Never presses Enter."""
+    if target is not None and deps.target_is_elevated(target):
+        deps.set_text(text)
+        return "copied"
+    try:
+        saved = deps.snapshot()
+    except Exception as exc:
+        log.warning("Clipboard snapshot failed: %s", exc)
+        saved = None
+    deps.set_text(text)
+    ours = deps.clipboard_sequence()
+    current = deps.foreground()
+    if target is not None and (current is None or current.hwnd != target.hwnd):
+        deps.activate(target.hwnd)
+    deps.paste()
+
+    def restore() -> None:
+        if saved is None:
+            return
+        if deps.clipboard_sequence() != ours:
+            log.info("Clipboard changed after paste; not restoring")
+            return
+        try:
+            deps.restore(saved)
+        except Exception as exc:
+            log.warning("Clipboard restore failed: %s", exc)
+
+    QTimer.singleShot(RESTORE_DELAY_MS, restore)
+    return "pasted"
+
+
 class DictationController(QObject):
     _transcribed = Signal(int, str, str, float)  # token, text, error, seconds
     state = Signal(str)  # "recording" | "transcribing" | "pasted" | "idle" | "error"
@@ -172,40 +207,12 @@ class DictationController(QObject):
         self._paste(text, seconds)
 
     def _paste(self, text: str, seconds: float) -> None:
-        target = self._target
-        if target is not None and self.deps.target_is_elevated(target):
-            self.deps.set_text(text)
+        if insert_text(self.deps, self._target, text) == "copied":
             self.hud.flash("Copied — press Ctrl+V (admin windows block automatic paste)", 4500)
-            self._record(text, seconds)
-            self.state.emit("pasted")
-            return
-        try:
-            saved = self.deps.snapshot()
-        except Exception as exc:
-            log.warning("Clipboard snapshot failed: %s", exc)
-            saved = None
-        self.deps.set_text(text)
-        ours = self.deps.clipboard_sequence()
-        current = self.deps.foreground()
-        if target is not None and (current is None or current.hwnd != target.hwnd):
-            self.deps.activate(target.hwnd)
-        self.deps.paste()
-        self.hud.flash(f"Inserted {word_count(text)} words", 1500, "success")
+        else:
+            self.hud.flash(f"Inserted {word_count(text)} words", 1500, "success")
         self._record(text, seconds)
         self.state.emit("pasted")
-
-        def restore() -> None:
-            if saved is None:
-                return
-            if self.deps.clipboard_sequence() != ours:
-                log.info("Clipboard changed after paste; not restoring")
-                return
-            try:
-                self.deps.restore(saved)
-            except Exception as exc:
-                log.warning("Clipboard restore failed: %s", exc)
-
-        QTimer.singleShot(RESTORE_DELAY_MS, restore)
 
     def _record(self, text: str, seconds: float) -> None:
         if self.stats is not None:

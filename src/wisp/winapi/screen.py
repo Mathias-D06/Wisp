@@ -65,6 +65,33 @@ def monitors() -> list[tuple[int, int, int, int]]:
                 for m in sct.monitors[1:]]
 
 
+class _MONITORINFOEXW(ctypes.Structure):
+    _fields_ = [("cbSize", wintypes.DWORD), ("rcMonitor", wintypes.RECT),
+                ("rcWork", wintypes.RECT), ("dwFlags", wintypes.DWORD),
+                ("szDevice", wintypes.WCHAR * 32)]
+
+
+_MONITORENUMPROC = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HMONITOR, wintypes.HDC,
+                                      ctypes.POINTER(wintypes.RECT), wintypes.LPARAM)
+
+
+def monitors_by_device() -> dict[str, tuple[int, int, int, int]]:
+    """Each monitor's device name (the "DISPLAY1" kind) and its rectangle in physical
+    pixels (EnumDisplayMonitors + GetMonitorInfoW with MONITORINFOEXW)."""
+    found: dict[str, tuple[int, int, int, int]] = {}
+
+    def collect(handle, _hdc, _rect, _data) -> bool:
+        info = _MONITORINFOEXW()
+        info.cbSize = ctypes.sizeof(_MONITORINFOEXW)
+        if _user32.GetMonitorInfoW(handle, ctypes.byref(info)):
+            r = info.rcMonitor
+            found[info.szDevice] = (r.left, r.top, r.right, r.bottom)
+        return True
+
+    _user32.EnumDisplayMonitors(None, None, _MONITORENUMPROC(collect), 0)
+    return found
+
+
 def cursor_position() -> tuple[int, int]:
     point = wintypes.POINT()
     _user32.GetCursorPos(ctypes.byref(point))
@@ -92,8 +119,14 @@ def clamp_to_screens(region: tuple[int, int, int, int]) -> tuple[int, int, int, 
     return clamped
 
 
-def capture(region: tuple[int, int, int, int], max_edge: int = MAX_EDGE) -> Capture:
+def capture(region: tuple[int, int, int, int], max_edge: int = MAX_EDGE,
+            hidden: list[tuple[int, int, int, int]] | None = None) -> Capture:
+    """Grab ``region``, paint over ``hidden`` rectangles (blocklisted windows, D-052), encode."""
     image = grab(region)
+    if hidden:
+        from wisp.assist.privacy import mask
+
+        image, _painted = mask(image, region, hidden)
     jpeg = encode(image, max_edge)
     width, height = image.size
     with Image.open(io.BytesIO(jpeg)) as sent:

@@ -1,6 +1,7 @@
-"""Troubleshooting aid (Settings → Hotkeys and audio → "Save the audio sent to Gemini"):
-writes exactly the PCM bytes Wisp sends to Gemini as WAV files in %APPDATA%\\Wisp\\debug, so the
-user can listen to what the model heard. Off by default; the newest 20 files are kept.
+"""Troubleshooting aid (Settings → Hotkeys and audio → "Save the audio and screenshots sent to
+Gemini"): writes exactly the PCM bytes Wisp sends to Gemini as WAV files in
+%APPDATA%\\Wisp\\debug, so the user can listen to what the model heard, and Screen Assist's
+screenshots as JPEGs. Off by default; the newest 20 of each are kept.
 """
 
 from __future__ import annotations
@@ -37,8 +38,8 @@ def write_wav(path: Path, pcm: bytes, rate: int = INPUT_RATE) -> Path:
     return path
 
 
-def prune(folder: Path, keep: int = KEEP_FILES) -> None:
-    files = sorted(folder.glob("*.wav"), key=lambda f: f.stat().st_mtime, reverse=True)
+def prune(folder: Path, keep: int = KEEP_FILES, pattern: str = "*.wav") -> None:
+    files = sorted(folder.glob(pattern), key=lambda f: f.stat().st_mtime, reverse=True)
     for old in files[keep:]:
         with contextlib.suppress(OSError):
             old.unlink()
@@ -58,6 +59,19 @@ def save_pcm(label: str, pcm: bytes, rate: int = INPUT_RATE) -> Path | None:
     path = write_wav(path, pcm, rate)
     prune(folder)
     log.info("Saved %s (%.1f s) for troubleshooting", path.name, len(pcm) / (rate * 2))
+    return path
+
+
+def save_jpeg(label: str, data: bytes) -> Path | None:
+    """Save a screenshot exactly as sent to Gemini (Screen Assist, D-052); newest 20 kept."""
+    if not data:
+        return None
+    folder = debug_dir()
+    stamp = datetime.now().strftime("%Y%m%d-%H%M%S-%f")[:-3]
+    path = folder / f"{label}-{stamp}.jpg"
+    path.write_bytes(data)
+    prune(folder, pattern="*.jpg")
+    log.info("Saved %s for troubleshooting", path.name)
     return path
 
 

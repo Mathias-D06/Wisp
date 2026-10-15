@@ -11,12 +11,20 @@ from PySide6.QtWidgets import QApplication, QMessageBox, QWidget
 
 from wisp import paths, startup
 from wisp.ai import dictation as dictation_ai
+from wisp.ai.dictation import pcm_to_wav
+from wisp.assist.client import GeminiAssistModel
+from wisp.assist.engine import AssistEngine, Capturer, WatchCheck, WindowSystem
+from wisp.assist.privacy import Blocklist
+from wisp.assist.service import ScreenAssist, Watcher
+from wisp.audio import OUTPUT_RATE
 from wisp.audio.capture import MicCapture
-from wisp.audio.debug_wav import DebugAudioRecorder, save_pcm
+from wisp.audio.convert import has_speech
+from wisp.audio.debug_wav import DebugAudioRecorder, save_jpeg, save_pcm
 from wisp.audio.playback import Player
+from wisp.audio.resample import Resampler
 from wisp.circle import CircleController
 from wisp.db import Database
-from wisp.dictation import DictationController, DictationDeps
+from wisp.dictation import DictationController, DictationDeps, insert_text
 from wisp.files.finder import FileFinder
 from wisp.files.shelf import Shelf
 from wisp.gcal.service import CalendarService
@@ -39,6 +47,7 @@ from wisp.stores.clipboard_history import ClipboardHistory
 from wisp.stores.memory import MemoryStore
 from wisp.stores.stats import Stats
 from wisp.stores.todos import TodoStore
+from wisp.stores.usage import UsageStore
 from wisp.system import clipboard
 from wisp.system.app_index import AppIndex
 from wisp.system.audio_meter import OutputMeter
@@ -71,6 +80,7 @@ from wisp.ui.confirm_card import ConfirmCard
 from wisp.ui.console import ConsoleWindow
 from wisp.ui.hud import Hud
 from wisp.ui.icons import orb_icon
+from wisp.ui.island.assist_tab import AssistTab
 from wisp.ui.island.calendar_tab import CalendarTab
 from wisp.ui.island.clipboard_tab import ClipboardTab
 from wisp.ui.island.common import Background
@@ -85,6 +95,7 @@ from wisp.ui.island.stats_tab import StatsTab
 from wisp.ui.island.today_tab import TodayTab
 from wisp.ui.settings.accounts_page import AccountsPage
 from wisp.ui.settings.action_log_page import ActionLogPage
+from wisp.ui.settings.assist_page import AssistPage
 from wisp.ui.settings.dialog import SettingsDialog
 from wisp.ui.settings.general_page import GeneralPage
 from wisp.ui.settings.hotkeys_audio_page import HotkeysAudioPage
@@ -96,6 +107,7 @@ from wisp.ui.tray import Tray
 from wisp.ui.wallpaper_picker import WallpaperDialog
 from wisp.voice import VoiceController, VoiceSignals, make_callbacks
 from wisp.winapi import input as winput
+from wisp.winapi import screen as screen_capture
 from wisp.winapi import windows as win
 
 log = logging.getLogger(__name__)
@@ -189,6 +201,7 @@ class WispApp(QObject):
         )
         self.services.live, self.services.voice = self.live, self.voice
         self.services.mic, self.services.player = self.mic, self.player
+        self._build_screen_assist()
 
         self.hotkeys = HotkeyManager()
         self.hotkeys.apply(settings)
@@ -229,10 +242,13 @@ class WispApp(QObject):
         services = self.services
         palette = theme.palette("dark", settings.loadout.accent)  # the island is always black
         tabs = [
+            ("Screen", AssistTab(self.assist, self.watcher, palette,
+                                 lambda: self.hotkeys.display("screen_assist"))),
             ("Controls", ControlsTab(self.background, palette)),
             ("Today", TodayTab(services.todos, services.scheduler)),
             ("Calendar", CalendarTab(self.calendar)),
-            ("Stats", StatsTab(services.stats, self.settings_store, settings.loadout.accent)),
+            ("Stats", StatsTab(services.stats, self.settings_store, settings.loadout.accent,
+                               self.usage)),
             ("Clipboard", ClipboardTab(services.clipboard, self.clipboard_monitor)),
             (FILES_TAB, FilesTab(self.finder, self.shelf, services.app_index, self.phone,
                                  self.background, palette, share=self._share_files)),
@@ -253,6 +269,12 @@ class WispApp(QObject):
         calendar_tab.open_accounts.connect(lambda: self.open_settings("Accounts"))
         self.calendar.changed.connect(self._update_countdown)
         files_tab = next(w for name, w in tabs if name == FILES_TAB)
+        self.island.watch_stop_requested.connect(lambda: self.watcher.stop("clicked"))
+        self.watcher.changed.connect(self._update_watch_indicator)
+        self.watcher.commented.connect(self._on_watch_comment)
+        self.assist.started.connect(self._on_assist_started)
+        self.assist.answered.connect(self._on_assist_answer)
+        self.assist.failed.connect(self._on_assist_failed)
         self.island.files_dropped.connect(files_tab.add_to_shelf)
         self.phone.changed.connect(self._update_phone_activity)
         self.phone.upload_requested.connect(lambda _upload: self.island.open_tab(FILES_TAB))
@@ -388,6 +410,108 @@ class WispApp(QObject):
             else:
                 self.console.open()
 
+    # ----- Screen Assist and Watch mode (D-052) --------------------------------------------------
+    def _build_screen_assist(self) -> None:
+        peek = self.settings_store.peek
+        self.usage = UsageStore(self.db)
+        self.services.usage = self.usage
+
+        def blocklist() -> Blocklist:
+            assist = peek().screen_assist
+            return Blocklist.from_lists(assist.blocked_apps, assist.blocked_titles)
+
+        self.services.blocklist = blocklist
+        system = WindowSystem(foreground=win.foreground_window, windows=win.list_windows,
+                              bounds=win.frame_bounds, monitor_at=screen_capture.monitor_at,
+                              grab=screen_capture.grab,
+                              desktop_available=win.input_desktop_available,
+                              cursor=screen_capture.cursor_position)
+        capturer = Capturer(system, blocklist, log_capture=self._log_capture,
+                            save_debug=lambda jpeg, label: (save_jpeg(label, jpeg)
+                                                            if peek().audio.save_debug_audio
+                                                            else None))
+        model = GeminiAssistModel(lambda: self.keystore.get() or "", lambda: peek().ai.text_model,
+                                  lambda: peek().ai.tts_model)
+
+        def usage(feature: str, reply) -> None:
+            self.usage.record(feature, peek().ai.text_model, reply.input_tokens,
+                              reply.output_tokens)
+
+        engine = AssistEngine(model, capturer, lambda: peek().ai.language, on_usage=usage)
+        self.assist = ScreenAssist(
+            engine, self.mic, self.player, peek, self.keystore.has_key,
+            voice_name=lambda: peek().loadout.voice, speak_allowed=self._speak_answers,
+            paste=self._paste_text, to_wav=pcm_to_wav, has_speech=has_speech,
+            resample=lambda pcm, rate: (pcm if rate == OUTPUT_RATE
+                                        else Resampler(rate, OUTPUT_RATE).process(pcm)),
+            on_speech_usage=lambda speech: self.usage.record(
+                "speech", peek().ai.tts_model, speech.input_tokens, speech.output_tokens))
+        check = WatchCheck(model, capturer, lambda: peek().screen_assist.watch_comment_gap_s,
+                           on_usage=usage)
+        self.watcher = Watcher(check, peek, lambda: self.usage.record(
+            "watch", peek().ai.text_model, skipped=True), self.keystore.has_key)
+        self.services.assist, self.services.watcher = self.assist, self.watcher
+
+    def _log_capture(self, entry: dict) -> None:
+        """Every screenshot in the Action log: when, which window, why; never the image."""
+        blocked = "blocked" in entry
+        self.services.action_log.record(
+            origin=entry.get("origin", "screen_assist"), tool="screen_capture",
+            args={"window": entry.get("window", ""), "target": entry.get("target", ""),
+                  "mode": entry.get("mode", "")},
+            decision="refused (blocklist)" if blocked else "captured",
+            result={"blocked": entry["blocked"]} if blocked
+            else {"pixels": entry.get("pixels"), "hidden_areas": entry.get("masked", 0)},
+            ok=not blocked)
+
+    def _speak_answers(self) -> bool:
+        return self.settings_store.peek().screen_assist.speak_answers
+
+    def _paste_text(self, hwnd: int, text: str) -> str:
+        """Reply mode's Insert: paste into the window the screenshot came from (D-052)."""
+        if not win.is_window(hwnd):
+            return "That window has closed."
+        target = win.WindowInfo(hwnd, "", "", win.pid_of(hwnd), False, False)
+        if insert_text(self._dictation_deps(), target, text) == "copied":
+            return "Copied: press Ctrl+V in that window (administrator windows block pasting)."
+        return "Inserted. Check it and send it yourself."
+
+    def _on_assist_started(self) -> None:
+        if self.assist.listening:
+            self.feedback.show_state("Listening… release to ask", "accent",
+                                     lambda: self.mic.level)
+        else:
+            self.feedback.show_state("Looking…", "warning")
+
+    def _on_assist_answer(self, exchange) -> None:
+        self.feedback.hide_now()
+        if self.island.enabled:
+            self.island.open_tab("Screen")
+        else:
+            self.notify("Screen Assist", exchange.answer[:240])
+
+    def _on_assist_failed(self, message: str) -> None:
+        self.feedback.flash(message, 4500, "muted")
+
+    def _on_watch_comment(self, result) -> None:
+        if self.island.enabled and not self.island.machine.hidden:
+            self.island.notify("Wisp noticed", result.text)
+        else:
+            self.tray.notify("Wisp noticed", result.text)
+        if self.settings_store.peek().screen_assist.watch_speak and self._speak_answers():
+            self.assist.speak(result.text)
+
+    def _update_watch_indicator(self) -> None:
+        watcher = self.watcher
+        running = watcher.running
+        self.island.machine.set_watching("Watching" if running else None,
+                                         watcher.ends_at if running else None)
+        self.tray.set_badge(theme.current().warning if running else "",
+                            "Watch mode is on: looking at your screen" if running else "")
+        action = getattr(self, "stop_watch_action", None)  # the tray menu comes in start()
+        if action is not None:
+            action.setVisible(running)
+
     def _update_phone_activity(self) -> None:
         """While the phone link runs, the island shows it with the time left (and stays up)."""
         running = self.phone.running
@@ -413,6 +537,8 @@ class WispApp(QObject):
     def quit(self) -> None:
         log.info("Wisp quitting")
         self.phone.stop()
+        self.watcher.stop("quit")
+        self.assist.stop_speaking()
         if self._share_sheet is not None:
             self._share_sheet.close()
         self.services.scheduler.shutdown()
@@ -449,6 +575,9 @@ class WispApp(QObject):
         self.tray.add_action("Open console", self.console.open)
         self.mute_action = self.tray.add_action("Mute microphone", self.voice.set_muted, True)
         self.mute_action.setChecked(settings.audio.mic_muted)
+        self.stop_watch_action = self.tray.add_action(
+            "Stop watching the screen", lambda: self.watcher.stop("tray"))
+        self.stop_watch_action.setVisible(False)
         self.listen_action = self.tray.add_action("Always listening",
                                                   self.voice.set_always_listening, True)
         self.listen_action.setChecked(settings.audio.always_listening)
@@ -468,6 +597,7 @@ class WispApp(QObject):
         return [
             GeneralPage(self.settings_store, self.keystore),
             AccountsPage(self.calendar),
+            AssistPage(),
             LoadoutPage(self.registry, open_wallpaper=self._open_wallpaper),
             HotkeysAudioPage(self.mic),
             SafetyPage(self.registry),  # after Loadout: it may tick the terminal/input skills
@@ -489,6 +619,9 @@ class WispApp(QObject):
         self.voice.on_hotkey(name, kind)
         self.dictation.on_hotkey(name, kind)
         self.circle.on_hotkey(name, kind)
+        self.assist.on_hotkey(name, kind)
+        if name == "watch" and kind == "press":
+            self.watcher.toggle()
         if name == "island" and kind == "press":
             self.island.toggle()
         elif name == "escape":

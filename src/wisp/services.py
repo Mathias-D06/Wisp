@@ -41,6 +41,10 @@ class Services:
     phone: Any = None  # phone.service.PhoneLink
     share_files: Any = None  # callable(list[Path]): the Windows share sheet
     open_files_tab: Any = None  # callable(): show the island's Files & Share tab
+    assist: Any = None  # assist.service.ScreenAssist (D-052)
+    watcher: Any = None  # assist.service.Watcher
+    blocklist: Any = None  # callable() -> assist.privacy.Blocklist
+    usage: Any = None  # stores.usage.UsageStore
     system: Any = None
     overlay: Any = None
     last_capture: Any = None

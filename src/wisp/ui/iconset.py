@@ -35,7 +35,7 @@ ICONS = {
     "listen": "ear", "today": "list-checks", "controls": "sliders-horizontal",
     "speaking": "audio-lines", "copy": "copy", "phone": "smartphone", "share": "share-2",
     "file": "file", "rename": "pencil", "move": "folder-input", "download": "download",
-    "upload": "upload", "open": "external-link",
+    "upload": "upload", "open": "external-link", "watch": "eye", "look": "scan-eye",
 }
 
 

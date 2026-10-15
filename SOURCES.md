@@ -297,3 +297,24 @@ from `.venv`. Dates are when checked.
 | https://segno.readthedocs.io/en/latest/api.html | make(error=…, micro=…); matrix_iter(scale, border) yields 0x1 dark / 0x0 light including the quiet zone; QR codes have a quiet zone of four modules | 2026-10-14 |
 | https://unpkg.com/lucide-static@1.56.0/icons/ | 8 more icons, same package and licence as D-043: smartphone, share-2, file, pencil, folder-input, download, upload, external-link | 2026-10-14 |
 | PyPI and installed metadata | segno 1.6.6 (BSD); winrt-Windows.Networking 3.2.1 and winrt-Windows.Networking.Connectivity 3.2.1 (MIT, PyWinRT); dnfile 0.18.0 (MIT, dev extra) | 2026-10-14 |
+
+## Screen Assist + Discreet mode (brief of 2026-10-14)
+
+### Screen Assist and Watch mode (D-052)
+
+| URL | Confirmed | Checked |
+|---|---|---|
+| https://ai.google.dev/gemini-api/docs/image-understanding | inline image data limits the whole request to 20 MB; "258 tokens if both dimensions <= 384 pixels. Larger images are tiled into 768x768 pixel tiles, each costing 258 tokens"; Gemini 3's `media_resolution` "determines the maximum number of tokens allocated per input image"; put the text prompt before the image | 2026-10-14 |
+| https://ai.google.dev/api/generate-content | MediaResolution levels MEDIA_RESOLUTION_LOW / MEDIUM / HIGH; `Part.mediaResolution`; UsageMetadata promptTokenCount, candidatesTokenCount, thoughtsTokenCount, totalTokenCount (prompt + tool-use prompt + thoughts + candidates) | 2026-10-14 |
+| google-genai 2.29.0 source (`types.py`) | `GenerateContentConfig` has `system_instruction`, `thinking_config`, `media_resolution`, `response_mime_type`, `response_json_schema`, `response_modalities`, `speech_config`; `SpeechConfig.voice_config` → `VoiceConfig.prebuilt_voice_config` → `PrebuiltVoiceConfig.voice_name`; usage metadata fields as above | 2026-10-14 |
+| https://ai.google.dev/gemini-api/docs/live-api/session-management | "Without compression, audio-only sessions are limited to 15 minutes, and audio-video sessions are limited to 2 minutes"; a connection lasts about 10 minutes; context-window compression extends sessions | 2026-10-14 |
+| https://ai.google.dev/gemini-api/docs/speech-generation | TTS models gemini-3.8-flash-tts, gemini-3.8-flash-lite-tts, …; text in, audio out; 24 kHz mono 16-bit PCM (WAV unary, raw L16 when streaming); 30 prebuilt voices incl. Zephyr, Puck, Charon, Kore; examples use the Interactions API | 2026-10-14 |
+| https://ai.google.dev/gemini-api/docs/interactions | Interactions are stored by default (55 days paid, 1 day free) unless `store=false`; generateContent "remains fully supported" | 2026-10-14 |
+| https://ai.google.dev/gemini-api/docs/structured-output | JSON Schema output; a subset of JSON Schema; validate values in the application | 2026-10-14 |
+| https://ai.google.dev/gemini-api/docs/pricing (last updated 2026-10-13) | Gemini 3.8 Flash paid tier: input $0.75 / output $3.75 per 1M tokens to 2026-12-31, $1.50 / $7.50 from 2027-01-01; 3.8 Flash TTS: $0.50 text in / $9.00 audio out, doubling from 2027 | 2026-10-14 |
+| probe on this PC with the user's key and a drawn test image | generate_content returned 503 UNAVAILABLE ("experiencing high demand") twice; the request shapes are verified against the SDK and covered by MT-98 | 2026-10-14 |
+| https://learn.microsoft.com/en-us/windows/win32/api/winuser/ns-winuser-monitorinfoexw | MONITORINFOEX adds `szDevice`, the monitor's device name, filled by GetMonitorInfo | 2026-10-15 |
+| https://doc.qt.io/qt-6/qscreen.html | `name()` is "a user presentable string" (X11 example only; nothing about Windows); `grabWindow(0)` grabs the entire screen, the pixmap may be larger on high-DPI screens (devicePixelRatio) | 2026-10-15 |
+| probe on this PC | `QScreen.name()` = `\\.\DISPLAY1` = MONITORINFOEX `szDevice` (UNDOCUMENTED match, D-052) | 2026-10-15 |
+| Qt `QTextDocument.setMarkdown` on this PC | fenced code blocks carry `BlockCodeFence` / `BlockCodeLanguage` and the generic family "monospace"; Wisp sets Cascadia Mono/Consolas on them | 2026-10-15 |
+| https://unpkg.com/lucide-static@1.56.0/icons/ | eye and scan-eye icons (same package and licence as D-043) | 2026-10-15 |

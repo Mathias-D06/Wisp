@@ -176,6 +176,7 @@ class Island(QWidget):
     console_requested = Signal()
     quit_requested = Signal()
     files_dropped = Signal(list)  # paths dropped on the island: they go on the shelf (D-051)
+    watch_stop_requested = Signal()  # a click on the "Watching" activity's right half (D-052)
     drop_tab = "Files & Share"
 
     def __init__(self, voice, accent: str, has_key, media_command, tabs: list,
@@ -653,6 +654,9 @@ class Island(QWidget):
         elif p.mode == "activity" and p.main is not None and p.main.kind == "music" \
                 and pos.x() > main.center().x():
             self.media_command("play_pause")  # compact music: play/pause without expanding
+        elif p.mode == "activity" and p.main is not None and p.main.kind == "watching" \
+                and pos.x() > main.center().x():
+            self.watch_stop_requested.emit()  # one click stops Watch mode
         elif (p.mode in ("idle", "activity") and pos.x() < main.left() + main.height()
               and (p.main is None or p.main.tier == "voice")):
             self.voice.toggle_talk()  # the orb: click to talk, as everywhere in Wisp

@@ -33,6 +33,9 @@ HOTKEYS = [
     ("dictation", "Dictation", "Hold to dictate into the focused text box"),
     ("circle", "Circle to Ask", "Hold, then circle something on screen and ask"),
     ("island", "Island", "Hold to open or close the Island"),
+    ("screen_assist", "Screen Assist", "Hold to ask about the window in front (speak while "
+     "holding, or just tap for a quick look)"),
+    ("watch", "Watch mode", "Hold to turn Watch mode on or off"),
 ]
 DEFAULT_DEVICE = "System default"
 TEST_SECONDS = 3
@@ -90,9 +93,11 @@ class HotkeysAudioPage(SettingsPage):
         self.test_result = QLabel()
         self.test_result.setWordWrap(True)
         audio_form.addRow(self.test_result)
-        self.save_debug = QCheckBox("Save the audio sent to Gemini (for troubleshooting)")
-        self.save_debug.setToolTip("Each voice turn and dictation is saved as a WAV file in "
-                                   "%APPDATA%\\Wisp\\debug (newest 20 kept)")
+        self.save_debug = QCheckBox("Save the audio and screenshots sent to Gemini "
+                                    "(for troubleshooting)")
+        self.save_debug.setToolTip("Each voice turn and dictation is saved as a WAV file, and "
+                                   "each Screen Assist screenshot as a JPEG, in "
+                                   "%APPDATA%\\Wisp\\debug (newest 20 of each kept)")
         debug_row = QHBoxLayout()
         debug_row.addWidget(self.save_debug, 1)
         open_folder = QPushButton("Open folder")

@@ -76,7 +76,9 @@ is **no**.
 | Talk (push-to-talk) | hold **Alt+Win**, or click the orb | Settings → Hotkeys and audio |
 | Dictate into the focused text box | hold **Ctrl+Win** | Settings → Hotkeys and audio |
 | Circle to Ask | hold **Ctrl+Shift** and draw a loop with the left mouse button | Settings → Hotkeys and audio |
-| Open or close the Island | hover it, click it, scroll down on it, or hold **Ctrl+Alt+Space**; Esc closes it | Settings → Hotkeys and audio |
+| Open or close the Island | hover it, click it, scroll down on it, or hold **Ctrl+Alt+I**; Esc closes it | Settings → Hotkeys and audio |
+| Ask about the window in front (Screen Assist) | hold **Ctrl+Alt+Space** and ask, or tap it for a quick look | Settings → Hotkeys and audio |
+| Watch mode on or off | hold **Ctrl+Alt+W** | Settings → Hotkeys and audio |
 | Type instead of talking | the Island's Chat tab (or tray → Open console, or "Open in window") | — |
 | Play or pause music | click the right half of the Island's music pill | — |
 | Dismiss a banner | swipe or scroll up on it (clicking opens what it's about) | — |
@@ -96,6 +98,7 @@ Things to try:
 - "Turn the volume down", "pause the music", "turn on Night Light", "lock the PC"
 - "What's on my calendar tomorrow?", "add lunch with Ana on Friday at 1 pm"
 - "Send this to my phone", "share the file I just downloaded"
+- "What's on my screen?", "explain this", "check this", "keep an eye on my screen"
 - "Set my wallpaper to the mountain one"
 
 **Settings** (tray → Settings…):
@@ -149,6 +152,42 @@ tab, and your events stay visible until you do. To avoid it:
 
 The heads-up in the Island (the next event's countdown, 10 minutes before by default) is set
 in Settings → Accounts.
+
+## Screen Assist and Watch mode
+
+**Screen Assist** answers questions about what's on your screen. Hold **Ctrl+Alt+Space** over
+any window and ask ("what does this error mean?"), or just tap it for a quick look: Wisp
+explains what's shown and points out anything wrong, unclear or worth acting on. You can also
+ask by voice: "what's on my screen?", "explain this", "check this", "what do you think?".
+
+The answer opens in the Island's **Screen** tab and Wisp reads the gist aloud:
+
+- the thumbnail shows exactly what was sent;
+- **Explain**, **Review** (proofreading, bugs, numbers), **Summarise** and **Reply** ask again
+  about the same screenshot. **Reply** drafts an answer to the email or message on screen, and
+  **Insert** pastes it where you were reading. Wisp never sends anything;
+- **More** gives the detailed version, **Copy** copies it, and code comes in a monospace block;
+- follow-ups ("and the second one?") continue the conversation. Wisp takes a new screenshot
+  only if the window changed.
+
+**Watch mode** (off by default; **Ctrl+Alt+W**, "keep an eye on my screen", or the Watch
+button on the Screen tab) looks at the window in front every 20 seconds. It speaks up only when
+something is wrong: an error dialog, a failed build or test, an obvious typo. A look is sent to
+Gemini only when the window has changed. While it's on, the Island shows "Watching" with the
+time left (hover and click **Stop**), and the tray icon gets a dot. It stops by itself after 30
+minutes. The Stats tab shows how much it used and an estimated cost.
+
+**Privacy.**
+
+- Screenshots stay in memory for the current question and are never saved. (The exception is
+  Settings → Hotkeys and audio → "Save the audio and screenshots sent to Gemini", for
+  troubleshooting.)
+- Wisp **never looks at** password managers, private (Incognito/InPrivate) browser windows,
+  or banking and payment pages. It says "I don't look at that window" instead, and on a
+  whole-screen look it paints those windows over. Edit the list in Settings → Screen Assist.
+- Text on screen is treated as data, never as instructions. Screen Assist can't click, type or
+  send anything, and anything Wisp is asked to do afterwards needs your confirmation.
+- Every capture is listed in Settings → Action log (window title and time, not the image).
 
 ## Files & Share
 
@@ -249,6 +288,10 @@ These are sent to Google's Gemini API, and only while you use the matching featu
 
 The voice connection closes after 5 idle minutes.
 
+Screen Assist and Watch mode send a screenshot of the window you ask about (or, in Watch
+mode, of the window in front when it has changed) with your question to Gemini. Screenshots
+aren't stored by Wisp.
+
 If you connect Google Calendar, Wisp talks to Google's Calendar API directly with your own
 project's sign-in. When you ask about your calendar, the events Wisp reads out also go to Gemini
 as the tool's result.
@@ -260,7 +303,8 @@ Everything else stays in `%APPDATA%\Wisp`:
 - `google_client.bin` and `google_token.bin` hold your Google OAuth client and sign-in,
   encrypted, if you connect Google Calendar;
 - `wisp.sqlite3` holds to-dos, memories, clipboard history, stats, the action log, routines,
-  the copy of your calendar and the shelf (links to files, not the files);
+  the copy of your calendar, the shelf (links to files, not the files) and Gemini usage counts
+  (no content);
 - `jobs.sqlite3` holds the schedules;
 - `logs\` holds the logs, with API keys removed.
 

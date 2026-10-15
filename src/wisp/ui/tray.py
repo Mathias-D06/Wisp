@@ -18,6 +18,9 @@ class Tray:
     def __init__(self, accent: str):
         self._accent = accent
         self._state = "idle"
+        self._badge = ""
+        self._note = ""
+        self._tooltip = "Wisp"
         self.icon = QSystemTrayIcon(orb_icon(accent))
         self.icon.setToolTip("Wisp")
         self.menu = QMenu()
@@ -56,12 +59,24 @@ class Tray:
     def set_state(self, state: str, tooltip: str) -> None:
         if state != self._state:
             self._state = state
-            self.icon.setIcon(orb_icon(self._accent, state))
-        self.icon.setToolTip(f"Wisp — {tooltip}"[:120])
+            self.icon.setIcon(orb_icon(self._accent, state, self._badge))
+        self._tooltip = f"Wisp — {tooltip}"
+        self._show_tooltip()
+
+    def set_badge(self, color: str, note: str = "") -> None:
+        """A coloured dot on the icon and a line in the tooltip (Watch mode, D-052); ""
+        removes it."""
+        self._badge, self._note = color, note
+        self.icon.setIcon(orb_icon(self._accent, self._state, color))
+        self._show_tooltip()
+
+    def _show_tooltip(self) -> None:
+        note = self._note
+        self.icon.setToolTip((f"{self._tooltip}\n{note}" if note else self._tooltip)[:120])
 
     def set_accent(self, accent: str) -> None:
         self._accent = accent
-        self.icon.setIcon(orb_icon(accent, self._state))
+        self.icon.setIcon(orb_icon(accent, self._state, self._badge))
 
     def notify(self, title: str, message: str, msecs: int = 6000) -> None:
         self.icon.showMessage(title, message, orb_icon(self._accent), msecs)

@@ -384,6 +384,44 @@ class Recorder:
         phone.stop()
         self.settle()
 
+    def screen_assist(self) -> None:
+        """Screen Assist with a made-up window and scripted answers (spikes/sample_screen.py):
+        asking, a quick look, Review with a code fix, then Watch mode's indicator."""
+        import sample_screen
+
+        from wisp.ui.island.assist_tab import AssistTab
+
+        island = self.island
+        tab = next(w for _name, w in island.panel.tabs if isinstance(w, AssistTab))
+        index = next(i for i, (name, _w) in enumerate(island.panel.tabs) if name == "Screen")
+        quick, review = sample_screen.exchanges()
+        self.settle()
+        level = [0.0]
+        self.wisp.feedback.show_state("Listening… release to ask", "accent",
+                                      lambda: level[0])
+        self.advance(1.4, lambda t: level.__setitem__(0, 0.35 + 0.3 * math.sin(t * 9)))
+        self.wisp.feedback.show_state("Looking…", "warning")
+        self.advance(0.8)
+        self.wisp.feedback.hide_now()
+        island.panel.show_tab(index)
+        tab.show_exchange(quick)
+        island.expand()
+        self.advance(2.6)
+        tab.show_exchange(review)
+        self.advance(2.8)
+        island.machine.set_watching("Watching", WALL0 + self.clock.now + 30 * 60)
+        island.collapse()
+        self.advance(1.4)
+        island._cursor_inside = lambda: True  # the drawn pointer rests on it: "Stop" shows
+        island._set_hover(True)
+        self.advance(0.8)
+        island._set_hover(False)
+        del island._cursor_inside
+        self.advance(0.6)
+        self.save_gif("screen_assist")
+        island.machine.set_watching(None)
+        self.settle()
+
     def stills(self) -> None:
         from wisp.system.media import MediaState
 
@@ -446,6 +484,7 @@ def main() -> None:
         recorder.autohide_reveal()
         recorder.calendar_tab()
         recorder.files_tab()
+        recorder.screen_assist()
     recorder.wisp.quit()
 
 
