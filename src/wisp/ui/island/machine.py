@@ -79,6 +79,7 @@ class IslandStateMachine:
         self._timer: Activity | None = None
         self._sharing: Activity | None = None  # the phone link while it runs (D-051)
         self._watching: Activity | None = None  # Watch mode while it runs (D-052)
+        self.calm = False  # Discreet mode (D-053)
         self._queue: list[Banner] = []
         self._showing: Banner | None = None
         self._banner_until = 0.0
@@ -182,6 +183,16 @@ class IslandStateMachine:
         stays on screen the whole time: a server on the network is never out of sight."""
         self._sharing = (Activity("sharing", "timer", text, tone="success", data=until)
                          if text and until is not None else None)
+        self._changed()
+
+    def set_calm(self, calm: bool) -> None:
+        """Discreet mode: a waiting banner that isn't an error is dropped; new ones are
+        turned into a pulse by the island before they get here."""
+        self.calm = calm
+        if calm:  # errors carry the warning icon (reminders share its tone, not its icon)
+            self._queue = [b for b in self._queue if b.icon == "warning"]
+            if self._showing is not None and self._showing.icon != "warning":
+                self._showing = None
         self._changed()
 
     def set_watching(self, text: str | None, until: float | None = None) -> None:

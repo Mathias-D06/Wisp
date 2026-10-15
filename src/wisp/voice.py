@@ -78,6 +78,7 @@ class VoiceController(QObject):
         self.live_state = LiveState.IDLE.value
         self.live_detail = ""
         self.always_listening = settings_store.get().audio.always_listening
+        self.discreet = False
         self._always_suspended = False
         settings_store.subscribe(self._on_settings)
         signals.state.connect(self._on_state)
@@ -100,7 +101,18 @@ class VoiceController(QObject):
 
     def _on_settings(self, settings) -> None:
         """Settings are saved on the Qt thread (tray, console, Settings window)."""
-        enabled = settings.audio.always_listening
+        self._apply_always(settings.audio.always_listening)
+
+    def set_discreet(self, active: bool) -> None:
+        """Discreet mode (D-053) is push-to-talk only: always-listening pauses while it's on and
+        comes back (if it is on in Settings) when it's off. The setting itself is untouched."""
+        if active == self.discreet:
+            return
+        self.discreet = active
+        self._apply_always(self.settings_store.peek().audio.always_listening)
+
+    def _apply_always(self, wanted: bool) -> None:
+        enabled = wanted and not self.discreet
         if enabled == self.always_listening:
             return
         self.always_listening = enabled

@@ -157,6 +157,12 @@ class Recorder:
         if island.shadow.isVisible():
             island.shadow.render(painter, QPoint(), renderFlags=QWidget.RenderFlag.DrawChildren)
         island.render(painter, QPoint(), renderFlags=QWidget.RenderFlag.DrawChildren)
+        card = getattr(self.wisp, "discreet_card", None)
+        if card is not None and card.isVisible():  # Discreet mode's card, where it sits
+            offset = card.pos() - island.pos()
+            painter.setOpacity(card.windowOpacity())
+            card.render(painter, offset, renderFlags=QWidget.RenderFlag.DrawChildren)
+            painter.setOpacity(1.0)
         if getattr(self, "annotate", None) is not None:
             painter.setRenderHint(QPainter.RenderHint.Antialiasing)
             self.annotate(painter)  # recording-only marks (the reveal zone, a pointer)
@@ -422,6 +428,35 @@ class Recorder:
         island.machine.set_watching(None)
         self.settle()
 
+    def discreet_mode(self) -> None:
+        """Discreet mode on (the island shrinks to a grey line), a Screen Assist answer on the
+        quiet card, a notification as a pulse, then off: everything as before. Made-up content
+        (spikes/sample_screen.py); also saves a still of the card at this scaling."""
+        import sample_screen
+
+        wisp, island = self.wisp, self.island
+        card = wisp.discreet_card
+        card.setAttribute(Qt.WidgetAttribute.WA_DontShowOnScreen)
+        quick, _review = sample_screen.exchanges()
+        self.settle()
+        self.advance(0.8)
+        wisp.discreet.set_enabled(True, "recording")
+        self.advance(1.4)
+        wisp.feedback.show_state("Listening… release to ask", "accent", lambda: 0.4)
+        self.advance(0.9)
+        wisp.feedback.hide_now()
+        wisp._on_assist_answer(quick)
+        self.advance(2.4)
+        self.still(f"discreet_card_{round(_DPR * 100)}")
+        card.dismiss()
+        self.advance(0.6)
+        island.notify("Reminder", "Call the dentist")
+        self.advance(1.6)
+        wisp.discreet.set_enabled(False, "recording")
+        self.advance(1.6)
+        self.save_gif("discreet_mode", height=140)
+        self.settle()
+
     def stills(self) -> None:
         from wisp.system.media import MediaState
 
@@ -485,6 +520,7 @@ def main() -> None:
         recorder.calendar_tab()
         recorder.files_tab()
         recorder.screen_assist()
+        recorder.discreet_mode()
     recorder.wisp.quit()
 
 

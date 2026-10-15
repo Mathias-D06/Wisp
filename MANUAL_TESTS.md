@@ -220,6 +220,19 @@ Needs a Google account and about 10 minutes for MT-82 the first time.
 | MT-105 | After MT-98…MT-104 open the island's **Stats** tab. | "Gemini use today" lists Screen Assist answers, Watch looks (sent and skipped), tokens and an estimated cost. |
 | MT-106 | Hold **Ctrl+Alt+I**. Then Settings → Hotkeys and audio: check the Screen Assist, Watch mode and Island rows. | Ctrl+Alt+I opens and closes the island; the rows show Ctrl+Alt+Space, Ctrl+Alt+W and Ctrl+Alt+I, and clashing chords are flagged. |
 
+## Discreet mode (D-053)
+
+| ID | Steps | Expected |
+|---|---|---|
+| MT-107 | Press **Ctrl+Alt+D**. Look at the top of the screen at 100 % and at 150 % scaling (Settings → Display). Press it again. | On: the island becomes a thin grey line, half see-through, with no glow or colour, and it still slides away after a few seconds (rest the pointer at the top edge above it to bring it back). Off: the normal island, voice and animations are back, exactly as before. |
+| MT-108 | In Discreet mode, tap **Ctrl+Alt+Space** over a window; then hold it and whisper a question. Hover the card; move away. Click **Speak it** (with headphones). | No sound at all; only a small dark card appears under the line with the answer, readable at both scalings. It stays while the pointer is on it and fades about 12 s after you leave. Speak it reads that answer aloud. |
+| MT-109 | In Discreet mode hold **Alt+Win** and ask something. | Wisp doesn't speak: its reply appears as text on the card. |
+| MT-110 | In Discreet mode let a reminder fire (MT-67), then cause an error (e.g. turn off Wi-Fi briefly and ask something), then ask Wisp to close Notepad. Close the island so it's hidden behind a full-screen video and let another reminder fire. | The reminder is only a short brightening of the line; the error opens up as a banner; the confirmation card appears as usual. Behind the full-screen video no Windows notification pops up. |
+| MT-111 | Turn **Always listening** on, then Discreet mode on: speak without holding the talk key; then hold Alt+Win and speak. Turn Discreet mode off. | In Discreet mode speech without the key is ignored and push-to-talk works; afterwards always-listening is back on by itself. |
+| MT-112 | Settings → Discreet mode: Shape **A small dot**, Where **Top right corner**, Opacity 30 %, card text 16 px, card background 100 %. Apply, with Discreet mode on. Hover the dot until the island opens; close it. Let it slide away and bring it back from the top right edge. | A small grey dot near the top-right corner; the island opens in the top centre and returns to the corner; the reveal works at the corner. The card text is bigger and the card solid. Turning Discreet mode off and checking Settings → General / Loadout shows nothing else changed. |
+| MT-113 | Settings → Discreet mode → tick **Turn on by itself during Google Calendar events**; create an event starting in 2 minutes (MT-82 connected). Wait. During the event turn Discreet mode off from the tray. Wait for the event to end. | It turns on when the event starts (within a minute). Turned off, it stays off for the rest of that event, and nothing changes when the event ends. |
+| MT-114 | In Discreet mode turn on Watch mode (Ctrl+Alt+W) and the phone link. Then share your screen in Teams or record it with Snipping Tool. Say "go discreet" and "back to normal". | A small amber dot beside the line shows Watch mode (green for the phone link) and the tray dot is there; the island and card appear normally in the screen share and recording; the voice commands switch the mode. |
+
 ## Hotkeys
 
 | ID | Steps | Expected |

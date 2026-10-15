@@ -95,7 +95,7 @@ def test_hotkeys_live_conflicts_and_audio(dialog):
     assert page.problems.text().startswith("Push-to-talk: Alt + Win")
     page.edits["dictation"].setText("alt+win")
     assert "same keys" in page.problems.text()
-    page.edits["dictation"].setText("ctrl+alt+d")
+    page.edits["dictation"].setText("ctrl+alt+x")
     page.edits["circle"].setText("ctrl+banana")
     assert "Unknown key 'banana'" in page.problems.text()
     assert not dialog.apply()
@@ -106,7 +106,7 @@ def test_hotkeys_live_conflicts_and_audio(dialog):
     page.hold_ms.setValue(400)
     assert dialog.apply()
     saved = SettingsStore(dialog.store.path).get()
-    assert saved.hotkeys.dictation == "ctrl+alt+d" and saved.hotkeys.hold_ms == 400
+    assert saved.hotkeys.dictation == "ctrl+alt+x" and saved.hotkeys.hold_ms == 400
     assert saved.audio.input_device == "Headset Microphone" and saved.audio.output_device == ""
 
 

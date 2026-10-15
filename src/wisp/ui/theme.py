@@ -107,6 +107,12 @@ class IslandTokens:
     reveal_height: int = 3  # …and this many px from the screen's top edge
     reveal_dwell_ms: int = 150  # the pointer must rest in the zone this long
     reveal_poll_ms: int = 33  # cursor polling while hidden (~30 Hz)
+    # Discreet mode (D-053): a thin line or a small dot, grey, in the top centre or a corner
+    discreet_line: tuple[int, int] = (44, 4)
+    discreet_dot: tuple[int, int] = (10, 10)
+    discreet_corner_margin: int = 28
+    discreet_hit_margin: int = 6  # the tiny shape takes the pointer this far around it
+    discreet_pulse_ms: int = 1400  # a notification in Discreet mode: a short brightening
     countdown_window_s: int = 600  # show a countdown for reminders due within 10 minutes
     idle_frame_ms: int = 125  # the orb's slow glow (8 fps); everything else is 16 ms
     meter_frame_ms: int = 50  # music equaliser (20 fps)
@@ -168,6 +174,24 @@ def luminance(color: str) -> float:
 def contrast(foreground: str, background: str) -> float:
     a, b = sorted((luminance(foreground), luminance(background)), reverse=True)
     return (a + 0.05) / (b + 0.05)
+
+
+# Discreet mode colours (D-053): neutral and quiet. The card's text stays fully opaque and only
+# its background follows the opacity setting, so at the default (92 %) the text keeps WCAG AA
+# contrast (4.5:1) even over a white window behind it (tested).
+DISCREET_GREY = "#9aa0a6"
+DISCREET_CARD = "#1e1f22"
+DISCREET_CARD_TEXT = "#c8cbd0"
+DISCREET_CARD_MUTED = "#a9adb4"
+
+
+def composite(color: str, alpha: float, behind: str) -> str:
+    """``color`` at ``alpha`` over ``behind`` (what the eye sees through a translucent card)."""
+    top, back = QColor(color), QColor(behind)
+    mix = QColor(round(top.red() * alpha + back.red() * (1 - alpha)),
+                 round(top.green() * alpha + back.green() * (1 - alpha)),
+                 round(top.blue() * alpha + back.blue() * (1 - alpha)))
+    return mix.name()
 
 
 def rgba(color: str, alpha: float) -> str:

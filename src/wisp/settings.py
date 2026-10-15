@@ -123,6 +123,7 @@ class HotkeySettings:
     island: str = "ctrl+alt+i"  # expand / collapse the island (D-045; Ctrl+Alt+Space until D-052)
     screen_assist: str = "ctrl+alt+space"  # ask about the active window (D-052)
     watch: str = "ctrl+alt+w"  # Watch mode on/off (D-052)
+    discreet: str = "ctrl+alt+d"  # Discreet mode on/off (D-053)
     hold_ms: int = 250
 
 
@@ -163,6 +164,27 @@ class ScreenAssistSettings:
     watch_speak: bool = False  # Watch comments are shown; spoken only if this is on
 
 
+DISCREET_STYLES = ("line", "dot")
+DISCREET_POSITIONS = ("top-centre", "top-left", "top-right")
+
+
+@dataclass
+class DiscreetSettings:
+    """Discreet mode's own profile (D-053): turning it on or off never touches the normal
+    settings, so leaving it restores everything as it was."""
+
+    enabled: bool = False
+    style: str = "line"  # "line" | "dot"
+    opacity: int = 50  # the island's line or dot, percent
+    position: str = "top-centre"  # "top-centre" | "top-left" | "top-right"
+    card_seconds: int = 12  # the answer card fades out after this long (unless hovered)
+    card_text_px: int = 13
+    card_opacity: int = 92  # the card's background, percent (text stays opaque: WCAG AA)
+    speak_replies: bool = False  # keep spoken replies (with headphones)
+    mute_toasts: bool = True  # no Windows notifications either
+    during_events: bool = False  # turn on by itself during Google Calendar events
+
+
 @dataclass
 class SafetySettings:
     allow_terminal: bool = False
@@ -189,6 +211,7 @@ class Settings:
     calendar: CalendarSettings = field(default_factory=CalendarSettings)
     share: ShareSettings = field(default_factory=ShareSettings)
     screen_assist: ScreenAssistSettings = field(default_factory=ScreenAssistSettings)
+    discreet: DiscreetSettings = field(default_factory=DiscreetSettings)
 
     def to_dict(self) -> dict[str, Any]:
         return dataclasses.asdict(self)
@@ -277,6 +300,19 @@ def validate(settings: Settings) -> list[str]:
         problems.append("Watch mode comments at most every 15–3600 seconds.")
     if not 1 <= assist.watch_auto_stop_min <= 480:
         problems.append("Watch mode stops after 1–480 minutes.")
+    discreet = settings.discreet
+    if discreet.style not in DISCREET_STYLES:
+        problems.append("Discreet mode's island is a 'line' or a 'dot'.")
+    if discreet.position not in DISCREET_POSITIONS:
+        problems.append("Discreet mode's island sits top-centre, top-left or top-right.")
+    if not 20 <= discreet.opacity <= 100:
+        problems.append("Discreet mode's island opacity must be 20–100 %.")
+    if not 3 <= discreet.card_seconds <= 120:
+        problems.append("Discreet mode's card shows for 3–120 seconds.")
+    if not 11 <= discreet.card_text_px <= 20:
+        problems.append("Discreet mode's card text is 11–20 px.")
+    if not 85 <= discreet.card_opacity <= 100:
+        problems.append("Discreet mode's card opacity must be 85–100 % (readable text).")
     if not settings.ai.tts_model.strip():
         problems.append("Speech model name cannot be empty.")
     if not 1 <= settings.share.phone_max_upload_mb <= 20480:
@@ -327,6 +363,7 @@ def validate(settings: Settings) -> list[str]:
                 "Island": settings.hotkeys.island,
                 "Screen Assist": settings.hotkeys.screen_assist,
                 "Watch mode": settings.hotkeys.watch,
+                "Discreet mode": settings.hotkeys.discreet,
             }
         )
     )

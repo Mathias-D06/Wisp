@@ -19,11 +19,12 @@ content crossfades.
 from __future__ import annotations
 
 import logging
+import math
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from PySide6.QtCore import QEvent, QPointF, QRect, QRectF, Qt, QTimer, Signal
+from PySide6.QtCore import QEvent, QPoint, QPointF, QRect, QRectF, Qt, QTimer, Signal
 from PySide6.QtGui import (
     QColor,
     QCursor,
@@ -177,6 +178,7 @@ class Island(QWidget):
     quit_requested = Signal()
     files_dropped = Signal(list)  # paths dropped on the island: they go on the shelf (D-051)
     watch_stop_requested = Signal()  # a click on the "Watching" activity's right half (D-052)
+    discreet_toggled = Signal(bool)  # the menu's "Discreet mode" (D-053)
     drop_tab = "Files & Share"
 
     def __init__(self, voice, accent: str, has_key, media_command, tabs: list,
@@ -216,6 +218,8 @@ class Island(QWidget):
         self.wall = time.time  # wall-clock time for countdowns
         self._last_tick = self.clock()
         self._screen_hooked = False
+        self.discreet = None  # a DiscreetLook while Discreet mode is on (D-053)
+        self._pulse_until = 0.0
 
         expanded_main = self._expanded_main()
         self.panel = ExpandedPanel(voice, accent, has_key, media_command, tabs, parent=self)
@@ -329,7 +333,15 @@ class Island(QWidget):
         pos = QCursor.pos()
         screen = (QGuiApplication.screenAt(pos) if self.monitor_mode == "cursor"
                   else QGuiApplication.primaryScreen())
-        inside = screen is not None and in_zone(pos, hot_zone(screen.geometry()))
+        if screen is None:
+            inside = False
+        elif self.discreet is not None:
+            width = geometry.discreet_size(self.discreet.style)[0]
+            centre = self.x() + self.width() // 2 if screen is self._screen else None
+            inside = in_zone(pos, hot_zone(screen.geometry(), centre_x=centre,
+                                           shape_width=width))
+        else:
+            inside = in_zone(pos, hot_zone(screen.geometry()))
         if self._dwell.update(inside, self.clock()):
             self._dwell.reset()
             self.machine.reveal()
@@ -350,6 +362,13 @@ class Island(QWidget):
         self._screen = screen
         full, work = screen.geometry(), screen.availableGeometry()
         x = full.x() + (full.width() - self.width()) // 2
+        corner = self._discreet_corner()
+        if corner is not None:
+            width = geometry.discreet_size(self.discreet.style)[0]
+            margin = ISLAND.discreet_corner_margin
+            centre = (full.x() + margin + width / 2 if corner == "top-left"
+                      else full.x() + full.width() - margin - width / 2)
+            x = round(centre - self.width() / 2)  # the canvas may reach past the screen edge
         handle = self.windowHandle()
         if handle is not None and handle.screen() is not screen:
             handle.setScreen(screen)
@@ -358,6 +377,16 @@ class Island(QWidget):
         self._mask_key = None
         if self.isVisible():
             self._sync_mask()
+
+    def _discreet_corner(self) -> str | None:
+        """Discreet mode in a corner, while compact (the open panel and banners use the
+        top centre, where there's room)."""
+        look = self.discreet
+        if look is None or look.position == "top-centre":
+            return None
+        if self.presentation.mode in ("expanded", "banner"):
+            return None
+        return look.position
 
     # ----- geometry ----------------------------------------------------------------------------
     def _rects(self) -> tuple[QRectF, QRectF | None]:
@@ -378,8 +407,9 @@ class Island(QWidget):
 
     def _retarget(self) -> None:
         p = self.presentation
-        target = geometry.target_for(p, hover=self._hover and p.mode in COMPACT)
-        animate = motion.enabled() and self.isVisible()
+        target = geometry.target_for(p, hover=self._hover and p.mode in COMPACT,
+                                     discreet=self.discreet.style if self.discreet else None)
+        animate = self._moving() and self.isVisible()
         self.springs.retarget(animate, w=target.width, h=target.height, split=target.split,
                               gap=target.gap, lift=target.lift, vis=target.visible)
         if not animate:
@@ -402,12 +432,15 @@ class Island(QWidget):
             self._outside.stop()
         if p.mode == "expanded" and old.mode != "expanded":
             self.panel.refresh_current()
+        wide = ("expanded", "banner")
+        if self.discreet is not None and (old.mode in wide) != (p.mode in wide):
+            self.place()  # a corner while compact, the top centre while open
         self._retarget()
         self.update()
 
     def _transition(self, old: Presentation, new: Presentation) -> None:
         now = self.clock()
-        moving = motion.enabled() and self.isVisible()
+        moving = self._moving() and self.isVisible()
         leaving_panel = old.mode == "expanded"
         snapshot = self._grab_panel() if leaving_panel and self.panel.isVisible() else None
         if leaving_panel:
@@ -482,6 +515,9 @@ class Island(QWidget):
 
     def notify(self, title: str, message: str) -> None:
         icon, tone, tab = banner_style(title)
+        if self.discreet is not None and icon != "warning":
+            self.pulse()  # Discreet mode: only errors (and confirmations) open up (D-053)
+            return
         line = message.strip().splitlines()[0] if message.strip() else ""
         action = (lambda: self.open_tab(tab)) if tab else None
         self.machine.post(title, line, icon, tone, action=action)
@@ -694,6 +730,10 @@ class Island(QWidget):
         mute.setChecked(bool(self.voice.mic.muted))
         mute.toggled.connect(self.voice.set_muted)
         menu.addAction("Open in window", self.console_requested.emit)
+        discreet = menu.addAction("Discreet mode")
+        discreet.setCheckable(True)
+        discreet.setChecked(self.discreet is not None)
+        discreet.toggled.connect(self.discreet_toggled.emit)
         menu.addSeparator()
         menu.addAction("Quit Wisp", self.quit_requested.emit)
         return menu
@@ -762,14 +802,16 @@ class Island(QWidget):
         p = self.presentation
         if p.mode == "expanded":
             return None  # the live panel paints itself
+        if now < self._pulse_until:
+            return 33  # Discreet mode's pulse
         kinds = {a.kind for a in (p.main, p.secondary) if a is not None}
-        moving = motion.enabled()
+        moving = self._moving()
         if moving and kinds & set(MOVING_KINDS):
             return 33
         if moving and "music" in kinds:
             return ISLAND.meter_frame_ms
-        if "countdown" in kinds:
-            return 250
+        if kinds & {"countdown", "sharing", "watching"} and not self.discreet:
+            return 250  # the clock ticks
         if moving and p.mode == "idle":
             return ISLAND.idle_frame_ms  # the orb's slow glow
         return None
@@ -826,7 +868,9 @@ class Island(QWidget):
         if key == self._mask_key and not force:
             return
         self._mask_key = key
-        handle.setMask(geometry.input_region(main, circle))
+        grow = (ISLAND.discreet_hit_margin if self.discreet is not None
+                and self.presentation.mode in COMPACT else geometry.AA_MARGIN)
+        handle.setMask(geometry.input_region(main, circle, grow=grow))
 
     def _sync_shadow(self) -> None:
         main = self._main
@@ -865,10 +909,13 @@ class Island(QWidget):
         painter.end()
 
     def paint_island(self, painter: QPainter, now: float) -> None:
-        self.look.now, self.look.wall, self.look.moving = now, self.wall(), motion.enabled()
+        self.look.now, self.look.wall, self.look.moving = now, self.wall(), self._moving()
         main, circle = self._main, self._circle
         visible = max(0.0, min(1.0, self.springs["vis"]))  # fades while sliding away
         if visible <= 0.0:
+            return
+        if self.discreet is not None and self.presentation.mode in (*COMPACT, "away"):
+            self._paint_discreet(painter, main, visible, now)
             return
         radius = geometry.corner_radius(main.height())
         path = QPainterPath()
@@ -906,6 +953,65 @@ class Island(QWidget):
                 content.paint_compact(painter, rect, circle, layer.p, self.look)
             painter.restore()
         painter.restore()
+
+    def _paint_discreet(self, painter: QPainter, main: QRectF, visible: float,
+                        now: float) -> None:
+        """Discreet mode (D-053): a neutral grey line or dot at the chosen opacity; no glow,
+        no accent, no waveform. Voice activity and a notification (the pulse) make it a little
+        brighter. The phone link and Watch mode stay visible as a small coloured dot."""
+        look = self.discreet
+        p = self.presentation
+        alpha = look.opacity
+        if p.main is not None and p.main.tier == "voice":
+            alpha = min(1.0, alpha + 0.3)
+        if now < self._pulse_until:
+            phase = 1 - (self._pulse_until - now) / (ISLAND.discreet_pulse_ms / 1000)
+            alpha = min(1.0, alpha + 0.45 * math.sin(math.pi * max(0.0, min(1.0, phase))))
+        radius = geometry.corner_radius(main.height())
+        color = QColor(theme.DISCREET_GREY)
+        color.setAlphaF(alpha * visible)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(color)
+        painter.drawRoundedRect(main, radius, radius)
+        live = {a.kind: a for a in (p.main, p.secondary) if a is not None}
+        indicator = live.get("watching") or live.get("sharing")
+        if indicator is not None:  # never hidden: Wisp is looking, or serving files
+            tone = content.tone_color(indicator.tone, self.look.palette)
+            tone.setAlphaF(visible)
+            size = max(6.0, main.height() + 2)
+            dot = QRectF(main.right() + 4, main.center().y() - size / 2, size, size)
+            if look.style == "dot":
+                dot = main.adjusted(-1, -1, 1, 1)
+            painter.setBrush(tone)
+            painter.drawEllipse(dot)
+
+    def card_anchor(self) -> QPoint:
+        """Where Discreet mode's card goes: just under the line or dot (global, logical px)."""
+        height = (geometry.discreet_size(self.discreet.style)[1] if self.discreet
+                  else ISLAND.idle[1])
+        return QPoint(self.x() + self.width() // 2, self.y() + ISLAND.top + height + 10)
+
+    def pulse(self) -> None:
+        """A notification in Discreet mode: the line or dot brightens briefly."""
+        self._pulse_until = self.clock() + ISLAND.discreet_pulse_ms / 1000
+        self._wake()
+
+    def set_discreet(self, look) -> None:
+        """Discreet mode on (a DiscreetLook) or off (None); off restores the normal island."""
+        if look == self.discreet:
+            return
+        self.discreet = look
+        self._pulse_until = 0.0
+        self.machine.set_calm(look is not None)
+        self.place()
+        self._retarget()
+        self._mask_key = None
+        self._sync_mask(force=True)
+        self.update()
+
+    def _moving(self) -> bool:
+        """Animated shapes and live content, unless Reduce motion or Discreet mode."""
+        return motion.enabled() and self.discreet is None
 
     def _paint_highlight(self, painter: QPainter, main: QRectF, radius: float,
                          circle: QRectF | None) -> None:

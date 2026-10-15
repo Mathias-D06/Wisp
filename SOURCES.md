@@ -318,3 +318,10 @@ from `.venv`. Dates are when checked.
 | probe on this PC | `QScreen.name()` = `\\.\DISPLAY1` = MONITORINFOEX `szDevice` (UNDOCUMENTED match, D-052) | 2026-10-15 |
 | Qt `QTextDocument.setMarkdown` on this PC | fenced code blocks carry `BlockCodeFence` / `BlockCodeLanguage` and the generic family "monospace"; Wisp sets Cascadia Mono/Consolas on them | 2026-10-15 |
 | https://unpkg.com/lucide-static@1.56.0/icons/ | eye and scan-eye icons (same package and licence as D-043) | 2026-10-15 |
+
+### Discreet mode (D-053)
+
+| URL | Confirmed | Checked |
+|---|---|---|
+| https://www.w3.org/WAI/WCAG22/Understanding/contrast-minimum.html | SC 1.4.3 (AA): text contrast at least 4.5:1 (large text 3:1); ratio = (L1 + 0.05) / (L2 + 0.05) with relative luminance; measured against the background the text is rendered over (Wisp checks the card composited over white and black, the extremes) | 2026-10-15 |
+| this PC (`theme.composite` + `theme.contrast`) | card text #c8cbd0 and labels #a9adb4 on #1e1f22 at 92 % over white: 8.0:1 and 5.8:1; at 85 %: 6.3:1 and 4.5:1; at 80 % the labels drop to 3.8:1 (so the setting starts at 85 %) | 2026-10-15 |

@@ -43,7 +43,7 @@ class FakePlayer:
     def __init__(self):
         self.fed = []
 
-    def feed(self, pcm):
+    def feed(self, pcm, force=False):
         self.fed.append(pcm)
 
     def is_playing(self):

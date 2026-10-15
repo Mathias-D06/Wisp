@@ -348,11 +348,17 @@ def test_swipe_up_dismisses_a_banner(island):
 def test_right_click_menu(island, qtbot):
     menu = island.context_menu()
     labels = [a.text() for a in menu.actions() if not a.isSeparator()]
-    assert labels == ["Settings…", "Mute microphone", "Open in window", "Quit Wisp"]
+    assert labels == ["Settings…", "Mute microphone", "Open in window", "Discreet mode",
+                      "Quit Wisp"]
     with qtbot.waitSignal(island.quit_requested):
         menu.actions()[-1].trigger()
     menu.actions()[1].trigger()
     assert ("set_muted", True) in island.voice.calls
+    discreet = next(a for a in menu.actions() if a.text() == "Discreet mode")
+    assert discreet.isCheckable() and not discreet.isChecked()
+    with qtbot.waitSignal(island.discreet_toggled) as toggled:
+        discreet.trigger()
+    assert toggled.args == [True]
 
 
 def test_text_box_click_takes_focus_and_collapse_gives_it_back(island, monkeypatch):

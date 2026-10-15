@@ -255,7 +255,8 @@ class ScreenAssist(QObject):
             return
         if speech is not None and speech.pcm:
             self.on_speech_usage(speech)
-            self.player.feed(self.resample(speech.pcm, speech.rate))
+            # speak() runs only when reading aloud is allowed or was asked for ("Speak it")
+            self.player.feed(self.resample(speech.pcm, speech.rate), force=True)
             QTimer.singleShot(250, self._watch_playback)
         else:
             self._stop_speaking_state()

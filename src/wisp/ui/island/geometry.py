@@ -27,8 +27,21 @@ class ShapeTarget:
     visible: float = 1.0  # opacity
 
 
-def target_for(p: Presentation, hover: bool = False, tokens: IslandTokens = ISLAND) -> ShapeTarget:
+def discreet_size(style: str, tokens: IslandTokens = ISLAND) -> tuple[int, int]:
+    return tokens.discreet_dot if style == "dot" else tokens.discreet_line
+
+
+def target_for(p: Presentation, hover: bool = False, tokens: IslandTokens = ISLAND,
+               discreet: str | None = None) -> ShapeTarget:
+    """``discreet``: the Discreet style ("line" or "dot", D-053): idle and live activities
+    shrink to it; banners (errors only, then) and the open panel keep their size."""
     grow = tokens.hover_scale if hover else 1.0
+    if discreet and p.mode in ("idle", "activity", "away", "hidden"):
+        width, height = discreet_size(discreet, tokens)
+        if p.mode == "away":
+            return ShapeTarget(width, height, lift=tokens.top + height + tokens.away_lift,
+                               visible=0.0)
+        return ShapeTarget(width * grow, height * grow)
     if p.mode == "away":
         width, height = tokens.idle
         return ShapeTarget(width, height, lift=tokens.top + height + tokens.away_lift,
@@ -96,10 +109,11 @@ def rounded_region(rect: QRectF, radius: float, grow: float = AA_MARGIN) -> QReg
 
 
 def input_region(main: QRectF, circle: QRectF | None = None,
-                 tokens: IslandTokens = ISLAND) -> QRegion:
+                 tokens: IslandTokens = ISLAND, grow: float = AA_MARGIN) -> QRegion:
     """Where the island takes mouse input: exactly its visible shape (QWindow.setMask). Clicks
-    anywhere else on the canvas, including just beside the pill, reach the app underneath."""
-    region = rounded_region(main, corner_radius(main.height(), tokens))
+    anywhere else on the canvas, including just beside the pill, reach the app underneath.
+    ``grow``: a little more around Discreet mode's tiny line or dot, so it can be pointed at."""
+    region = rounded_region(main, corner_radius(main.height(), tokens), grow)
     if circle is not None and circle.width() >= 1.0:
         region = region.united(rounded_region(circle, circle.width() / 2))
     return region

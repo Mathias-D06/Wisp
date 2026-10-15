@@ -1,6 +1,6 @@
 # The island
 
-Recordings of the island's transitions and tabs (D-045…D-051). Each GIF is rendered from the real Island
+Recordings of the island's transitions and tabs (D-045…D-053). Each GIF is rendered from the real Island
 widget, inside a real Wisp with a throwaway data folder and sample content, by
 `spikes/island_record.py`:
 
@@ -24,6 +24,8 @@ A real screen recording of your own is manual test MT-77.
 | `calendar_tab.gif` | the Calendar tab with a made-up calendar (`spikes/sample_calendar.py`, never a real account): the agenda (all-day events on top, each calendar's colour), the month view with colour dots, a day picked, back to the agenda |
 | `files_and_share.gif` | the Files & Share tab with made-up files (`spikes/sample_files.py`; no files, apps or network of this PC): a file dropped on the island lands on the shelf, Downloads, a search, then the phone link with its QR code and a file from the phone waiting for Accept, and the collapsed island showing "Phone link" with the time left |
 | `screen_assist.gif` | Screen Assist with a made-up window and scripted answers (`spikes/sample_screen.py`; nothing from this PC's screen, no Gemini call): "Listening… release to ask", "Looking…", the Screen tab with a quick look and a Review (a code fix in a monospace block), then the collapsed island's "Watching" indicator with its countdown and "Stop" on hover |
+| `discreet_mode.gif` | Discreet mode with made-up content: the normal island, then on (a thin grey line at 50 %), a Screen Assist answer on the quiet card, a reminder as a pulse of the line, then off (the normal island back) |
+| `discreet_card_100.png`, `discreet_card_150.png` | Discreet mode's card at 100 % and 150 % display scaling |
 | `stills/` | each state at rest: idle, listening, thinking, speaking, music, split, countdown, dictation, banner and expanded |
 
 Regenerate the recordings and the stills with:

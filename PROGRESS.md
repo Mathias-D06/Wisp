@@ -446,6 +446,19 @@ acceptance step needs real hardware/API key and is listed in `MANUAL_TESTS.md` (
 - [~] S.2 Watch mode — `assist/service.Watcher`, `engine.WatchCheck`; 20 s, change-gated, JSON verdicts at low media
   resolution, one comment a minute, 30-minute auto-stop, island "Watching" (never hides, click Stop), tray dot +
   menu, Stats estimate — tests above; MT-104/MT-105
+- [~] S.3 Discreet mode — `discreet.py`, `ui/discreet_card.py`, `ui/settings/discreet_page.py`,
+  `tools/builtin/discreet.py`, the island's Discreet look (`island.py`, `geometry.py`, `reveal.py`, `machine.py`),
+  `Player.muted`, `VoiceController.set_discreet`. Toggle from Settings, the island and tray menus, Ctrl+Alt+D and
+  voice; the calendar schedule; a grey line or dot (50 %, top-centre or a corner, its own reveal zone, no glow,
+  no motion); text-only answers on a card that fades after 12 s unless hovered (Speak it, Open; WCAG AA at the
+  default); banners as a pulse, errors and confirmations open; Windows toasts muted; push-to-talk only; a
+  separate profile, so off restores everything — `test_discreet.py` (13: switch remembered, calendar schedule
+  incl. turned off during an event, line/dot look and restore, corner/reveal/hit area, pulse vs error banner,
+  Watch dot, card contrast at 92 % and 85 %, card fade/hover/links, muted player vs Speak it, always-listening
+  pause, settings + page, voice tool, and the acceptance case: a hotkey Screen Assist exchange in Discreet
+  mode on the real app with no sound and only the card, then everything as before); also
+  `test_island_window.py::test_right_click_menu`; `docs/island/discreet_mode.gif`, `discreet_card_100.png`,
+  `discreet_card_150.png`; D-053; MT-107…MT-114
 
 ### Testing, packaging, definition of done
 - [x] T.1 Unit tests: dispatcher, safety tiers, scheduler parsing + persistence, memory, clipboard store,
@@ -531,3 +544,7 @@ acceptance step needs real hardware/API key and is listed in `MANUAL_TESTS.md` (
   probes, so the live check is MT-98. Found while testing: a dHash missed a big dialog on a flat background (switched
   to a brightness grid); fenced code from Qt's Markdown import used the generic "monospace" family (now Cascadia
   Mono/Consolas); the voice model's instruction outgrew its length budget (shortened).
+- 2026-10-15: Discreet mode (brief of 2026-10-14, part 2). Found while building: reminders share the warning tone
+  with errors, so errors are now told apart by their icon; the "Phone link" and "Watching" countdowns never ticked
+  (only "countdown" scheduled 250 ms frames) — fixed for both; tests must never open the real microphone (the
+  acceptance test uses a fake one).

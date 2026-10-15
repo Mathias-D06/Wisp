@@ -13,11 +13,14 @@ from PySide6.QtCore import QPoint, QRect
 from wisp.ui.theme import ISLAND, IslandTokens
 
 
-def hot_zone(screen: QRect, tokens: IslandTokens = ISLAND) -> QRect:
+def hot_zone(screen: QRect, tokens: IslandTokens = ISLAND, centre_x: int | None = None,
+             shape_width: int | None = None) -> QRect:
     """The idle pill's width plus ``reveal_margin`` on each side, and the top ``reveal_height``
-    px of ``screen`` (its full geometry: the zone is the very edge, even over a top taskbar)."""
-    width = tokens.idle[0] + 2 * tokens.reveal_margin
-    left = screen.x() + (screen.width() - width) // 2
+    px of ``screen`` (its full geometry: the zone is the very edge, even over a top taskbar).
+    Discreet mode passes its line's or dot's width and where it sits (``centre_x``, D-053)."""
+    width = (shape_width or tokens.idle[0]) + 2 * tokens.reveal_margin
+    middle = screen.x() + screen.width() // 2 if centre_x is None else centre_x
+    left = max(screen.x(), min(middle - width // 2, screen.x() + screen.width() - width))
     return QRect(left, screen.y(), width, tokens.reveal_height)
 
 

@@ -317,7 +317,8 @@ def test_instructions_on_screen_stay_data_and_trigger_nothing(qtbot):
         {1: malicious}, front, answers=["The email asks you to send your passwords. That's "
                                         "a phishing attempt: don't click Send."])
     pasted = []
-    assist = ScreenAssist(engine, mic=None, player=SimpleNamespace(feed=lambda pcm: None),
+    player = SimpleNamespace(feed=lambda pcm, force=False: None)
+    assist = ScreenAssist(engine, mic=None, player=player,
                           settings=lambda: SimpleNamespace(
                               screen_assist=SimpleNamespace(capture="window")),
                           has_key=lambda: True, voice_name=lambda: "Zephyr",

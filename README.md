@@ -79,6 +79,7 @@ is **no**.
 | Open or close the Island | hover it, click it, scroll down on it, or hold **Ctrl+Alt+I**; Esc closes it | Settings → Hotkeys and audio |
 | Ask about the window in front (Screen Assist) | hold **Ctrl+Alt+Space** and ask, or tap it for a quick look | Settings → Hotkeys and audio |
 | Watch mode on or off | hold **Ctrl+Alt+W** | Settings → Hotkeys and audio |
+| Discreet mode on or off | hold **Ctrl+Alt+D** (or the Island's or the tray's menu) | Settings → Hotkeys and audio |
 | Type instead of talking | the Island's Chat tab (or tray → Open console, or "Open in window") | — |
 | Play or pause music | click the right half of the Island's music pill | — |
 | Dismiss a banner | swipe or scroll up on it (clicking opens what it's about) | — |
@@ -99,6 +100,7 @@ Things to try:
 - "What's on my calendar tomorrow?", "add lunch with Ana on Friday at 1 pm"
 - "Send this to my phone", "share the file I just downloaded"
 - "What's on my screen?", "explain this", "check this", "keep an eye on my screen"
+- "Go discreet", "back to normal"
 - "Set my wallpaper to the mountain one"
 
 **Settings** (tray → Settings…):
@@ -188,6 +190,26 @@ minutes. The Stats tab shows how much it used and an estimated cost.
 - Text on screen is treated as data, never as instructions. Screen Assist can't click, type or
   send anything, and anything Wisp is asked to do afterwards needs your confirmation.
 - Every capture is listed in Settings → Action log (window title and time, not the image).
+
+## Discreet mode
+
+For lectures, libraries and meetings. Wisp keeps working, but much less noticeably:
+
+- the Island becomes a thin grey line (or a small dot), half see-through, with no glow or
+  colour, at the top centre or in a top corner. It still slides away and comes back from the
+  top edge above it;
+- replies are **text only**: no speaking and no sounds. Answers appear on a small, quiet card
+  under the line that fades after 12 seconds (it stays while you point at it). **Speak it**
+  reads one aloud, and with headphones you can keep spoken replies on;
+- notifications become a short pulse of the line; only errors and confirmations open up.
+  Windows notifications are muted too;
+- push-to-talk only: always listening pauses until you leave Discreet mode.
+
+Turn it on from Settings → Discreet mode, the Island's or the tray's menu, **Ctrl+Alt+D**, or
+say "go discreet". It can also turn itself on during Google Calendar events. Its settings are a
+separate profile: turning it off brings back your normal Wisp exactly as before. Watch mode and
+the phone link still show a small coloured dot, and Wisp's windows stay normal windows (screen
+sharing and recording show them).
 
 ## Files & Share
 

@@ -45,6 +45,7 @@ class Services:
     watcher: Any = None  # assist.service.Watcher
     blocklist: Any = None  # callable() -> assist.privacy.Blocklist
     usage: Any = None  # stores.usage.UsageStore
+    discreet: Any = None  # discreet.DiscreetMode (D-053)
     system: Any = None
     overlay: Any = None
     last_capture: Any = None

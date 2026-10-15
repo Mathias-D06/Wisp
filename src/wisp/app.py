@@ -25,6 +25,7 @@ from wisp.audio.resample import Resampler
 from wisp.circle import CircleController
 from wisp.db import Database
 from wisp.dictation import DictationController, DictationDeps, insert_text
+from wisp.discreet import DiscreetMode
 from wisp.files.finder import FileFinder
 from wisp.files.shelf import Shelf
 from wisp.gcal.service import CalendarService
@@ -57,6 +58,7 @@ from wisp.tools.base import Origin
 from wisp.tools.builtin import apps as apps_tools
 from wisp.tools.builtin import calendar as calendar_tools
 from wisp.tools.builtin import core as core_tools
+from wisp.tools.builtin import discreet as discreet_tools
 from wisp.tools.builtin import files as files_tools
 from wisp.tools.builtin import memory as memory_tools
 from wisp.tools.builtin import raw_input as raw_input_tools
@@ -78,6 +80,7 @@ from wisp.ui.bridge import UiInvoker
 from wisp.ui.bubble import AnswerBubble
 from wisp.ui.confirm_card import ConfirmCard
 from wisp.ui.console import ConsoleWindow
+from wisp.ui.discreet_card import DiscreetCard
 from wisp.ui.hud import Hud
 from wisp.ui.icons import orb_icon
 from wisp.ui.island.assist_tab import AssistTab
@@ -97,6 +100,7 @@ from wisp.ui.settings.accounts_page import AccountsPage
 from wisp.ui.settings.action_log_page import ActionLogPage
 from wisp.ui.settings.assist_page import AssistPage
 from wisp.ui.settings.dialog import SettingsDialog
+from wisp.ui.settings.discreet_page import DiscreetPage
 from wisp.ui.settings.general_page import GeneralPage
 from wisp.ui.settings.hotkeys_audio_page import HotkeysAudioPage
 from wisp.ui.settings.loadout_page import LoadoutPage
@@ -155,6 +159,8 @@ class WispApp(QObject):
             SecretJson(paths.google_client_file(), b"Wisp/google-client/v1", "Google OAuth client"),
             SecretJson(paths.google_token_file(), b"Wisp/google-token/v1", "Google sign-in"))
         self.services.calendar = self.calendar
+        self.discreet = DiscreetMode(self.settings_store, self.calendar)
+        self.services.discreet = self.discreet
         self.shelf = Shelf(self.db)
         self.finder = FileFinder()
         self.phone = PhoneLink(lambda: self.finder.downloads_folder() / "Wisp",
@@ -189,7 +195,7 @@ class WispApp(QObject):
             make_callbacks(self.voice_signals, self.player, self.confirmations.on_user_utterance),
             has_key=self.keystore.has_key,
             idle_timeout_s=lambda: peek().ai.idle_timeout_min * 60,
-            always_listening=lambda: peek().audio.always_listening,
+            always_listening=lambda: self.voice.always_listening,  # off in Discreet mode
             is_playing=self.player.is_playing,
             extended_thinking=lambda: is_extended_thinking(peek().ai.live_model),
             debug_audio=DebugAudioRecorder(lambda: peek().audio.save_debug_audio),
@@ -270,6 +276,12 @@ class WispApp(QObject):
         self.calendar.changed.connect(self._update_countdown)
         files_tab = next(w for name, w in tabs if name == FILES_TAB)
         self.island.watch_stop_requested.connect(lambda: self.watcher.stop("clicked"))
+        self.island.discreet_toggled.connect(lambda on: self.discreet.set_enabled(on, "menu"))
+        self.discreet_card = DiscreetCard()
+        self.discreet_card.speak_requested.connect(self.assist.speak)
+        self.discreet_card.open_requested.connect(self._open_discreet_card)
+        self.discreet.changed.connect(self._apply_discreet)
+        self.voice.transcript.connect(self._on_transcript_discreet)
         self.watcher.changed.connect(self._update_watch_indicator)
         self.watcher.commented.connect(self._on_watch_comment)
         self.assist.started.connect(self._on_assist_started)
@@ -288,7 +300,7 @@ class WispApp(QObject):
     def _register_tools(self) -> None:
         for module in (core_tools, apps_tools, windows_tools, web_tools, screen_tools, ui_tools,
                        files_tools, share_tools, todo_tools, calendar_tools, memory_tools,
-                       system_tools, terminal_tools, raw_input_tools):
+                       system_tools, terminal_tools, raw_input_tools, discreet_tools):
             self.registry.register_all(module.tools())
         self.registry.register_all(schedule_tools.tools(self.registry))
 
@@ -379,6 +391,7 @@ class WispApp(QObject):
     # ----- lifecycle -------------------------------------------------------------------------
     def start(self) -> None:
         self._build_tray_menu()
+        self._apply_discreet(self.discreet.active)  # remembered from last time (D-053)
         self.tray.show()
         self.services.app_index.refresh_in_background()
         try:
@@ -465,6 +478,8 @@ class WispApp(QObject):
             ok=not blocked)
 
     def _speak_answers(self) -> bool:
+        if self.discreet.active:  # Discreet mode: text only, unless kept on for headphones
+            return self.discreet.profile().speak_replies
         return self.settings_store.peek().screen_assist.speak_answers
 
     def _paste_text(self, hwnd: int, text: str) -> str:
@@ -485,21 +500,70 @@ class WispApp(QObject):
 
     def _on_assist_answer(self, exchange) -> None:
         self.feedback.hide_now()
+        if self.discreet.active:  # only the small card (D-053)
+            self.discreet_card.show_text(exchange.answer, self.island.card_anchor(),
+                                         kind="screen", speakable=True, openable=True)
+            return
         if self.island.enabled:
             self.island.open_tab("Screen")
         else:
             self.notify("Screen Assist", exchange.answer[:240])
 
     def _on_assist_failed(self, message: str) -> None:
+        if self.discreet.active:  # errors still open up in Discreet mode
+            self.feedback.hide_now()
+            self.island.notify("Problem", message)
+            return
         self.feedback.flash(message, 4500, "muted")
 
     def _on_watch_comment(self, result) -> None:
+        if self.discreet.active:
+            self.discreet_card.show_text(f"**Wisp noticed:** {result.text}",
+                                         self.island.card_anchor(), kind="watch")
+            if self.settings_store.peek().screen_assist.watch_speak and self._speak_answers():
+                self.assist.speak(result.text)
+            return
         if self.island.enabled and not self.island.machine.hidden:
             self.island.notify("Wisp noticed", result.text)
         else:
             self.tray.notify("Wisp noticed", result.text)
         if self.settings_store.peek().screen_assist.watch_speak and self._speak_answers():
             self.assist.speak(result.text)
+
+    # ----- Discreet mode (D-053) ------------------------------------------------------------------
+    def _apply_discreet(self, active: bool) -> None:
+        """On: the quiet look, text-only answers, push-to-talk. Off: everything as before (the
+        normal settings were never changed)."""
+        profile = self.discreet.profile()
+        self.island.set_discreet(self.discreet.look())
+        self.player.muted = active and not profile.speak_replies
+        if self.player.muted:
+            self.player.clear()
+        self.voice.set_discreet(active)
+        self.discreet_card.configure(profile.card_text_px, profile.card_opacity / 100,
+                                     profile.card_seconds)
+        if not active:
+            self.discreet_card.dismiss()
+        action = getattr(self, "discreet_action", None)
+        if action is not None:
+            action.blockSignals(True)
+            action.setChecked(active)
+            action.blockSignals(False)
+
+    def _on_transcript_discreet(self, role: str, text: str, final: bool, _turn: int = 0) -> None:
+        """Discreet mode shows the voice session's replies as text on the card (the audio
+        isn't played), unless a Screen Assist answer is showing there."""
+        if not self.discreet.active or role != "model" or not text.strip():
+            return
+        card = self.discreet_card
+        if card.isVisible() and card.kind == "screen":
+            return
+        card.show_text(text, self.island.card_anchor(), kind="voice", final=final,
+                       speakable=True, openable=True)
+
+    def _open_discreet_card(self) -> None:
+        kind = self.discreet_card.kind
+        self.island.open_tab("Screen" if kind in ("screen", "watch") else "Chat")
 
     def _update_watch_indicator(self) -> None:
         watcher = self.watcher
@@ -563,8 +627,8 @@ class WispApp(QObject):
         """Banners in the island; a Windows notification when the island is off or hidden
         behind a full-screen app (D-045)."""
         if self.island.enabled and not self.island.machine.hidden:
-            self.island.notify(title, message)
-        else:
+            self.island.notify(title, message)  # a pulse in Discreet mode, unless an error
+        elif not (self.discreet.active and self.discreet.profile().mute_toasts):
             self.tray.notify(title, message)
 
     # ----- UI --------------------------------------------------------------------------------
@@ -575,6 +639,9 @@ class WispApp(QObject):
         self.tray.add_action("Open console", self.console.open)
         self.mute_action = self.tray.add_action("Mute microphone", self.voice.set_muted, True)
         self.mute_action.setChecked(settings.audio.mic_muted)
+        self.discreet_action = self.tray.add_action(
+            "Discreet mode", lambda on: self.discreet.set_enabled(on, "tray"), True)
+        self.discreet_action.setChecked(self.discreet.active)
         self.stop_watch_action = self.tray.add_action(
             "Stop watching the screen", lambda: self.watcher.stop("tray"))
         self.stop_watch_action.setVisible(False)
@@ -598,6 +665,7 @@ class WispApp(QObject):
             GeneralPage(self.settings_store, self.keystore),
             AccountsPage(self.calendar),
             AssistPage(),
+            DiscreetPage(),
             LoadoutPage(self.registry, open_wallpaper=self._open_wallpaper),
             HotkeysAudioPage(self.mic),
             SafetyPage(self.registry),  # after Loadout: it may tick the terminal/input skills
@@ -622,6 +690,8 @@ class WispApp(QObject):
         self.assist.on_hotkey(name, kind)
         if name == "watch" and kind == "press":
             self.watcher.toggle()
+        if name == "discreet" and kind == "press":
+            self.discreet.toggle("hotkey")
         if name == "island" and kind == "press":
             self.island.toggle()
         elif name == "escape":
@@ -654,6 +724,11 @@ class WispApp(QObject):
                               settings.general.island_hide_when_idle,
                               settings.general.island_hide_after_s,
                               settings.general.island_keep_for_music)
+        if settings.discreet.enabled != previous.discreet.enabled:
+            self.discreet.set_enabled(settings.discreet.enabled, "settings")
+        elif self.discreet.active and settings.discreet != previous.discreet:
+            self._apply_discreet(True)  # a changed Discreet setting, while it's on
+        self.discreet.check_schedule()
         self.island.set_enabled(settings.general.show_island)
         if not settings.general.show_island:
             self.phone.stop()  # its QR code and indicator live in the island

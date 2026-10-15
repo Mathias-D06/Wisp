@@ -36,6 +36,7 @@ HOTKEYS = [
     ("screen_assist", "Screen Assist", "Hold to ask about the window in front (speak while "
      "holding, or just tap for a quick look)"),
     ("watch", "Watch mode", "Hold to turn Watch mode on or off"),
+    ("discreet", "Discreet mode", "Hold to turn Discreet mode on or off"),
 ]
 DEFAULT_DEVICE = "System default"
 TEST_SECONDS = 3

@@ -1176,3 +1176,56 @@ Decisions:
     gets a coloured dot, a tooltip line and a "Stop watching the screen" menu item.
   * *Action log.* Every capture, and every refusal, is logged: time, window title, whole
     window or screen, mode, size sent and areas hidden. The image is never logged.
+
+## D-053 Discreet mode (brief "Screen Assist + Discreet mode", part 2)
+* **An overlay with its own profile.** Discreet mode never changes the normal settings. It has
+  its own section (`discreet`: style, opacity, position, card time, size and opacity, spoken
+  replies, notifications, the calendar schedule), applied on top while it's on. Turning it off
+  removes the overlay, so everything is exactly as before. Tests check the island's size,
+  position and motion, the player and the microphone mode come back unchanged.
+* **Turning it on and off.** Settings → Discreet mode, the island's right-click menu, the tray
+  menu, Ctrl+Alt+D, and voice (`discreet_mode`: "go discreet", "back to normal"). A manual
+  choice is remembered across restarts.
+  * "During calendar events" turns it on while a timed event on a shown Google Calendar is under
+    way, checked every minute; all-day events don't count.
+  * Turned off during an event, it stays off until that event ends.
+* **The island.**
+  * A 44×4 px line or a 10×10 px dot, neutral grey (#9aa0a6) at 50 % (setting 20–100 %).
+  * No black shape, glow, accent, orb, waveform or text.
+  * Voice activity brightens it a little. It moves like Reduce motion: no springs, content
+    crossfades.
+  * It can sit top-centre or 28 px from the top-left or top-right corner. In a corner the
+    canvas reaches past the screen edge; the open panel and error banners move to the top
+    centre, where there's room.
+  * It still slides away after the usual delay. The reveal zone (the shape's width plus 40 px
+    each side, top 3 px) follows it into a corner.
+  * The input region grows 6 px around the tiny shape so it can be pointed at.
+  * Watch mode and the phone link keep a small fully opaque coloured dot beside it: what's
+    watching or serving files is never hidden (D-051, D-052).
+* **Answers.**
+  * Text only by default. The voice session's audio is dropped at the player (`Player.muted`)
+    and Screen Assist doesn't call TTS, so there are no sounds.
+  * Replies (Screen Assist answers, the voice session's transcript, Watch comments) appear on a
+    small card under the island. It fades out after 12 s (setting) unless the pointer is on it.
+  * "Speak it" reads one aloud on request (`feed(force=True)`); "Open" shows it in the island.
+  * "Keep spoken replies" (for headphones) turns voice back on.
+  * Card text size 11–20 px (default 13); background opacity 85–100 % (default 92).
+* **Readable.** Only the card's background is translucent; text is drawn opaque.
+  * WCAG 2.2 SC 1.4.3 (AA) asks for 4.5:1. Composited over white, the worst case:
+    * at the default 92 %: 8.0:1 for text (#c8cbd0 on #1e1f22) and 5.8:1 for button labels
+      (#a9adb4);
+    * at the 85 % minimum the labels are still 4.5:1, which is why the setting stops there.
+  * Over black it is higher. Tested in `test_discreet.py`.
+  * Fonts are sized in logical pixels, so the card is the same size on screen at 100 % and
+    150 %: `docs/island/discreet_card_100.png`, `…_150.png`.
+* **Notifications.**
+  * Banners become a short brightening pulse of the line (1.4 s). Only errors (banners with
+    the warning icon: "problem", "failed", "missed"…) and confirmation cards open up.
+    Reminders pulse; they share the warning tone but not the icon.
+  * Banners already waiting when it turns on are dropped.
+  * With "No Windows notifications either" (default on), the tray toast fallback is silent too.
+* **Microphone.** Push-to-talk only. Always-listening pauses (the setting is untouched) and
+  resumes when Discreet mode ends. The voice session's VAD mode follows the effective state.
+* **Still an ordinary window.** Discreet mode only changes looks and sound. It sets no
+  display-affinity or capture-exclusion flags, and leaves other software alone: screen sharing
+  and recording show Wisp as usual.

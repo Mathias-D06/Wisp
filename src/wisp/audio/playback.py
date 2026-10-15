@@ -32,12 +32,15 @@ class Player:
         self._resampler: Resampler | None = None
         self._last_audio = 0.0
         self.level = 0.0
+        self.muted = False  # Discreet mode: the voice session's replies aren't played (D-053)
         self._closer = threading.Thread(target=self._idle_closer, name="player-idle", daemon=True)
         self._stop = threading.Event()
         self._closer.start()
 
-    def feed(self, pcm: bytes) -> None:
-        if not pcm:
+    def feed(self, pcm: bytes, force: bool = False) -> None:
+        """Queue audio. While ``muted`` it is dropped, unless ``force`` (the person asked for
+        it: Discreet mode's "Speak it")."""
+        if not pcm or (self.muted and not force):
             return
         try:
             self._ensure_stream()

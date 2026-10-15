@@ -264,6 +264,7 @@ def _gemini() -> str:
         apps,
         calendar,
         core,
+        discreet,
         files,
         memory,
         raw_input,
@@ -279,7 +280,7 @@ def _gemini() -> str:
     )
 
     for module in (core, apps, windows, web, screen, ui, files, share, todos, calendar, memory,
-                   system, terminal, raw_input):
+                   system, terminal, raw_input, discreet):
         registry.register_all(module.tools())
     registry.register_all(schedule.tools(registry))
     settings = Settings()
