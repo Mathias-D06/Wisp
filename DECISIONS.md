@@ -1229,3 +1229,101 @@ Decisions:
 * **Still an ordinary window.** Discreet mode only changes looks and sound. It sets no
   display-affinity or capture-exclusion flags, and leaves other software alone: screen sharing
   and recording show Wisp as usual.
+
+## D-054 Screen Assist failed with "RuntimeError": the SDK closed a temporary client (fix of 2026-10-16)
+Report: in the built exe every Screen Assist request failed 0.6–0.9 s after the hotkey's release,
+logged only as "Screen Assist failed: RuntimeError"; the card said "Unexpected error:
+RuntimeError". Discreet mode made no difference.
+
+Investigation:
+* The Action log had a "captured" row for both presses, so the screenshot worked; `ai_usage` was
+  empty, so no request had come back.
+* Re-running the same request from source, on a worker thread, with the user's key and a drawn
+  image gave the full traceback: httpx raised `RuntimeError: Cannot send a request, as the client
+  has been closed.` from `generate_content`.
+* Cause: `GeminiAssistModel` did `self._client().models.generate_content(...)`. The `genai.Client`
+  was a temporary, so CPython freed it as soon as `.models` had been read. google-genai 2.29.0's
+  `Client.__del__` calls `close()`, which closes the shared httpx client before the request is
+  sent (`google/genai/client.py`: `close()`, `__enter__`/`__exit__`, `__del__`). The same happened
+  for reading answers aloud (`speak`).
+* Not specific to the frozen build: source fails the same way. A PyInstaller build of the old code
+  reproduces it exactly (the new self-check below fails with the same traceback).
+* Why the tests missed it: the model test replaced `_client` with a `SimpleNamespace`, so the
+  real client's lifetime was never exercised. Dictation and the key check were fine (they keep
+  the client in a local variable); the Live session keeps one on its connector.
+* Also checked: the request is valid for the configured model. `thinking_level` "low" is allowed
+  for gemini-3.8-flash and `MEDIA_RESOLUTION_LOW/MEDIUM` exist. With the fix the request reached
+  Google, which answered 503 "high demand" (a temporary server error, shown as such).
+
+Decisions:
+* **Hold the client for the whole request:** `with self._client() as client:` in `answer` and
+  `speak` (the SDK documents `close()` and the context manager for releasing a client).
+  `GeminiAssistModel` takes a `make_client` factory so the self-check and tests can aim the real
+  SDK elsewhere.
+* **A loopback stand-in for the API** (`ai/loopback.py`): a 127.0.0.1 HTTP server that answers
+  `generateContent` like Gemini (text, or 24 kHz L16 audio for `-tts` models) and records each
+  request. Tests and the self-check drive the real google-genai client and httpx against it, so
+  client lifetime, serialisation and the HTTP stack are covered without calling Google.
+* **`--self-check` runs Screen Assist's path** (`screen_assist`): capture with the real Windows
+  calls on an "assist-capture" thread, mask, downscale, JPEG, then `AssistEngine.ask` and `speak`
+  through the real SDK to the loopback on a "screen-assist" thread. It checks that one JPEG of at
+  most 1024 px was sent with medium resolution and that the audio came back. A locked PC uses a
+  drawn image. The image never leaves memory. `packaging/build.py` stops when it fails.
+* **Failures are logged in full:** `log.exception` (message and traceback, keys redacted by the
+  log filter) in Screen Assist's request worker, the speech worker, Watch mode's worker, the
+  hotkey's capture thread and `Capturer.capture`.
+* **The card shows the real message:**
+  - `describe_error`'s fallback is "Unexpected error (RuntimeError): <message>". The message is
+    redacted (`logging_setup.redact`: the key pattern, and the stored key once logging is set
+    up), whitespace is collapsed and it is cut at 300 characters.
+  - httpx's transport errors now read "Couldn't reach Google".
+  - A capture that crashes becomes "Wisp couldn't take the screenshot (…)" instead of a network
+    message.
+  - A screenshot that never arrives (10 s) says so.
+  - A failure is a warning banner, "Screen Assist failed", in normal and Discreet mode. Clicking
+    it opens the Screen tab, where the whole message wraps; a banner shows one line. With the
+    island off it is a Windows notification.
+
+## D-055 A microphone that delivers only silence (fix of 2026-10-16)
+Report: in the built exe the mic opened as "44100 Hz × 4 ch float32", every channel was about
+−96 dBFS, and Screen Assist quietly asked its default question. The level line also printed
+`np.float64(...)` reprs.
+
+What this PC shows, without opening the microphone (no recording without asking):
+* All three privacy switches are on:
+  - HKLM `ConsentStore\microphone` = Allow ("Microphone access");
+  - HKCU = Allow ("Let apps access your microphone");
+  - HKCU `…\NonPackaged` = Allow ("Let desktop apps access your microphone").
+* The default input is "Microphone Array (AMD Audio Device)" (4 channels, MME). Core Audio
+  (`IAudioEndpointVolume`) reports it unmuted at 100 %. A Bluetooth headset is the default
+  *communications* input.
+* Windows' record of desktop apps that used the microphone (`NonPackaged` subkeys with
+  LastUsedTime) lists `python.exe` (source runs, 2026-10-13) but never `dist\Wisp\Wisp.exe`,
+  although the exe opened and closed the stream twice on 2026-10-16. The Audio/Operational event
+  log has nothing at those times.
+* −96.5 dBFS is about half an int16 step RMS: the samples are 0 and ±1. That is a converter
+  idling with no input, or silence made by Windows, not a room.
+* Which of the two it is (privacy blocking the exe, or a muted, disabled or wrong input) can
+  only be settled by opening the mic from both builds. That is MT-116, and Wisp now logs what
+  is needed to tell.
+
+Decisions:
+* **Digital silence is not a quiet room** (`audio/mic_check.py`).
+  - A stream whose samples never leave ±4 int16 steps (about −78 dBFS peak) over at least 0.3 s
+    is "the mic delivers nothing". A quiet room is about −60 dBFS, tens of steps.
+  - After the 1 s level check, every channel ≤ −85 dBFS logs a warning with the device and the
+    three privacy switches.
+* **Say which setting to check instead of acting on silence.**
+  - Holding the Screen Assist hotkey (≥ 0.4 s) with such audio asks nothing. The "Screen Assist
+    failed" banner carries the notice. A tap still takes a quick look.
+  - A push-to-talk turn (`turn_dropped("mic_silent")`) and dictation show the same notice.
+  - The notice names a switch that is off ("Turn on 'Let desktop apps access your
+    microphone'…"). Otherwise it lists the checks in order: the desktop-apps switch, a mute key
+    or switch, the input chosen in Windows and Wisp, then Test microphone.
+* **The privacy switches are read, never written,** from the registry values behind the
+  Settings page. The mapping is UNDOCUMENTED by Microsoft (third-party tutorials agree;
+  checked on this PC). `AppCapability.CheckAccess` can't be used: Microsoft notes `Create` is
+  "callable only by SUA apps", and Wisp is unpackaged. A failed read counts as unknown, never
+  as "off".
+* **The level line uses plain numbers:** "channels (dBFS) -96.4, -96.5, …; mixing 1, 2, 3, 4".
+  `MicConverter.channel_levels` returns Python floats. "Microphone opened" now names the device.

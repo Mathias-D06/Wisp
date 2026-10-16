@@ -99,6 +99,9 @@ class FakeModel:
         self.calls: list[dict] = []
         self.spoken: list[str] = []
 
+    def model_name(self):
+        return "gemini-test"
+
     def answer(self, turns, system, json_schema=None, low_resolution=False):
         self.calls.append({"turns": turns, "system": system, "schema": json_schema,
                            "low": low_resolution})
@@ -338,28 +341,141 @@ def test_instructions_on_screen_stay_data_and_trigger_nothing(qtbot):
     assert tools["watch_screen"].escalate_when_tainted
 
 
-def test_screen_assists_model_is_never_given_tools(monkeypatch):
-    from wisp.assist import client as client_module
+# ----- the Gemini client (D-054): the real google-genai SDK against a loopback stand-in ------
+def sent_field(item: dict, name: str, camel: str):
+    """The SDK writes some JSON fields in camelCase and some in snake_case."""
+    return item.get(camel, item.get(name))
 
-    seen = {}
 
-    class Models:
+def run_on_worker(fn):
+    """Call ``fn`` on a worker thread, as the app does (the "screen-assist" thread)."""
+    import threading
+
+    result = {}
+
+    def work():
+        try:
+            result["value"] = fn()
+        except Exception as exc:
+            result["error"] = exc
+
+    worker = threading.Thread(target=work, name="screen-assist")
+    worker.start()
+    worker.join(30)
+    if "error" in result:
+        raise result["error"]
+    return result["value"]
+
+
+def test_the_client_stays_open_until_the_request_is_sent():
+    """The bug behind "Screen Assist failed: RuntimeError" (D-054): a temporary genai.Client is
+    garbage-collected as soon as ``.models`` is read and its ``__del__`` closes the HTTP client,
+    so the request fails with "Cannot send a request, as the client has been closed". Both
+    requests here go through the real SDK and httpx, on a worker thread."""
+    from wisp.ai.loopback import GeminiLoopback
+    from wisp.assist.client import GeminiAssistModel, Part
+
+    with GeminiLoopback("It's a build log.", pcm=b"\x05\x00" * 2400) as stub:
+        model = GeminiAssistModel(lambda: "test-key", lambda: "gemini-3.8-flash",
+                                  lambda: "gemini-3.8-flash-tts", make_client=stub.client)
+        turn = Turn("user", [Part(text="what's this?", jpeg=imaging.jpeg(editor(CODE)))])
+        reply = run_on_worker(lambda: model.answer([turn], "system"))
+        speech = run_on_worker(lambda: model.speak("It's a build log.", "Kore"))
+    assert reply.text == "It's a build log."
+    assert (reply.input_tokens, reply.output_tokens) == (300, 25)
+    assert (speech.pcm, speech.rate) == (b"\x05\x00" * 2400, 24000)
+    assert [r["path"] for r in stub.requests] == [
+        "/v1beta/models/gemini-3.8-flash:generateContent",
+        "/v1beta/models/gemini-3.8-flash-tts:generateContent"]
+    assert stub.requests[0]["headers"].get("x-goog-api-key") == "test-key"
+
+
+def test_a_client_closed_when_collected_still_works():
+    """Without the SDK: a client that closes itself when garbage-collected, as genai.Client
+    does, must still be open when its request is made."""
+    from wisp.assist.client import GeminiAssistModel
+
+    events = []
+
+    class ClosingClient:
+        def __init__(self, key):
+            self.closed = False
+            self.models = SimpleNamespace(generate_content=self.generate_content)
+
         def generate_content(self, model, contents, config):
-            seen["config"], seen["contents"] = config, contents
-            return SimpleNamespace(text="ok", usage_metadata=SimpleNamespace(
-                prompt_token_count=5, candidates_token_count=2, thoughts_token_count=1))
+            if self.closed:
+                raise RuntimeError("Cannot send a request, as the client has been closed.")
+            events.append("sent")
+            return SimpleNamespace(text="ok", usage_metadata=None)
 
-    monkeypatch.setattr(client_module.GeminiAssistModel, "_client",
-                        lambda self: SimpleNamespace(models=Models()))
-    model = client_module.GeminiAssistModel(lambda: "key", lambda: "gemini-3.8-flash",
-                                            lambda: "gemini-3.8-flash-tts")
-    turn = Turn("user", [client_module.Part(text="hi", jpeg=b"\xff\xd8jpeg")])
-    reply = model.answer([turn], "system", json_schema={"type": "object"}, low_resolution=True)
-    config = seen["config"]
-    assert not config.tools and config.response_mime_type == "application/json"
-    assert config.media_resolution.name == "MEDIA_RESOLUTION_LOW"
-    assert seen["contents"][0].parts[1].inline_data.mime_type == "image/jpeg"
-    assert (reply.input_tokens, reply.output_tokens) == (5, 3)
+        def close(self):
+            self.closed = True
+            events.append("closed")
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            self.close()
+
+        def __del__(self):
+            self.close()
+
+    model = GeminiAssistModel(lambda: "key", lambda: "m", lambda: "t", make_client=ClosingClient)
+    assert model.answer([Turn("user", [])], "system").text == "ok"
+    assert events[:2] == ["sent", "closed"]
+
+
+def test_screen_assists_request_has_no_tools_and_the_right_config():
+    from wisp.ai.loopback import GeminiLoopback
+    from wisp.assist.client import GeminiAssistModel, Part
+
+    with GeminiLoopback('{"comment": false, "text": ""}') as stub:
+        model = GeminiAssistModel(lambda: "key", lambda: "gemini-3.8-flash",
+                                  lambda: "gemini-3.8-flash-tts", make_client=stub.client)
+        turn = Turn("user", [Part(text="hi", jpeg=imaging.jpeg(editor(CODE)))])
+        model.answer([turn], "system", json_schema={"type": "object"}, low_resolution=True)
+    body = stub.requests[0]["body"]
+    config = sent_field(body, "generation_config", "generationConfig")
+    assert "tools" not in body and "toolConfig" not in body
+    assert sent_field(config, "response_mime_type", "responseMimeType") == "application/json"
+    assert sent_field(config, "media_resolution", "mediaResolution") == "MEDIA_RESOLUTION_LOW"
+    thinking = sent_field(config, "thinking_config", "thinkingConfig")
+    assert sent_field(thinking, "thinking_level", "thinkingLevel") == "LOW"
+    image = sent_field(body["contents"][0]["parts"][1], "inline_data", "inlineData")
+    assert sent_field(image, "mime_type", "mimeType") == "image/jpeg"
+
+
+# ----- errors shown to the user -------------------------------------------------------------------
+def test_unexpected_errors_show_their_message_without_the_key():
+    from wisp.ai.gemini import describe_error
+
+    key = "AIza" + "Q" * 35
+    message = describe_error(RuntimeError(f"Cannot send a request with {key}, client closed."))
+    assert message.startswith("Unexpected error (RuntimeError): Cannot send a request")
+    assert key not in message and "[REDACTED]" in message
+    assert describe_error(RuntimeError()) == "Unexpected error: RuntimeError"
+    assert len(describe_error(ValueError("x" * 2000))) < 360  # long messages are cut
+
+
+def test_network_failures_say_so():
+    import httpx
+
+    from wisp.ai.gemini import describe_error
+
+    offline = "Couldn't reach Google. Check your internet connection."
+    assert describe_error(httpx.ConnectError("[Errno 11001] getaddrinfo failed")) == offline
+    assert describe_error(httpx.ReadTimeout("timed out")) == offline
+
+
+def test_the_stored_key_is_redacted_from_errors_once_logging_is_set_up(tmp_path, monkeypatch):
+    from wisp import logging_setup
+    from wisp.ai.gemini import describe_error
+
+    monkeypatch.setattr(logging_setup, "_active",
+                        logging_setup.RedactingFilter(lambda: "my-unusual-secret-key"))
+    assert "my-unusual-secret-key" not in describe_error(
+        KeyError("lookup my-unusual-secret-key failed"))
 
 
 def test_tts_audio_is_read_as_wav_or_raw_pcm():

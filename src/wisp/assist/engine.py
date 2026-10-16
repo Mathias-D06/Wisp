@@ -76,6 +76,17 @@ class WindowSystem:
     cursor: Callable[[], tuple[int, int]] = lambda: (0, 0)
 
 
+def real_window_system() -> WindowSystem:
+    """The real Windows calls (the app and ``--self-check``)."""
+    from wisp.winapi import screen
+    from wisp.winapi import windows as win
+
+    return WindowSystem(foreground=win.foreground_window, windows=win.list_windows,
+                        bounds=win.frame_bounds, monitor_at=screen.monitor_at, grab=screen.grab,
+                        desktop_available=win.input_desktop_available,
+                        cursor=screen.cursor_position)
+
+
 class Capturer:
     def __init__(self, system: WindowSystem, blocklist: Callable[[], Blocklist],
                  log_capture: Callable[[dict], None] = lambda entry: None,
@@ -100,6 +111,19 @@ class Capturer:
 
     def capture(self, target: str = "window", origin: str = "screen_assist", mode: str = "",
                 max_edge: int = imaging.MAX_EDGE, preferred_hwnd: int | None = None) -> Shot:
+        """Raises Blocked or CaptureError; anything unexpected (a Windows call, the image
+        steps) is logged with its traceback and becomes a CaptureError with its message."""
+        try:
+            return self._capture(target, origin, mode, max_edge, preferred_hwnd)
+        except (Blocked, CaptureError):
+            raise
+        except Exception as exc:
+            log.exception("Screen capture failed")
+            raise CaptureError(f"Wisp couldn't take the screenshot ({type(exc).__name__}: "
+                               f"{exc}).") from exc
+
+    def _capture(self, target: str, origin: str, mode: str, max_edge: int,
+                 preferred_hwnd: int | None) -> Shot:
         if not self.system.desktop_available():
             raise CaptureError("Windows is showing a secure screen (sign-in or a permission "
                                "prompt), which apps can't see.")

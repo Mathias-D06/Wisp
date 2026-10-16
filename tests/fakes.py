@@ -159,7 +159,9 @@ class DirectUi:
 
 
 SPEECH_CHUNK = (3000).to_bytes(2, "little", signed=True) * 512  # 32 ms at about -21 dBFS
-SILENT_CHUNK = b"\x00\x00" * 512
+SILENT_CHUNK = b"\x00\x00" * 512  # digital silence: a mic delivering nothing (D-055)
+QUIET_CHUNK = ((30).to_bytes(2, "little", signed=True)
+               + (-30).to_bytes(2, "little", signed=True)) * 256  # a quiet room, about -60 dBFS
 
 
 def speak(manager, chunks: int = 10) -> None:

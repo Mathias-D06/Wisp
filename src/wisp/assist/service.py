@@ -4,8 +4,10 @@ inserting a drafted reply, and Watch mode's timer.
 Hotkey (hold Ctrl+Alt+Space by default)
   The press captures the window in front straight away, before Wisp shows anything, and starts
   listening. Speak the question while holding; release to ask. A tap without speech asks the
-  default question (explain, and point out what looks wrong or worth acting on). Pressing again
-  within the conversation is a follow-up: the screenshot is reused unless the window changed.
+  default question (explain, and point out what looks wrong or worth acting on). A hold during
+  which the microphone delivered only silence asks nothing and says which Windows setting to
+  check (D-055). Pressing again within the conversation is a follow-up: the screenshot is
+  reused unless the window changed.
 
 Requests run on threads; results come back through signals. Answers are read aloud with Gemini
 TTS in the voice from Settings → Loadout when ``speak_answers`` allows it (code blocks are not
@@ -24,6 +26,7 @@ import threading
 import time
 from collections.abc import Callable
 from concurrent.futures import Future
+from concurrent.futures import TimeoutError as FutureTimeout
 
 from PySide6.QtCore import QObject, Qt, QTimer, Signal
 
@@ -34,6 +37,7 @@ from wisp.assist.engine import AssistEngine, Blocked, CaptureError, Exchange, Sh
 log = logging.getLogger(__name__)
 
 MIN_QUESTION_S = 0.4
+SHOT_TIMEOUT_S = 10
 BYTES_PER_SECOND = 32000
 SPEAK_LIMIT = 700
 
@@ -68,7 +72,8 @@ class ScreenAssist(QObject):
                  voice_name: Callable[[], str], speak_allowed: Callable[[], bool],
                  paste: Callable[[int, str], str], to_wav: Callable[[bytes], bytes],
                  has_speech: Callable[[bytes], bool], resample: Callable[[bytes, int], bytes],
-                 on_speech_usage: Callable[[object], None] = lambda speech: None) -> None:
+                 on_speech_usage: Callable[[object], None] = lambda speech: None,
+                 mic_silence: Callable[[bytes], str | None] = lambda pcm: None) -> None:
         super().__init__()
         self.engine = engine
         self.mic = mic
@@ -82,6 +87,7 @@ class ScreenAssist(QObject):
         self.has_speech = has_speech
         self.resample = resample
         self.on_speech_usage = on_speech_usage
+        self.mic_silence = mic_silence  # the notice if the mic delivered only silence (D-055)
         self.busy = False
         self.listening = False
         self.last: Exchange | None = None
@@ -120,7 +126,11 @@ class ScreenAssist(QObject):
             try:
                 future.set_result(self.engine.capturer.capture(
                     target, "screen_assist", "hotkey", preferred_hwnd=preferred))
+            except (Blocked, CaptureError) as exc:  # expected: the card says why
+                log.info("Screen Assist capture skipped: %s", exc)
+                future.set_exception(exc)
             except Exception as exc:
+                log.exception("Screen Assist capture failed")
                 future.set_exception(exc)
 
         threading.Thread(target=grab, name="assist-capture", daemon=True).start()
@@ -149,7 +159,12 @@ class ScreenAssist(QObject):
         if future is None:
             return
         audio = self._stop_listening()
-        heard = len(audio) / BYTES_PER_SECOND >= MIN_QUESTION_S and self.has_speech(audio)
+        held = len(audio) / BYTES_PER_SECOND >= MIN_QUESTION_S
+        notice = self.mic_silence(audio) if held else None
+        if notice:  # held to ask, but the mic gave nothing: say why instead of a quick look
+            self.failed.emit(notice)
+            return
+        heard = held and self.has_speech(audio)
         wav = self.to_wav(audio) if heard else b""
         self.ask(audio_wav=wav, shot_future=future, origin="hotkey")
 
@@ -173,15 +188,21 @@ class ScreenAssist(QObject):
 
         def work() -> None:
             try:
-                shot: Shot | None = shot_future.result(10) if shot_future is not None else None
+                shot: Shot | None = None
+                if shot_future is not None:
+                    try:
+                        shot = shot_future.result(SHOT_TIMEOUT_S)
+                    except FutureTimeout:
+                        raise CaptureError("The screenshot took too long. Try again.") from None
                 exchange = self.engine.ask(question, mode, target, audio_wav, new, detailed,
                                            origin, shot=shot)
                 self._done.emit(token, exchange, "", speak)
             except (Blocked, CaptureError) as exc:
                 self._done.emit(token, None, str(exc), False)
             except Exception as exc:
-                log.warning("Screen Assist failed: %s", type(exc).__name__)
-                self._done.emit(token, None, describe_error(exc, None), False)
+                log.exception("Screen Assist failed")
+                self._done.emit(token, None, describe_error(exc, self.engine.model.model_name()),
+                                False)
 
         threading.Thread(target=work, name="screen-assist", daemon=True).start()
         return True
@@ -244,8 +265,8 @@ class ScreenAssist(QObject):
         def work() -> None:
             try:
                 self._spoken.emit(token, self.engine.model.speak(words, voice))
-            except Exception as exc:
-                log.warning("Reading the answer aloud failed: %s", type(exc).__name__)
+            except Exception:
+                log.exception("Reading the answer aloud failed")
                 self._spoken.emit(token, None)
 
         threading.Thread(target=work, name="assist-speech", daemon=True).start()
@@ -359,10 +380,11 @@ class Watcher(QObject):
             try:
                 self._result.emit(self.check.run())
             except Exception as exc:
-                log.warning("Watch mode look failed: %s", type(exc).__name__)
+                log.exception("Watch mode look failed")
                 from wisp.assist.engine import WatchResult
 
-                self._result.emit(WatchResult("error", describe_error(exc, None)))
+                self._result.emit(WatchResult("error", describe_error(
+                    exc, self.check.model.model_name())))
 
         threading.Thread(target=work, name="watch", daemon=True).start()
 

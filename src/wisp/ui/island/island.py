@@ -1057,5 +1057,6 @@ def banner_style(title: str) -> tuple[str, str, str | None]:
         return "check", "success", "Today"
     if any(word in lowered for word in ("problem", "missed", "unavailable", "could not",
                                         "failed")):
-        return "warning", "warning", None
+        # Screen Assist's whole message stays in the Screen tab (a banner shows one line)
+        return "warning", "warning", "Screen" if lowered.startswith("screen assist") else None
     return "info", "accent", None

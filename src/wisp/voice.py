@@ -9,6 +9,7 @@ from __future__ import annotations
 import contextlib
 import logging
 import time
+from collections.abc import Callable
 
 from PySide6.QtCore import QObject, QTimer, Signal
 
@@ -44,7 +45,10 @@ CLICK_MS = 350  # a Talk press shorter than this is a click: keep listening unti
 ORB_DEBOUNCE_MS = 400
 
 
-def make_callbacks(signals: VoiceSignals, player: Player, on_user_final) -> LiveCallbacks:
+def make_callbacks(signals: VoiceSignals, player: Player, on_user_final,
+                   mic_notice: Callable[[], str] = lambda: DROPPED_MESSAGES["silent"],
+                   ) -> LiveCallbacks:
+    """``mic_notice``: what to say when the microphone delivered only silence (D-055)."""
     return LiveCallbacks(
         state=lambda state, detail: signals.state.emit(state.value, detail),
         user_text=lambda turn, text, final: signals.user_text.emit(turn, text, final),
@@ -54,7 +58,8 @@ def make_callbacks(signals: VoiceSignals, player: Player, on_user_final) -> Live
         interrupted=player.clear,
         turn_complete=signals.turn_done.emit,
         tool_activity=lambda name, status: signals.tool.emit(name, status),
-        turn_dropped=lambda reason: signals.hint.emit(DROPPED_MESSAGES[reason]),
+        turn_dropped=lambda reason: signals.hint.emit(
+            mic_notice() if reason == "mic_silent" else DROPPED_MESSAGES[reason]),
     )
 
 

@@ -339,6 +339,12 @@ pastes are kept out of both Windows clipboard history and Wisp's.
   and keeps the conversation.
 - **Key errors.** Use Settings → General → Save and test. The message says whether the key is
   wrong, has no access to the model, or needs billing.
+- **"Wisp got only silence from the microphone".** The microphone delivered nothing at all, not
+  even room noise, so Wisp sent nothing. If the notice names a switch, turn it on in Windows
+  Settings → Privacy & security → Microphone. Otherwise check, in order: "Let desktop apps access
+  your microphone" in that page; a mute key or switch on the laptop; the input chosen in Windows
+  Settings → System → Sound → Input and in Wisp's Settings → Hotkeys and audio. Test microphone
+  shows what Wisp hears. The log's "Mic levels" line shows each channel and the switches.
 - **The Start menu opens after a hotkey,** or a hotkey clashes with another app. Choose a
   different chord in Settings → Hotkeys and audio.
 - **Nothing happens in an administrator window.** Windows doesn't let normal apps control
@@ -356,7 +362,8 @@ pastes are kept out of both Windows clipboard history and Wisp's.
 - **Logs.** Open them from Settings → Action log → Open log folder (`%APPDATA%\Wisp\logs`).
 - **Checking an installation.** Run `"%LOCALAPPDATA%\Programs\Wisp\Wisp.exe" --self-check
   report.json`. This tests all bundled components without touching your data, and `report.json`
-  lists the result of each check.
+  lists the result of each check. It includes Screen Assist's whole path, with a stand-in for
+  Gemini on this PC: nothing is sent anywhere.
 
 ## Building from source
 

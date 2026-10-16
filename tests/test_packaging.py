@@ -41,7 +41,7 @@ def test_self_check_from_source(tmp_path):
     assert result.returncode == 0 and data["ok"], failed
     assert {c["check"] for c in data["checks"]} >= {"modules", "qt", "sqlite_fts5", "dpapi",
                                                      "portaudio", "winrt", "uia", "scheduler",
-                                                     "gemini_config"}
+                                                     "screen_assist", "gemini_config"}
     assert data["frozen"] is False
 
 

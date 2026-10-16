@@ -325,3 +325,26 @@ from `.venv`. Dates are when checked.
 |---|---|---|
 | https://www.w3.org/WAI/WCAG22/Understanding/contrast-minimum.html | SC 1.4.3 (AA): text contrast at least 4.5:1 (large text 3:1); ratio = (L1 + 0.05) / (L2 + 0.05) with relative luminance; measured against the background the text is rendered over (Wisp checks the card composited over white and black, the extremes) | 2026-10-15 |
 | this PC (`theme.composite` + `theme.contrast`) | card text #c8cbd0 and labels #a9adb4 on #1e1f22 at 92 % over white: 8.0:1 and 5.8:1; at 85 %: 6.3:1 and 4.5:1; at 80 % the labels drop to 3.8:1 (so the setting starts at 85 %) | 2026-10-15 |
+
+## Screen Assist and microphone fixes (2026-10-16)
+
+### Screen Assist's closed client (D-054)
+
+| URL | Confirmed | Checked |
+|---|---|---|
+| google-genai 2.29.0 source (`client.py`) | `Client.close()` closes the sync API client ("Close the client to release resources"); `__enter__` returns the client, `__exit__` calls `close()`; `__del__` calls `close()` — so a temporary `Client(...).models.generate_content(...)` is closed before it sends | 2026-10-16 |
+| httpx 0.28.1 source (`_client.py`, `send`) | raises `RuntimeError("Cannot send a request, as the client has been closed.")` on a closed client; `ConnectError`, `ReadTimeout` … derive from `TransportError` | 2026-10-16 |
+| google-genai 2.29.0 source (`_api_client.py`, `HttpOptions.base_url`) | a custom `base_url` replaces `https://generativelanguage.googleapis.com/`; requests go to `{base}/v1beta/models/{model}:generateContent` with the key in `x-goog-api-key`; inline data is URL-safe base64; some JSON fields are snake_case (`thinking_level`, `mime_type`) — checked against the loopback server | 2026-10-16 |
+| https://ai.google.dev/gemini-api/docs/thinking | gemini-3.8-flash: thinking levels low, medium, high (default medium) — `thinking_level` LOW is valid | 2026-10-16 |
+| https://ai.google.dev/api/generate-content | `MediaResolution` levels MEDIA_RESOLUTION_LOW / MEDIUM / HIGH / ULTRA_HIGH | 2026-10-16 |
+| https://ai.google.dev/gemini-api/docs/media-resolution | per-image token budgets: low 280, medium 560, high 1120, ultra_high 2240; Gemini 3 models | 2026-10-16 |
+| probe on this PC with the user's key (source, worker thread, drawn image) | before the fix: `RuntimeError: Cannot send a request, as the client has been closed.`; after: the request reaches Google (503 "high demand" twice) | 2026-10-16 |
+| PyInstaller build of the old code (scratchpad) | `--self-check` → `screen_assist` fails with the same RuntimeError and traceback; exit code 1 | 2026-10-16 |
+
+### A silent microphone (D-055)
+
+| URL | Confirmed | Checked |
+|---|---|---|
+| https://learn.microsoft.com/en-us/uwp/api/windows.security.authorization.appcapabilityaccess.appcapability | `AppCapability` (Windows 10 1903+): "Create is callable only by SUA apps" — not usable by an unpackaged app like Wisp | 2026-10-16 |
+| https://www.elevenforum.com/t/enable-or-disable-apps-access-to-microphone-in-windows-11.17117/ (third-party; UNDOCUMENTED by Microsoft) | `CapabilityAccessManager\ConsentStore\microphone` `Value` Allow/Deny under HKLM ("Microphone access") and HKCU ("Let apps access your microphone"); `…\microphone\NonPackaged` `Value` ("Let desktop apps access your microphone") | 2026-10-16 |
+| this PC (read-only) | all three = Allow; `NonPackaged` usage subkeys list python.exe, never `dist\Wisp\Wisp.exe`; Core Audio `IAudioEndpointVolume`: default capture "Microphone Array (AMD Audio Device)", 4 channels, not muted, 100 %; default communications capture: a Bluetooth headset; Audio/Operational log: no events at either failure | 2026-10-16 |

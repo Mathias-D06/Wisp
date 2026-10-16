@@ -13,10 +13,10 @@ from wisp import paths, startup
 from wisp.ai import dictation as dictation_ai
 from wisp.ai.dictation import pcm_to_wav
 from wisp.assist.client import GeminiAssistModel
-from wisp.assist.engine import AssistEngine, Capturer, WatchCheck, WindowSystem
+from wisp.assist.engine import AssistEngine, Capturer, WatchCheck, real_window_system
 from wisp.assist.privacy import Blocklist
 from wisp.assist.service import ScreenAssist, Watcher
-from wisp.audio import OUTPUT_RATE
+from wisp.audio import OUTPUT_RATE, mic_check
 from wisp.audio.capture import MicCapture
 from wisp.audio.convert import has_speech
 from wisp.audio.debug_wav import DebugAudioRecorder, save_jpeg, save_pcm
@@ -111,7 +111,6 @@ from wisp.ui.tray import Tray
 from wisp.ui.wallpaper_picker import WallpaperDialog
 from wisp.voice import VoiceController, VoiceSignals, make_callbacks
 from wisp.winapi import input as winput
-from wisp.winapi import screen as screen_capture
 from wisp.winapi import windows as win
 
 log = logging.getLogger(__name__)
@@ -192,7 +191,9 @@ class WispApp(QObject):
             GenaiConnector(self.keystore.get, lambda: peek().ai.live_model),
             self._live_config,
             self.dispatcher,
-            make_callbacks(self.voice_signals, self.player, self.confirmations.on_user_utterance),
+            make_callbacks(self.voice_signals, self.player, self.confirmations.on_user_utterance,
+                           mic_notice=lambda: mic_check.silence_notice(
+                               self.mic.device_label, mic_check.privacy_states())),
             has_key=self.keystore.has_key,
             idle_timeout_s=lambda: peek().ai.idle_timeout_min * 60,
             always_listening=lambda: self.voice.always_listening,  # off in Discreet mode
@@ -378,6 +379,7 @@ class WispApp(QObject):
             and not win.self_elevated(),
             save_debug=lambda pcm: (save_pcm("dictation", pcm)
                                     if peek().audio.save_debug_audio else None),
+            mic_silence=self._mic_silence,
         )
 
     def _live_config(self, handle: str | None):
@@ -434,12 +436,7 @@ class WispApp(QObject):
             return Blocklist.from_lists(assist.blocked_apps, assist.blocked_titles)
 
         self.services.blocklist = blocklist
-        system = WindowSystem(foreground=win.foreground_window, windows=win.list_windows,
-                              bounds=win.frame_bounds, monitor_at=screen_capture.monitor_at,
-                              grab=screen_capture.grab,
-                              desktop_available=win.input_desktop_available,
-                              cursor=screen_capture.cursor_position)
-        capturer = Capturer(system, blocklist, log_capture=self._log_capture,
+        capturer = Capturer(real_window_system(), blocklist, log_capture=self._log_capture,
                             save_debug=lambda jpeg, label: (save_jpeg(label, jpeg)
                                                             if peek().audio.save_debug_audio
                                                             else None))
@@ -458,7 +455,8 @@ class WispApp(QObject):
             resample=lambda pcm, rate: (pcm if rate == OUTPUT_RATE
                                         else Resampler(rate, OUTPUT_RATE).process(pcm)),
             on_speech_usage=lambda speech: self.usage.record(
-                "speech", peek().ai.tts_model, speech.input_tokens, speech.output_tokens))
+                "speech", peek().ai.tts_model, speech.input_tokens, speech.output_tokens),
+            mic_silence=self._mic_silence)
         check = WatchCheck(model, capturer, lambda: peek().screen_assist.watch_comment_gap_s,
                            on_usage=usage)
         self.watcher = Watcher(check, peek, lambda: self.usage.record(
@@ -476,6 +474,10 @@ class WispApp(QObject):
             result={"blocked": entry["blocked"]} if blocked
             else {"pixels": entry.get("pixels"), "hidden_areas": entry.get("masked", 0)},
             ok=not blocked)
+
+    def _mic_silence(self, pcm: bytes) -> str | None:
+        """The notice naming the Windows setting to check, if the mic gave only silence."""
+        return mic_check.notice_if_silent(pcm, self.mic.device_label)
 
     def _speak_answers(self) -> bool:
         if self.discreet.active:  # Discreet mode: text only, unless kept on for headphones
@@ -510,11 +512,10 @@ class WispApp(QObject):
             self.notify("Screen Assist", exchange.answer[:240])
 
     def _on_assist_failed(self, message: str) -> None:
-        if self.discreet.active:  # errors still open up in Discreet mode
-            self.feedback.hide_now()
-            self.island.notify("Problem", message)
-            return
-        self.feedback.flash(message, 4500, "muted")
+        """A warning banner (errors open up in Discreet mode too); clicking it opens the Screen
+        tab, which shows the whole message. A Windows notification when the island is off."""
+        self.feedback.hide_now()
+        self._notify("Screen Assist failed", message)
 
     def _on_watch_comment(self, result) -> None:
         if self.discreet.active:

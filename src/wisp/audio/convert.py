@@ -65,7 +65,8 @@ class MicConverter:
 
     def channel_levels(self) -> list[float]:
         """Smoothed level of each input channel in dBFS (for diagnostics)."""
-        return [round(10 * np.log10(p), 1) if p > 1e-12 else -120.0 for p in self._power]
+        return [round(float(10 * np.log10(p)), 1) if p > 1e-12 else -120.0
+                for p in self._power]
 
     def process(self, raw: bytes) -> bytes:
         if self.passthrough:

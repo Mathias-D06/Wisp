@@ -11,11 +11,12 @@ acceptance step needs real hardware/API key and is listed in `MANUAL_TESTS.md` (
 
 - Current phase: all phases done (0–11), plus the briefs of 2026-10-13 (speech fix, part 1; UI polish,
   part 2; Dynamic Island, part 3; part 4: font warning, auto-hide, Calendar tab, Files & Share tab) and
-  of 2026-10-14 (Screen Assist + Watch mode, part 1; Discreet mode, part 2). Remaining work needs a
-  person: the MANUAL_TESTS core run (API key + microphone, now including MT-50…MT-114: a Google account
-  for MT-82…MT-89, a phone on a Private Wi-Fi for MT-94…MT-96, Gemini answering for MT-98…MT-114 — it
-  returned 503 "high demand" during the build), pushing to GitHub so CI runs, choosing a licence. See
-  FINAL_REPORT.md.
+  of 2026-10-14 (Screen Assist + Watch mode, part 1; Discreet mode, part 2), and the fixes of 2026-10-16
+  (Screen Assist's closed client, D-054; a silent microphone, D-055). Remaining work needs a
+  person: the MANUAL_TESTS core run (API key + microphone, now including MT-50…MT-118: a Google account
+  for MT-82…MT-89, a phone on a Private Wi-Fi for MT-94…MT-96, Gemini answering for MT-98…MT-115 — it
+  returned 503 "high demand" during the build; MT-116 settles whether the exe's silent mic is Windows
+  privacy or the input), pushing to GitHub so CI runs, choosing a licence. See FINAL_REPORT.md.
 - Safety note for automated runs: never toggle the user's Night Light/Wi-Fi/Bluetooth/theme/
   volume/output device in tests on this PC; test write paths with pure functions + manual tests.
 - Environment: Windows 11, Python 3.12.10 venv in `.venv`, Git 2.55, Inno Setup 6.7.3 (per-user,
@@ -462,6 +463,34 @@ acceptance step needs real hardware/API key and is listed in `MANUAL_TESTS.md` (
   `test_island_window.py::test_right_click_menu`; `docs/island/discreet_mode.gif`, `discreet_card_100.png`,
   `discreet_card_150.png`; D-053; MT-107…MT-114
 
+### Fixes of 2026-10-16
+- [x] X.1 Screen Assist failed every time with "RuntimeError" — root cause: `GeminiAssistModel` used a temporary
+  `genai.Client`, whose `__del__` closed its HTTP client before the request was sent ("Cannot send a request, as
+  the client has been closed"); source and frozen alike. Fixed with `with self._client() as client` in `answer`
+  and `speak` (`assist/client.py`). Reproduced from source with the real key and in a PyInstaller build of the
+  old code (its self-check fails with the same traceback); after the fix the request reaches Google (503 "high
+  demand" at the time) — `test_screen_assist.py::test_the_client_stays_open_until_the_request_is_sent` (real SDK
+  + httpx against `ai/loopback.py`, worker thread), `test_a_client_closed_when_collected_still_works`,
+  `test_screen_assists_request_has_no_tools_and_the_right_config`; D-054; MT-115
+- [x] X.2 Failures logged in full and shown with their message — `log.exception` in the request, speech, Watch
+  and capture threads and `Capturer.capture`; `describe_error` fallback "Unexpected error (Type): message"
+  (redacted, ≤300 chars), httpx transport errors = "Couldn't reach Google", capture crashes and a screenshot
+  timeout say so; a "Screen Assist failed" banner that opens the Screen tab — `test_screen_assist_ui.py` (8 new:
+  traceback + thread name for each worker, real message on the card, capture crash, shot timeout, banner →
+  Screen tab), `test_screen_assist.py` (error text, key redaction, network errors)
+- [x] X.3 `--self-check` runs Screen Assist — `selfcheck.py::_screen_assist`: real capture → mask → downscale →
+  JPEG on "assist-capture", then the real google-genai client to a 127.0.0.1 stand-in on "screen-assist", answer
+  and speech checked; `build.py` stops if it fails — `test_packaging.py::test_self_check_from_source`; frozen
+  run in the build of 2026-10-16
+- [~] X.4 A microphone that delivers only silence — `audio/mic_check.py` (digital silence vs a quiet room, the
+  three Windows privacy switches read from the registry, a notice naming the switch or listing what to check);
+  Screen Assist holds, push-to-talk turns ("mic_silent") and dictation show it instead of acting on silence; the
+  1 s level line uses plain numbers and warns with the switches — `test_mic_check.py` (13),
+  `test_live_session.py::test_a_mic_that_delivers_nothing_is_reported_as_such`, `test_screen_assist_ui.py`
+  (silent hold vs tap). On this PC all three switches are on and the AMD array is unmuted at 100 %, but Windows
+  has no record of the exe using the mic; which cause applies needs the mic opened from both builds: MT-116;
+  D-055; MT-116…MT-118
+
 ### Testing, packaging, definition of done
 - [x] T.1 Unit tests: dispatcher, safety tiers, scheduler parsing + persistence, memory, clipboard store,
   settings (Windows-only tests marked) — `test_dispatcher.py`, `test_tools_core.py`, `test_hardening.py`,
@@ -550,3 +579,9 @@ acceptance step needs real hardware/API key and is listed in `MANUAL_TESTS.md` (
   with errors, so errors are now told apart by their icon; the "Phone link" and "Watching" countdowns never ticked
   (only "countdown" scheduled 250 ms frames) — fixed for both; tests must never open the real microphone (the
   acceptance test uses a fake one).
+- 2026-10-16: Fixes (D-054, D-055). Screen Assist's "RuntimeError" was google-genai closing a temporary client
+  before it sent the request; reproduced from source and in a PyInstaller build, fixed, and now covered by
+  `--self-check` and by tests that drive the real SDK against a loopback server. The silent microphone was not
+  settled without opening the mic (no recording without asking): all privacy switches are on and the device is
+  unmuted, but Windows never recorded the exe as a mic user; Wisp now detects digital silence, says which setting
+  to check and logs the switches (MT-116…MT-118).

@@ -13,6 +13,7 @@ from dataclasses import dataclass
 log = logging.getLogger(__name__)
 
 NO_KEY_MESSAGE = "Add your Gemini API key in Settings → General to use voice and AI features."
+ERROR_TEXT_LIMIT = 300
 
 
 @dataclass
@@ -50,9 +51,17 @@ def describe_error(exc: BaseException, model: str | None = None) -> str:
         if isinstance(exc, errors.ServerError):
             return "Google's servers returned an error. Try again in a moment."
         return f"Gemini error {exc.code}: {exc.message or exc.status}"
-    if isinstance(exc, OSError | TimeoutError):
+    import httpx  # generate_content's transport (google-genai depends on it)
+
+    if isinstance(exc, OSError | TimeoutError | httpx.TransportError):
         return "Couldn't reach Google. Check your internet connection."
-    return f"Unexpected error: {type(exc).__name__}"
+    from wisp.logging_setup import redact
+
+    text = redact(" ".join(str(exc).split()))
+    if len(text) > ERROR_TEXT_LIMIT:
+        text = text[: ERROR_TEXT_LIMIT - 1].rstrip() + "…"
+    return f"Unexpected error ({type(exc).__name__}): {text}" if text else \
+        f"Unexpected error: {type(exc).__name__}"
 
 
 def validate_key(api_key: str, live_model: str, text_model: str) -> KeyCheck:

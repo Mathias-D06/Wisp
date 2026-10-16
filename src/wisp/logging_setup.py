@@ -14,6 +14,15 @@ from pathlib import Path
 _GOOGLE_KEY = re.compile(r"AIza[0-9A-Za-z_\-]{35}")
 
 
+_active: RedactingFilter | None = None
+
+
+def redact(text: str) -> str:
+    """``text`` without API keys: the pattern always, and the stored key once logging is set up
+    (for messages shown to the user, e.g. an unexpected error's text)."""
+    return _active.redact(text) if _active is not None else _GOOGLE_KEY.sub("[REDACTED]", text)
+
+
 class RedactingFilter(logging.Filter):
     """Removes API keys from every log record before it is written."""
 
@@ -49,7 +58,8 @@ def configure(log_folder: Path, secret_provider: Callable[[], str | None]) -> Re
     handler.setFormatter(
         logging.Formatter("%(asctime)s %(levelname)s %(threadName)s %(name)s: %(message)s")
     )
-    redactor = RedactingFilter(secret_provider)
+    global _active
+    redactor = _active = RedactingFilter(secret_provider)
     handler.addFilter(redactor)
     root = logging.getLogger()
     root.setLevel(logging.INFO)

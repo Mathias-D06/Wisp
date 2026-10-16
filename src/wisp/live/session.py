@@ -43,6 +43,7 @@ from google.genai import types
 from wisp.ai.gemini import NO_KEY_MESSAGE, describe_error
 from wisp.audio import INPUT_MIME
 from wisp.audio.convert import has_speech
+from wisp.audio.mic_check import is_dead_silence
 from wisp.tools.base import Origin
 
 log = logging.getLogger(__name__)
@@ -75,7 +76,7 @@ class LiveCallbacks:
     interrupted: Callable[[], None] = _noop
     turn_complete: Callable[[], None] = _noop
     tool_activity: Callable[[str, str], None] = _noop
-    turn_dropped: Callable[[str], None] = _noop  # "short" or "silent"
+    turn_dropped: Callable[[str], None] = _noop  # "short", "silent" or "mic_silent"
 
 
 def parse_duration(value: str | None) -> float:
@@ -323,9 +324,12 @@ class LiveSessionManager:
             return
         if not self._turn_opened:
             if not self._turn_media:
-                held_ms = sum(map(len, self._turn_pending)) * 1000 // 32000
+                audio = b"".join(self._turn_pending)
+                held_ms = len(audio) * 1000 // 32000
                 self._turn_pending = []
                 reason = "short" if self._turn_heard or held_ms < 400 else "silent"
+                if reason == "silent" and is_dead_silence(audio):
+                    reason = "mic_silent"  # nothing at all from the mic (D-055)
                 log.info("Push-to-talk turn not sent (%s, %d ms of audio)", reason, held_ms)
                 self._cb.turn_dropped(reason)
                 return

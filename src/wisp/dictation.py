@@ -50,6 +50,7 @@ class DictationDeps:
     activate: Callable[[int], bool]
     target_is_elevated: Callable[[Any], bool]
     save_debug: Callable[[bytes], None] = lambda pcm: None
+    mic_silence: Callable[[bytes], str | None] = lambda pcm: None  # D-055
     extra: dict = field(default_factory=dict)
 
 
@@ -165,7 +166,9 @@ class DictationController(QObject):
             return
         if not has_speech(audio):
             # Silence makes the model invent text; never paste that (D-039).
-            self.hud.flash(SILENT_MESSAGE, 3500, "muted")
+            notice = self.deps.mic_silence(audio)
+            self.hud.flash(notice or SILENT_MESSAGE, 9000 if notice else 3500,
+                           "warning" if notice else "muted")
             self.state.emit("idle")
             return
         self.deps.save_debug(audio)

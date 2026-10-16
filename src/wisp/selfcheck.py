@@ -1,9 +1,10 @@
 """``Wisp.exe --self-check [report.json]``: prove that a build (source or PyInstaller bundle) has
 everything it needs — every module imports, Qt plugins, SQLite FTS5, DPAPI, PortAudio, WinRT,
 UI Automation (comtypes code generation), APScheduler's SQLite job store, Pillow/mss, the Google
-Calendar client, the phone link and share sheet pieces, the Gemini SDK types and the tool
-declarations. Nothing touches the network, the user's data folder, audio output, settings or the
-clipboard; data goes to a temporary folder.
+Calendar client, the phone link and share sheet pieces, Screen Assist's capture-to-request path
+(with the real google-genai client talking to a loopback stand-in), the Gemini SDK types and the
+tool declarations. Nothing touches the network (only 127.0.0.1), the user's data folder, audio
+output, settings or the clipboard; data goes to a temporary folder.
 
 Exit code 0 when every required check passes. Optional checks (audio devices, media session)
 may fail on machines without that hardware and are reported only.
@@ -246,6 +247,82 @@ def _files_share() -> str:
     abi.release(abi.activation_factory(share.MANAGER_CLASS, share.IID_INTEROP))
     return (f"QR ok; {len(connections)} network connection(s), {len(hosts)} IPv4 address(es); "
             "StorageFile and share sheet interop ok")
+
+
+@check("screen_assist")
+def _screen_assist() -> str:
+    """D-052's path as the hotkey runs it, on worker threads like the app: the real Windows
+    calls capture the screen → blocked windows masked → downscale → JPEG ("assist-capture"),
+    then the real google-genai client sends it ("screen-assist") — to a loopback stand-in for
+    the API (wisp.ai.loopback, D-054), so nothing leaves the PC — and the answer is read aloud
+    the same way. The image stays in memory. This path failed in the build of 2026-10-15:
+    the SDK closed a temporary client before sending."""
+    from concurrent.futures import Future
+
+    from PIL import Image
+
+    from wisp.ai.loopback import GeminiLoopback
+    from wisp.assist.client import GeminiAssistModel
+    from wisp.assist.engine import AssistEngine, Capturer, real_window_system
+    from wisp.assist.imaging import MAX_EDGE
+    from wisp.assist.privacy import Blocklist
+
+    system = real_window_system()
+    source = "screen"
+    if not system.desktop_available():  # a locked PC: same path, a drawn image
+        system.grab = lambda box: Image.new("RGB", (box[2] - box[0], box[3] - box[1]), "#2b4c7e")
+        system.desktop_available, source = (lambda: True), "drawn image (secure desktop)"
+    capturer = Capturer(system, Blocklist)
+    shot_future: Future = Future()
+
+    def grab() -> None:
+        try:
+            shot_future.set_result(capturer.capture("screen", "screen_assist", "self-check"))
+        except Exception as exc:
+            shot_future.set_exception(exc)
+
+    threading.Thread(target=grab, name="assist-capture", daemon=True).start()
+    shot = shot_future.result(30)
+    with GeminiLoopback("A self-check answer.", pcm=b"\x10\x00" * 2400) as stub:
+        model = GeminiAssistModel(lambda: "self-check-key", lambda: "gemini-self-check",
+                                  lambda: "gemini-self-check-tts", make_client=stub.client)
+        engine = AssistEngine(model, capturer, lambda: "English (UK)")
+        answer: Future = Future()
+
+        def ask() -> None:
+            try:
+                exchange = engine.ask("What is on the screen?", shot=shot)
+                answer.set_result((exchange, model.speak(exchange.answer, "Kore")))
+            except Exception as exc:
+                answer.set_exception(exc)
+
+        threading.Thread(target=ask, name="screen-assist", daemon=True).start()
+        exchange, speech = answer.result(60)
+        sent = stub.requests[0]["body"]
+    if exchange.answer != "A self-check answer.":
+        raise RuntimeError(f"unexpected answer {exchange.answer!r}")
+    def field(item: dict, name: str, camel: str):  # the SDK writes either spelling
+        return item.get(camel, item.get(name))
+
+    inline = [field(part, "inline_data", "inlineData") or {} for content in sent["contents"]
+              for part in content["parts"]]
+    images = [data for data in inline if field(data, "mime_type", "mimeType") == "image/jpeg"]
+    if len(images) != 1:
+        raise RuntimeError(f"{len(images)} images in the request")
+    import base64
+
+    data = images[0]["data"]  # URL-safe base64, as the SDK sends it
+    with Image.open(io.BytesIO(base64.urlsafe_b64decode(data + "=" * (-len(data) % 4)))) as img:
+        size = img.size
+    if max(size) > MAX_EDGE:
+        raise RuntimeError(f"image {size} not downscaled")
+    config = field(sent, "generation_config", "generationConfig") or {}
+    if field(config, "media_resolution", "mediaResolution") != "MEDIA_RESOLUTION_MEDIUM":
+        raise RuntimeError(f"generation config {config}")
+    if len(speech.pcm) != 4800 or speech.rate != 24000:
+        raise RuntimeError(f"speech {len(speech.pcm)} bytes at {speech.rate} Hz")
+    return (f"{source} → JPEG {size[0]}x{size[1]} ({len(shot.jpeg) // 1024} KB) → "
+            "google-genai via loopback → answer and speech ok")
 
 
 @check("gemini_config")

@@ -20,7 +20,7 @@ from collections.abc import Callable
 
 import numpy as np
 
-from wisp.audio import INPUT_RATE
+from wisp.audio import INPUT_RATE, mic_check
 from wisp.audio.convert import MicConverter, rms_dbfs
 from wisp.audio.devices import resolve
 
@@ -50,6 +50,7 @@ class MicCapture:
         self._stream = None
         self._converter: MicConverter | None = None
         self.format_description = ""
+        self.device_label = ""  # the device's name, once opened
         self._converted_bytes = 0
         self._levels_logged = False
         self._queue: queue.SimpleQueue[bytes | None] = queue.SimpleQueue()
@@ -136,6 +137,7 @@ class MicCapture:
         import sounddevice as sd
 
         info = sd.query_devices(device if device is not None else sd.default.device[0])
+        self.device_label = str(info["name"])
         native_rate = int(info["default_samplerate"])
         native_channels = max(1, min(int(info["max_input_channels"]), MAX_CHANNELS))
         candidates = [(native_rate, native_channels, "float32"), (INPUT_RATE, 1, "int16"),
@@ -178,8 +180,8 @@ class MicCapture:
             self._converted_bytes = 0
             self._levels_logged = False
             self.format_description = f"{rate} Hz × {channels} ch {dtype}"
-            log.info("Microphone opened (device=%s, %s → 16 kHz mono int16)", device,
-                     self.format_description)
+            log.info("Microphone opened (%s, device=%s, %s → 16 kHz mono int16)",
+                     self.device_label, device, self.format_description)
             return
         log.error("Opening microphone failed: %s", last_error or "no usable format")
         raise MicError(MIC_HELP) from last_error
@@ -194,6 +196,18 @@ class MicCapture:
                 log.warning("Closing microphone: %s", exc)
             self.level = 0.0
             log.info("Microphone closed")
+
+    def _log_levels(self, converter: MicConverter, samples: np.ndarray) -> None:
+        """Once per opening, after 1 s: the output level and each channel's, as plain numbers;
+        a warning with Windows' microphone privacy switches if every channel is silent."""
+        level = rms_dbfs(samples.astype(np.float32) / 32768.0)
+        channels = converter.channel_levels()
+        used = ", ".join(str(i + 1) for i, on in enumerate(converter.active) if on)
+        log.info("Mic levels after 1 s: output %.0f dBFS; channels (dBFS) %s; mixing %s",
+                 level, ", ".join(f"{c:.1f}" for c in channels), used)
+        if mic_check.channels_silent(channels):
+            log.warning("Every channel of %r is silent; Windows microphone privacy: %s",
+                        self.device_label, mic_check.describe_states(mic_check.privacy_states()))
 
     def _callback(self, indata, frames, time_info, status) -> None:
         self._queue.put(bytes(indata))
@@ -214,10 +228,7 @@ class MicCapture:
             if (not self._levels_logged and converter is not None
                     and self._converted_bytes >= INPUT_RATE * 2 * LEVEL_LOG_AFTER_S):
                 self._levels_logged = True
-                level = rms_dbfs(samples.astype(np.float32) / 32768.0)
-                used = [i + 1 for i, on in enumerate(converter.active) if on]
-                log.info("Mic levels after 1 s: output %.0f dBFS; channels (dBFS) %s; mixing %s",
-                         level, converter.channel_levels(), used)
+                self._log_levels(converter, samples)
             with self._lock:
                 self._preroll.append(chunk)
                 subscribers = list(self._subscribers.values())

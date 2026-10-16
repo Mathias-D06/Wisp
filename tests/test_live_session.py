@@ -9,6 +9,7 @@ import pytest
 from google.genai import errors
 
 from tests.fakes import (
+    QUIET_CHUNK,
     SILENT_CHUNK,
     SPEECH_CHUNK,
     DirectUi,
@@ -445,10 +446,24 @@ async def test_silent_turn_is_not_sent_and_explained(env):
     env.manager.connect()
     await until(lambda: env.manager.state == LiveState.READY)
     env.manager.begin_turn()
-    for _ in range(40):  # 1.3 s of silence
-        env.manager.push_audio(SILENT_CHUNK)
+    for _ in range(40):  # 1.3 s of a quiet room
+        env.manager.push_audio(QUIET_CHUNK)
     env.manager.end_turn()
     await until(lambda: env.rec.dropped == ["silent"])
+    await asyncio.sleep(0.1)
+    assert env.server.current.kinds() == []
+
+
+async def test_a_mic_that_delivers_nothing_is_reported_as_such(env):
+    """Digital silence isn't a quiet room: the mic is blocked, muted or the wrong one, and the
+    message names the Windows setting to check (D-055)."""
+    env.manager.connect()
+    await until(lambda: env.manager.state == LiveState.READY)
+    env.manager.begin_turn()
+    for _ in range(40):  # 1.3 s of zeros
+        env.manager.push_audio(SILENT_CHUNK)
+    env.manager.end_turn()
+    await until(lambda: env.rec.dropped == ["mic_silent"])
     await asyncio.sleep(0.1)
     assert env.server.current.kinds() == []
 

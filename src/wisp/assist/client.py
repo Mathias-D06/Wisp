@@ -8,6 +8,10 @@
   ``speech_config`` with the voice chosen in Settings → Loadout), 24 kHz mono PCM for the
   player. The data may come as raw PCM or a WAV file; both are handled.
 * Token counts come back from ``usage_metadata`` for the Stats estimate.
+* Each call holds its ``genai.Client`` in a ``with`` block for the whole request. A temporary
+  client (``make_client(key).models.generate_content(...)``) is garbage-collected as soon as
+  ``.models`` has been read, and ``Client.__del__`` closes its HTTP client before the request is
+  sent: "Cannot send a request, as the client has been closed" (D-054).
 """
 
 from __future__ import annotations
@@ -54,6 +58,8 @@ class Speech:
 
 
 class AssistModel(Protocol):
+    def model_name(self) -> str: ...
+
     def answer(self, turns: list[Turn], system: str, json_schema: dict | None = None,
                low_resolution: bool = False) -> Reply: ...
 
@@ -88,15 +94,22 @@ def pcm_from(data: bytes, mime_type: str) -> tuple[bytes, int]:
 
 class GeminiAssistModel:
     def __init__(self, api_key: Callable[[], str], model: Callable[[], str],
-                 tts_model: Callable[[], str]) -> None:
+                 tts_model: Callable[[], str],
+                 make_client: Callable[[str], object] | None = None) -> None:
+        """``make_client``: key → ``genai.Client`` (the self-check points one at a loopback
+        stand-in for the API)."""
         self._api_key = api_key
         self._model = model
         self._tts_model = tts_model
+        self._make_client = make_client
+
+    def model_name(self) -> str:
+        return self._model()
 
     def _client(self):
         from wisp.ai.gemini import make_client
 
-        return make_client(self._api_key())
+        return (self._make_client or make_client)(self._api_key())
 
     def answer(self, turns: list[Turn], system: str, json_schema: dict | None = None,
                low_resolution: bool = False) -> Reply:
@@ -111,8 +124,9 @@ class GeminiAssistModel:
         if json_schema is not None:
             config.response_mime_type = "application/json"
             config.response_json_schema = json_schema
-        response = self._client().models.generate_content(
-            model=self._model(), contents=_contents(turns), config=config)
+        with self._client() as client:
+            response = client.models.generate_content(
+                model=self._model(), contents=_contents(turns), config=config)
         usage = response.usage_metadata
         return Reply(response.text or "",
                      int(getattr(usage, "prompt_token_count", 0) or 0),
@@ -126,8 +140,9 @@ class GeminiAssistModel:
             response_modalities=["AUDIO"],
             speech_config=types.SpeechConfig(voice_config=types.VoiceConfig(
                 prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name=voice))))
-        response = self._client().models.generate_content(
-            model=self._tts_model(), contents=text, config=config)
+        with self._client() as client:
+            response = client.models.generate_content(
+                model=self._tts_model(), contents=text, config=config)
         usage = response.usage_metadata
         tokens = (int(getattr(usage, "prompt_token_count", 0) or 0),
                   int(getattr(usage, "candidates_token_count", 0) or 0))

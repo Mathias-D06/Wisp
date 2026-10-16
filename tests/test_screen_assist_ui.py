@@ -53,7 +53,8 @@ class FakePlayer:
         pass
 
 
-def make_assist(images=None, front=None, answers=None, speak=True, audio=b"", speech=False):
+def make_assist(images=None, front=None, answers=None, speak=True, audio=b"", speech=False,
+                mic_silence=lambda pcm: None):
     from wisp.assist.service import ScreenAssist
 
     front = front or Window(1, "main.py - Code", "Code")
@@ -67,7 +68,7 @@ def make_assist(images=None, front=None, answers=None, speak=True, audio=b"", sp
         has_key=lambda: True, voice_name=lambda: "Kore", speak_allowed=lambda: speak,
         paste=lambda hwnd, text: pasted.append((hwnd, text)) or "Inserted.",
         to_wav=lambda pcm: b"WAV" + pcm[:4], has_speech=lambda pcm: speech,
-        resample=lambda pcm, rate: pcm)
+        resample=lambda pcm, rate: pcm, mic_silence=mic_silence)
     return SimpleNamespace(assist=assist, model=model, system=system, pasted=pasted,
                            player=player)
 
@@ -112,6 +113,112 @@ def test_a_blocked_window_fails_politely(qtbot):
     with qtbot.waitSignal(setup.assist.failed, timeout=5000) as failed:
         setup.assist.ask()
     assert failed.args[0] == REFUSAL and setup.model.calls == []
+
+
+# ----- failures: logged with their traceback, shown with their message (D-054) -------------------
+def logged_with_traceback(caplog, message: str):
+    return [r for r in caplog.records
+            if r.getMessage() == message and r.exc_info and r.exc_info[1] is not None]
+
+
+def test_a_failed_request_is_logged_in_full_and_shown_with_its_message(qtbot, caplog):
+    closed = RuntimeError("Cannot send a request, as the client has been closed.")
+    setup = make_assist(answers=[closed])
+    with qtbot.waitSignal(setup.assist.failed, timeout=5000) as failed:
+        setup.assist.on_hotkey("screen_assist", "press")
+        setup.assist.on_hotkey("screen_assist", "release")
+    assert failed.args[0] == ("Unexpected error (RuntimeError): Cannot send a request, as the "
+                              "client has been closed.")
+    [record] = logged_with_traceback(caplog, "Screen Assist failed")
+    assert record.exc_info[1] is closed and record.threadName == "screen-assist"
+
+
+def test_a_capture_that_crashes_is_logged_on_its_thread(qtbot, caplog):
+    setup = make_assist()
+
+    def broken(region):
+        raise OSError(6, "The handle is invalid")
+
+    setup.assist.engine.capturer.system.grab = broken
+    with qtbot.waitSignal(setup.assist.failed, timeout=5000) as failed:
+        setup.assist.press()
+        setup.assist.release()
+    assert failed.args[0] == ("Wisp couldn't take the screenshot (OSError: [Errno 6] The handle "
+                              "is invalid).")  # not "Couldn't reach Google"
+    [record] = logged_with_traceback(caplog, "Screen capture failed")
+    assert record.threadName == "assist-capture"
+    assert setup.model.calls == []
+
+
+def test_a_screenshot_that_never_arrives_is_a_capture_error(qtbot, monkeypatch):
+    from concurrent.futures import Future
+
+    from wisp.assist import service
+
+    monkeypatch.setattr(service, "SHOT_TIMEOUT_S", 0.2)
+    setup = make_assist()
+    with qtbot.waitSignal(setup.assist.failed, timeout=5000) as failed:
+        setup.assist.ask(shot_future=Future())  # never resolved
+    assert failed.args[0] == "The screenshot took too long. Try again."  # not "network"
+    assert setup.model.calls == []
+
+
+def test_reading_aloud_failures_are_logged_in_full(qtbot, caplog):
+    setup = make_assist(answers=["It's a terminal."])
+
+    def broken(text, voice):
+        raise ValueError("no audio in the response")
+
+    setup.model.speak = broken
+    setup.assist.speak("It's a terminal.")
+    qtbot.waitUntil(lambda: not setup.assist.speaking, timeout=5000)
+    [record] = logged_with_traceback(caplog, "Reading the answer aloud failed")
+    assert record.threadName == "assist-speech"
+
+
+def test_watch_mode_failures_are_logged_in_full(qtbot, caplog):
+    from wisp.assist.engine import WatchCheck
+    from wisp.assist.service import Watcher
+
+    setup = make_assist()
+    check = WatchCheck(setup.model, setup.assist.engine.capturer, lambda: 60.0)
+    check.run = lambda: (_ for _ in ()).throw(RuntimeError("client closed"))
+    settings = SimpleNamespace(screen_assist=SimpleNamespace(watch_auto_stop_min=5,
+                                                             watch_interval_s=60))
+    watcher = Watcher(check, lambda: settings, lambda: None, lambda: True)
+    watcher.running = True
+    watcher._tick()
+    qtbot.waitUntil(lambda: watcher.last_status == "error", timeout=5000)
+    [record] = logged_with_traceback(caplog, "Watch mode look failed")
+    assert record.threadName == "watch"
+
+
+# ----- a microphone that delivers only silence (D-055) --------------------------------------------
+def test_holding_with_a_silent_mic_says_why_instead_of_a_quick_look(qtbot):
+    setup = make_assist(audio=b"\x00\x00" * 16000,  # held 1 s, nothing but zeros
+                        mic_silence=lambda pcm: "Wisp got only silence from the microphone.")
+    with qtbot.waitSignal(setup.assist.failed, timeout=5000) as failed:
+        setup.assist.press()
+        setup.assist.release()
+    assert failed.args[0] == "Wisp got only silence from the microphone."
+    assert setup.model.calls == [] and not setup.assist.busy
+    assert setup.assist.mic.users == []
+
+
+def test_a_tap_with_a_silent_mic_still_takes_a_quick_look(qtbot):
+    setup = make_assist(audio=b"\x00\x00" * 800,  # 50 ms: a tap
+                        mic_silence=lambda pcm: "Wisp got only silence from the microphone.")
+    with qtbot.waitSignal(setup.assist.answered, timeout=5000):
+        setup.assist.press()
+        setup.assist.release()
+    assert len(setup.model.calls) == 1
+
+
+def test_screen_assist_failures_open_the_screen_tab():
+    from wisp.ui.island.island import banner_style
+
+    assert banner_style("Screen Assist failed") == ("warning", "warning", "Screen")
+    assert banner_style("Problem") == ("warning", "warning", None)
 
 
 def test_the_voice_tool_answers_from_a_worker_thread_without_tts(qtbot):
