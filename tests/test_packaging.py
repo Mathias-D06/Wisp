@@ -111,3 +111,24 @@ def test_spec_inputs_exist():
     for name in ("launcher.py", "wisp.ico"):
         assert name in spec and (PACKAGING / name).is_file()
     assert "console=False" in spec and "collect_submodules(\"comtypes.gen\")" in spec
+
+
+def test_build_failures_become_github_annotations(monkeypatch, capsys):
+    """On GitHub Actions a failing step or self-check is an error annotation (readable without
+    signing in); elsewhere nothing extra is printed."""
+    monkeypatch.syspath_prepend(str(PACKAGING))
+    import build
+
+    monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
+    build.annotate("Self-check failed: winrt", "x")
+    assert capsys.readouterr().out == ""
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    build.annotate("Self-check failed: winrt, again", "Class not registered\nline 2 at 100%")
+    assert capsys.readouterr().out.strip() == (
+        "::error title=Self-check failed%3A winrt%2C again::"
+        "Class not registered%0Aline 2 at 100%25")
+    build.step("PyInstaller")
+    with pytest.raises(subprocess.CalledProcessError):
+        build.run([sys.executable, "-c", "raise SystemExit(3)"])
+    out = capsys.readouterr().out
+    assert "::error title=Build step failed%3A PyInstaller::" in out and "code 3" in out

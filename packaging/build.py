@@ -2,6 +2,10 @@
 the built exe → Inno Setup installer (dist\\WispSetup-<version>.exe) when ISCC is available.
 
 Run: .venv\\Scripts\\python packaging\\build.py [--no-installer]
+
+On GitHub Actions a failing step, and each failing self-check with its message and traceback,
+is also written as an error annotation. Annotations show on the run's page and through the API
+without signing in, unlike the job log.
 """
 
 from __future__ import annotations
@@ -20,13 +24,35 @@ DIST = ROOT / "dist"
 sys.path.insert(0, str(ROOT / "src"))
 
 
+CURRENT_STEP = ""
+
+
 def step(title: str) -> None:
+    global CURRENT_STEP
+    CURRENT_STEP = title
     print(f"\n=== {title}", flush=True)
+
+
+def _escape(text: str, prop: bool = False) -> str:
+    """GitHub's workflow-command escaping (actions/toolkit ``escapeData``/``escapeProperty``)."""
+    text = text.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+    return text.replace(":", "%3A").replace(",", "%2C") if prop else text
+
+
+def annotate(title: str, message: str) -> None:
+    """An error annotation when running on GitHub Actions; nothing elsewhere."""
+    if os.environ.get("GITHUB_ACTIONS") == "true":
+        print(f"::error title={_escape(title, prop=True)}::{_escape(message)}", flush=True)
 
 
 def run(args: list[str], **kwargs) -> None:
     print(">", " ".join(args), flush=True)
-    subprocess.run(args, check=True, cwd=ROOT, **kwargs)
+    try:
+        subprocess.run(args, check=True, cwd=ROOT, **kwargs)
+    except subprocess.CalledProcessError as exc:
+        annotate(f"Build step failed: {CURRENT_STEP}",
+                 f"{' '.join(args)} exited with code {exc.returncode}")
+        raise
 
 
 def find_iscc() -> str | None:
@@ -44,11 +70,20 @@ def find_iscc() -> str | None:
 
 def self_check(exe: Path) -> None:
     report = Path(tempfile.mkdtemp(prefix="wisp-build-")) / "self-check.json"
-    result = subprocess.run([str(exe), "--self-check", str(report)], timeout=300)
+    env = {**os.environ, "WISP_SELFCHECK_TRACE": "1"}  # failures carry their traceback
+    result = subprocess.run([str(exe), "--self-check", str(report)], timeout=300, env=env)
+    if not report.is_file():
+        annotate("Self-check wrote no report", f"{exe} --self-check exited with code "
+                 f"{result.returncode} before writing {report.name}")
+        raise SystemExit("Self-check of the built exe failed (no report).")
     data = json.loads(report.read_text(encoding="utf-8"))
     for item in data["checks"]:
         mark = "ok " if item["ok"] else ("ERR" if item["required"] else "-- ")
         print(f"  {mark} {item['check']:<14} {item['detail'].splitlines()[0][:110]}")
+        if not item["ok"]:
+            print(item["detail"], flush=True)
+            if item["required"]:
+                annotate(f"Self-check failed: {item['check']}", item["detail"])
     if result.returncode != 0 or not data["ok"] or not data["frozen"]:
         raise SystemExit("Self-check of the built exe failed.")
 
