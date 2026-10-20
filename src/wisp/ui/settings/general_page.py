@@ -25,6 +25,18 @@ from wisp.settings import LANGUAGE_CODES, Settings, SettingsStore
 from wisp.ui.settings.base import SettingsPage, hint
 
 LANGUAGES = [name for name in LANGUAGE_CODES if name != "English"]
+# Text models that read images and take thinking_level "low" (ai.google.dev/gemini-api/docs/
+# models and /thinking, 2026-10-20); any other name can be typed in (D-057)
+FALLBACK_MODELS = ["gemini-3.6-flash", "gemini-3.5-flash-lite"]
+
+
+def fallback_name(combo: QComboBox) -> str:
+    """The fallback model chosen ("" for Off), whether picked from the list or typed."""
+    text = combo.currentText().strip()
+    if text == combo.itemText(0):  # "Off"
+        return ""
+    index = combo.findText(text)
+    return (combo.itemData(index) or "") if index >= 0 else text
 
 
 class _KeyCheckBridge(QObject):
@@ -83,6 +95,14 @@ class GeneralPage(SettingsPage):
         form = QFormLayout(ai_box)
         self.live_model = QLineEdit()
         self.text_model = QLineEdit()
+        self.fallback_model = QComboBox()
+        self.fallback_model.setEditable(True)
+        self.fallback_model.addItem("Off", "")
+        for name in FALLBACK_MODELS:
+            self.fallback_model.addItem(name, name)
+        self.fallback_model.setToolTip(
+            "Used only when the text model is still overloaded (“high demand”) after "
+            "Wisp has retried. Screen Assist then says which model answered.")
         self.language = QComboBox()
         self.language.setEditable(True)
         self.language.addItems(LANGUAGES)
@@ -90,7 +110,8 @@ class GeneralPage(SettingsPage):
         self.idle_timeout.setRange(1, 240)
         self.idle_timeout.setSuffix(" min")
         form.addRow("Live (voice) model", self.live_model)
-        form.addRow("Text model (dictation)", self.text_model)
+        form.addRow("Text model (dictation, Screen Assist)", self.text_model)
+        form.addRow("Fallback text model (when busy)", self.fallback_model)
         form.addRow("Language", self.language)
         form.addRow("Close idle voice session after", self.idle_timeout)
         layout.addWidget(ai_box)
@@ -190,6 +211,11 @@ class GeneralPage(SettingsPage):
     def load(self, settings: Settings) -> None:
         self.live_model.setText(settings.ai.live_model)
         self.text_model.setText(settings.ai.text_model)
+        index = self.fallback_model.findData(settings.ai.fallback_text_model)
+        if index >= 0:
+            self.fallback_model.setCurrentIndex(index)
+        else:
+            self.fallback_model.setEditText(settings.ai.fallback_text_model)
         self.language.setCurrentText(settings.ai.language)
         self.idle_timeout.setValue(settings.ai.idle_timeout_min)
         self.start_with_windows.setChecked(startup.is_enabled())
@@ -207,6 +233,7 @@ class GeneralPage(SettingsPage):
     def apply(self, settings: Settings) -> None:
         settings.ai.live_model = self.live_model.text().strip()
         settings.ai.text_model = self.text_model.text().strip()
+        settings.ai.fallback_text_model = fallback_name(self.fallback_model)
         settings.ai.language = self.language.currentText().strip() or "English (UK)"
         settings.ai.idle_timeout_min = self.idle_timeout.value()
         settings.general.start_with_windows = self.start_with_windows.isChecked()

@@ -345,6 +345,13 @@ pastes are kept out of both Windows clipboard history and Wisp's.
   your microphone" in that page; a mute key or switch on the laptop; the input chosen in Windows
   Settings → System → Sound → Input and in Wisp's Settings → Hotkeys and audio. Test microphone
   shows what Wisp hears. The log's "Mic levels" line shows each channel and the switches.
+- **"Google is busy, retrying…" / "Google's Gemini model is overloaded".** Gemini answered "503,
+  high demand". Wisp tries three times over about 20 s, then says so; try again a minute later. To
+  get an answer anyway, choose a **Fallback text model (when busy)** in Settings → General: Screen
+  Assist then asks that model and the answer says which one it was.
+- **"I didn't hear a question".** The Screen Assist keys were held but no speech arrived. Speak
+  while holding them, or tap them for a quick look without a question. Settings → Hotkeys and
+  audio → Test microphone shows what Wisp hears.
 - **The Start menu opens after a hotkey,** or a hotkey clashes with another app. Choose a
   different chord in Settings → Hotkeys and audio.
 - **Nothing happens in an administrator window.** Windows doesn't let normal apps control

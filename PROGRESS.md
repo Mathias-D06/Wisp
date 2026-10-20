@@ -12,11 +12,13 @@ acceptance step needs real hardware/API key and is listed in `MANUAL_TESTS.md` (
 - Current phase: all phases done (0–11), plus the briefs of 2026-10-13 (speech fix, part 1; UI polish,
   part 2; Dynamic Island, part 3; part 4: font warning, auto-hide, Calendar tab, Files & Share tab) and
   of 2026-10-14 (Screen Assist + Watch mode, part 1; Discreet mode, part 2), and the fixes of 2026-10-16
-  (Screen Assist's closed client, D-054; a silent microphone, D-055). Remaining work needs a
-  person: the MANUAL_TESTS core run (API key + microphone, now including MT-50…MT-118: a Google account
-  for MT-82…MT-89, a phone on a Private Wi-Fi for MT-94…MT-96, Gemini answering for MT-98…MT-115 — it
-  returned 503 "high demand" during the build; MT-116 settles whether the exe's silent mic is Windows
-  privacy or the input), pushing to GitHub so CI runs, choosing a licence. See FINAL_REPORT.md.
+  (Screen Assist's closed client, D-054; a silent microphone, D-055) and of 2026-10-20 (empty capture
+  rectangles, D-056; Gemini's "high demand", D-057; a press that ended in nothing, D-058). Remaining
+  work needs a person: the MANUAL_TESTS core run (API key + microphone, now including MT-50…MT-124: a
+  Google account for MT-82…MT-89, a phone on a Private Wi-Fi for MT-94…MT-96, Gemini answering for
+  MT-98…MT-124 — it returned 503 "high demand" during the builds; MT-116 settles whether the exe's
+  silent mic is Windows privacy or the input), pushing to GitHub so CI runs, choosing a licence. See
+  FINAL_REPORT.md.
 - Safety note for automated runs: never toggle the user's Night Light/Wi-Fi/Bluetooth/theme/
   volume/output device in tests on this PC; test write paths with pure functions + manual tests.
 - Environment: Windows 11, Python 3.12.10 venv in `.venv`, Git 2.55, Inno Setup 6.7.3 (per-user,
@@ -491,6 +493,38 @@ acceptance step needs real hardware/API key and is listed in `MANUAL_TESTS.md` (
   has no record of the exe using the mic; which cause applies needs the mic opened from both builds: MT-116;
   D-055; MT-116…MT-118
 
+### Fixes of 2026-10-20
+- [x] Y.1 Zero-size capture — root cause: the window in front was used as it came; DWM gave it an empty
+  rectangle (0,0,0,0) and only `None` was checked, so mss got a 0×0 region (a Screen-tab request; the island
+  never takes the foreground). `frame_bounds` falls back to GetWindowRect and never returns an empty
+  rectangle; `Capturer.choose` skips Wisp's own windows, the desktop, taskbars, minimised, cloaked, empty and
+  off-screen windows for the conversation's window or the next real one in z-order (blocked ones passed
+  over), else the whole monitor under the pointer, with a note on the card; rectangles clamped to the
+  virtual screen — `test_capture_targets.py` (19: each case, clamping, blocklist, the note on the card, the
+  GetWindowRect fallback with fake DLLs, real rectangles never empty); D-056; MT-119, MT-120
+- [x] Y.2 Gemini's 503 — the SDK's `HttpRetryOptions` (3 attempts, 429/503, backoff 3–5 s then 6–8 s with
+  jitter, 40 s per attempt) on every generate_content (Screen Assist, Watch, reading aloud, dictation); an
+  httpx response hook logs each busy answer and puts "Google is busy, retrying… (2 of 3)" on the card and
+  the dictation HUD; an optional fallback text model (Settings → General, off by default) after the retries
+  end in 503, named on the card and in Stats; plain messages for 503, other 5xx and timeouts; one shared
+  TLS context (client creation 0.45 s → 1 ms) — `test_retry.py` (16: the real SDK against the loopback
+  answering 503: retried and answered, given up and explained, fallback and its note, no fallback for 429/500
+  or the same model, 500 not retried, TTS and dictation retried, the HUD note, fake-client checks, the
+  setting and its page); D-057; MT-121, MT-122, MT-124
+- [x] Y.3 A press that ended in nothing — root cause: `press()` opened the microphone on the Qt thread (the
+  first use starts PortAudio: 1.6 s), so the release ran right after with 5 ms of audio, was taken for a tap,
+  and the quick look then waited on an overloaded Gemini with no timeout and no log line until Wisp was
+  quit. The mic now opens on a thread ("Listening…" at once; a late-opening mic is let go), PortAudio is
+  warmed up at start (no stream), tap vs hold is timed from the keys, and every press ends in an answer, an
+  error or "I didn't hear a question", each logged with the request and its outcome —
+  `test_screen_assist_ui.py` (8 new: the press doesn't wait for a slow mic, released before it opened, no
+  speech, no microphone vs a tap, logged outcomes, a press while busy, the busy note on the card,
+  unsubscribing doesn't wait for an opening stream, the warm-up opens no stream); D-058; MT-123
+- [x] Y.4 "Mic levels" log line in plain numbers — already in the build of 2026-10-16 (D-055,
+  `test_mic_check.py`); the 2026-10-19 log has no such line because the mic was open for 79 ms only
+- [x] Y.5 `--self-check` `screen_assist` now chooses a window with the new rules and has the loopback answer
+  503 once, so the SDK's retry and the busy note run in the frozen build too
+
 ### Testing, packaging, definition of done
 - [x] T.1 Unit tests: dispatcher, safety tiers, scheduler parsing + persistence, memory, clipboard store,
   settings (Windows-only tests marked) — `test_dispatcher.py`, `test_tools_core.py`, `test_hardening.py`,
@@ -512,8 +546,9 @@ acceptance step needs real hardware/API key and is listed in `MANUAL_TESTS.md` (
 - [x] D.2 Stub/placeholder grep returns nothing — `\b(TODO|FIXME|XXX|HACK|TBD)\b|NotImplementedError|stub|
   not implemented|coming soon` over *.py/iss/spec/yml/md/toml: no hits in code (2026-10-13); bare `pass`
   only in empty exception classes
-- [x] D.3 README complete — `README.md` (install, key + billing/terms, usage, settings, Scheduled tasks,
-  Safety model, privacy and data, troubleshooting, building, notices)
+- [x] D.3 README complete — `README.md` (the project: what it does, stack, architecture, how it was built)
+  and `docs/USER_GUIDE.md` (install, key + billing/terms, usage, settings, Scheduled tasks, Safety model,
+  privacy and data, troubleshooting, building, notices)
 - [x] D.4 Final report — `FINAL_REPORT.md`
 
 ## Log
@@ -585,3 +620,10 @@ acceptance step needs real hardware/API key and is listed in `MANUAL_TESTS.md` (
   settled without opening the mic (no recording without asking): all privacy switches are on and the device is
   unmuted, but Windows never recorded the exe as a mic user; Wisp now detects digital silence, says which setting
   to check and logs the switches (MT-116…MT-118).
+- 2026-10-20: Fixes (D-056…D-058) from the installed build's log. The zero-size capture was an empty DWM
+  rectangle for the window in front; the 503s are now retried by the SDK with a note on the card and an
+  optional fallback model; the "nothing happened" press was the microphone opening on the UI thread (1.6 s)
+  followed by a quick look stuck on an overloaded Gemini. Found while fixing: every genai.Client loaded the CA
+  bundle twice (0.45 s a request), now shared. The "Windows fatal exception 0x8001010d" printed during
+  `test_win_integration.py` is COM's RPC_E_CANTCALLOUT_ININPUTSYNCCALL reported by faulthandler; it is
+  already there at the previous commit and the tests pass.

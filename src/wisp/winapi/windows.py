@@ -3,7 +3,8 @@
 Sources (learn.microsoft.com): EnumWindows, GetWindowTextW, IsWindowVisible, IsIconic,
 ShowWindow (SW_MINIMIZE=6, SW_MAXIMIZE=3, SW_RESTORE=9), PostMessageW + WM_CLOSE (lets the app
 ask to save), SetForegroundWindow (restrictions), DwmGetWindowAttribute (DWMWA_CLOAKED=14,
-DWMWA_EXTENDED_FRAME_BOUNDS=9), QueryFullProcessImageNameW, OpenProcessToken/TokenElevation.
+DWMWA_EXTENDED_FRAME_BOUNDS=9), GetWindowRect, QueryFullProcessImageNameW,
+OpenProcessToken/TokenElevation.
 """
 
 from __future__ import annotations
@@ -48,6 +49,7 @@ _user32.WindowFromPoint.argtypes = [wintypes.POINT]
 _user32.WindowFromPoint.restype = wintypes.HWND
 _user32.GetAncestor.argtypes = [wintypes.HWND, wintypes.UINT]
 _user32.GetAncestor.restype = wintypes.HWND
+_user32.GetWindowRect.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.RECT)]
 _kernel32.GetCurrentThreadId.restype = wintypes.DWORD
 _kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
 _kernel32.OpenProcess.restype = wintypes.HANDLE
@@ -263,14 +265,33 @@ def request_close(hwnd: int) -> bool:
     return bool(_user32.PostMessageW(hwnd, WM_CLOSE, 0, 0))
 
 
+def _non_empty(rect: wintypes.RECT) -> tuple[int, int, int, int] | None:
+    if rect.right - rect.left <= 0 or rect.bottom - rect.top <= 0:
+        return None
+    return rect.left, rect.top, rect.right, rect.bottom
+
+
 def frame_bounds(hwnd: int) -> tuple[int, int, int, int] | None:
-    """Visible window rectangle (left, top, right, bottom) in physical screen pixels."""
+    """Visible window rectangle (left, top, right, bottom) in physical screen pixels, or None.
+
+    DWMWA_EXTENDED_FRAME_BOUNDS is the visible frame (without the invisible resize borders).
+    When DWM fails or gives an empty rectangle (seen as 0,0,0,0 for some windows), fall back to
+    GetWindowRect; an empty rectangle is never returned (D-056)."""
     rect = wintypes.RECT()
     result = _dwmapi.DwmGetWindowAttribute(hwnd, DWMWA_EXTENDED_FRAME_BOUNDS,
                                            ctypes.byref(rect), ctypes.sizeof(rect))
-    if result != 0:
-        return None
-    return rect.left, rect.top, rect.right, rect.bottom
+    if result == 0 and (bounds := _non_empty(rect)):
+        return bounds
+    rect = wintypes.RECT()
+    if _user32.GetWindowRect(hwnd, ctypes.byref(rect)):
+        return _non_empty(rect)
+    return None
+
+
+def is_cloaked(hwnd: int) -> bool:
+    """DWMWA_CLOAKED: the window exists but DWM doesn't show it (another virtual desktop, a
+    suspended Store app)."""
+    return _cloaked(hwnd)
 
 
 # ----- the island's window behaviour (D-045) -----------------------------------------------------

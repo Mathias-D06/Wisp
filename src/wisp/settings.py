@@ -101,6 +101,9 @@ class GeneralSettings:
 class AISettings:
     live_model: str = "gemini-3.8-live"
     text_model: str = "gemini-3.8-flash"
+    # Screen Assist only, after the text model is still overloaded (503) after its retries;
+    # empty = off (D-057)
+    fallback_text_model: str = ""
     tts_model: str = "gemini-3.8-flash-tts"  # reads Screen Assist answers aloud (D-052)
     language: str = "English (UK)"
     idle_timeout_min: int = 5
@@ -335,6 +338,8 @@ def validate(settings: Settings) -> list[str]:
         problems.append("Live model name cannot be empty.")
     if not settings.ai.text_model.strip():
         problems.append("Text model name cannot be empty.")
+    if re.search(r"\s", settings.ai.fallback_text_model.strip()):
+        problems.append("The fallback text model is a model name, without spaces.")
     loadout = settings.loadout
     if loadout.personality not in PERSONALITY_PRESETS:
         problems.append(f"Unknown personality {loadout.personality!r}.")

@@ -6,6 +6,7 @@ moving to Ctrl+Alt+I)."""
 from __future__ import annotations
 
 import threading
+import time
 from types import SimpleNamespace
 
 import pytest
@@ -54,7 +55,8 @@ class FakePlayer:
 
 
 def make_assist(images=None, front=None, answers=None, speak=True, audio=b"", speech=False,
-                mic_silence=lambda pcm: None):
+                mic_silence=lambda pcm: None, held=0.0):
+    """``held``: how long the hotkey stays down between press() and release() (seconds)."""
     from wisp.assist.service import ScreenAssist
 
     front = front or Window(1, "main.py - Code", "Code")
@@ -62,13 +64,14 @@ def make_assist(images=None, front=None, answers=None, speak=True, audio=b"", sp
     model = FakeModel(answers)
     engine = AssistEngine(model, capturer(system), lambda: "English (UK)")
     pasted, player = [], FakePlayer()
+    times = iter([0.0, held] + [held + 1.0] * 1000)  # press, release, then later calls
     assist = ScreenAssist(
         engine, FakeMic(audio), player,
         lambda: SimpleNamespace(screen_assist=SimpleNamespace(capture="window")),
         has_key=lambda: True, voice_name=lambda: "Kore", speak_allowed=lambda: speak,
         paste=lambda hwnd, text: pasted.append((hwnd, text)) or "Inserted.",
         to_wav=lambda pcm: b"WAV" + pcm[:4], has_speech=lambda pcm: speech,
-        resample=lambda pcm, rate: pcm, mic_silence=mic_silence)
+        resample=lambda pcm, rate: pcm, mic_silence=mic_silence, clock=lambda: next(times))
     return SimpleNamespace(assist=assist, model=model, system=system, pasted=pasted,
                            player=player)
 
@@ -91,7 +94,7 @@ def test_tap_the_hotkey_for_a_quick_look_that_is_read_aloud(qtbot):
 
 
 def test_hold_and_ask_sends_the_spoken_question(qtbot):
-    setup = make_assist(audio=b"\x10\x00" * 16000, speech=True, speak=False)
+    setup = make_assist(audio=b"\x10\x00" * 16000, speech=True, speak=False, held=1.2)
     with qtbot.waitSignal(setup.assist.answered, timeout=5000):
         setup.assist.press()
         setup.assist.release()
@@ -196,13 +199,15 @@ def test_watch_mode_failures_are_logged_in_full(qtbot, caplog):
 # ----- a microphone that delivers only silence (D-055) --------------------------------------------
 def test_holding_with_a_silent_mic_says_why_instead_of_a_quick_look(qtbot):
     setup = make_assist(audio=b"\x00\x00" * 16000,  # held 1 s, nothing but zeros
-                        mic_silence=lambda pcm: "Wisp got only silence from the microphone.")
+                        mic_silence=lambda pcm: "Wisp got only silence from the microphone.",
+                        held=1.0)
     with qtbot.waitSignal(setup.assist.failed, timeout=5000) as failed:
         setup.assist.press()
         setup.assist.release()
     assert failed.args[0] == "Wisp got only silence from the microphone."
     assert setup.model.calls == [] and not setup.assist.busy
-    assert setup.assist.mic.users == []
+    # released while the mic was still opening: it is let go as soon as it opens
+    qtbot.waitUntil(lambda: setup.assist.mic.users == [], timeout=3000)
 
 
 def test_a_tap_with_a_silent_mic_still_takes_a_quick_look(qtbot):
@@ -212,6 +217,190 @@ def test_a_tap_with_a_silent_mic_still_takes_a_quick_look(qtbot):
         setup.assist.press()
         setup.assist.release()
     assert len(setup.model.calls) == 1
+
+
+# ----- every press ends in an answer, an error or "I didn't hear a question" (D-058) --------------
+class SlowMic(FakeMic):
+    """Takes ``delay`` seconds to open (PortAudio's first start took 1.6 s in the bug) and
+    delivers ``audio`` only once open; ``fail`` makes it unavailable instead."""
+
+    def __init__(self, audio=b"", delay=0.0, fail=""):
+        super().__init__(audio)
+        self.delay, self.fail = delay, fail
+        self.callbacks = {}
+        self.acquired_on = []
+
+    def acquire(self, user):
+        self.acquired_on.append(threading.current_thread().name)
+        time.sleep(self.delay)
+        if self.fail:
+            from wisp.audio.capture import MicError
+
+            raise MicError(self.fail)
+        self.users.append(user)
+        for callback in list(self.callbacks.values()):
+            callback(self.audio)
+
+    def subscribe(self, name, callback):
+        self.callbacks[name] = callback
+
+    def unsubscribe(self, name):
+        self.callbacks.pop(name, None)
+
+
+def outcomes(caplog) -> list[str]:
+    return [r.getMessage().split("→ ")[-1] for r in caplog.records
+            if r.getMessage().startswith("Screen Assist hotkey: held")]
+
+
+def test_the_press_never_waits_for_the_microphone(qtbot, caplog):
+    caplog.set_level("INFO", logger="wisp.assist.service")
+    setup = make_assist(held=1.6)
+    setup.assist.mic = SlowMic(delay=0.8)
+    started = []
+    setup.assist.started.connect(lambda: started.append(time.monotonic()))
+    before = time.monotonic()
+    setup.assist.press()
+    assert time.monotonic() - before < 0.3 and started  # "Listening…" at once
+    with qtbot.waitSignal(setup.assist.unheard, timeout=5000) as unheard:
+        setup.assist.release()  # 5 ms after... the mic is still opening
+    assert "still starting" in unheard.args[0] and unheard.args[0].startswith(
+        "I didn't hear a question.")
+    assert setup.assist.mic.acquired_on == ["assist-mic"]  # not the Qt thread
+    assert setup.model.calls == []
+    qtbot.waitUntil(lambda: setup.assist.mic.users == [], timeout=3000)  # let go once open
+    assert outcomes(caplog) == ["no question (microphone still starting)"]
+
+
+def test_holding_without_speaking_says_no_question_was_heard(qtbot, caplog):
+    caplog.set_level("INFO", logger="wisp.assist.service")
+    setup = make_assist(audio=b"\x20\x00" * 16000, held=1.0, speech=False)
+    with qtbot.waitSignal(setup.assist.unheard, timeout=5000) as unheard:
+        setup.assist.press()
+        setup.assist.release()
+    assert unheard.args[0] == ("I didn't hear a question. Hold the keys while you speak, or tap "
+                               "them for a quick look.")
+    assert setup.model.calls == [] and outcomes(caplog) == ["no question (no speech)"]
+
+
+def test_no_microphone_a_hold_says_so_and_a_tap_still_looks(qtbot, caplog):
+    caplog.set_level("INFO", logger="wisp.assist.service")
+    setup = make_assist(held=1.0)
+    setup.assist.mic = SlowMic(fail="Microphone is muted in Wisp.")
+    with qtbot.waitSignal(setup.assist._mic_opened, timeout=3000):
+        setup.assist.press()
+    with qtbot.waitSignal(setup.assist.unheard, timeout=5000) as unheard:
+        setup.assist.release()
+    assert unheard.args[0] == "I didn't hear a question. Microphone is muted in Wisp."
+    tap = make_assist(held=0.1, answers=["A spreadsheet."])
+    tap.assist.mic = SlowMic(fail="Microphone is muted in Wisp.")
+    with qtbot.waitSignal(tap.assist.answered, timeout=5000):
+        tap.assist.press()
+        tap.assist.release()
+    assert outcomes(caplog) == ["no question (no microphone)", "quick look"]
+
+
+def test_each_outcome_and_the_answer_are_logged(qtbot, caplog):
+    caplog.set_level("INFO", logger="wisp.assist.service")
+    setup = make_assist(audio=b"\x10\x00" * 16000, speech=True, speak=False, held=1.2,
+                        answers=["It's a terminal."])
+    with qtbot.waitSignal(setup.assist.answered, timeout=5000):
+        setup.assist.press()
+        setup.assist.release()
+    text = caplog.text
+    assert outcomes(caplog) == ["question"]
+    assert "Screen Assist asks gemini-test (spoken question, from hotkey)" in text
+    assert "Screen Assist answered in" in text
+
+
+def test_a_press_while_a_question_runs_is_logged_not_lost(qtbot, caplog):
+    caplog.set_level("INFO", logger="wisp.assist.service")
+    setup = make_assist()
+    setup.assist.busy = True
+    setup.assist.press()
+    setup.assist.release()
+    assert "Screen Assist hotkey ignored: a question is still running" in caplog.text
+    assert "release ignored (no press waiting)" in caplog.text
+
+
+def test_google_busy_shows_on_the_card_while_wisp_retries(qtbot):
+    from wisp.ui import theme
+    from wisp.ui.island.assist_tab import AssistTab
+
+    setup = make_assist()
+    gate = threading.Event()
+
+    def busy_answer(turns, system, json_schema=None, low_resolution=False, on_busy=None):
+        on_busy("Google is busy, retrying… (2 of 3)")
+        gate.wait(5)
+        from wisp.assist.client import Reply
+
+        return Reply("It's a code editor.", model="gemini-test")
+
+    setup.model.answer = busy_answer
+    watcher = SimpleNamespace(changed=setup.assist.speaking_changed, running=False, error="",
+                              toggle=lambda: None, check=None, comments=0)
+    tab = AssistTab(setup.assist, watcher, theme.palette("dark", "#7c5cff"))
+    qtbot.addWidget(tab)
+    notes = []
+    setup.assist.progress.connect(notes.append)
+    setup.assist.ask()
+    qtbot.waitUntil(lambda: notes == ["Google is busy, retrying… (2 of 3)"], timeout=3000)
+    assert tab.status.text() == "Google is busy, retrying… (2 of 3)"
+    gate.set()
+    qtbot.waitUntil(lambda: not setup.assist.busy, timeout=5000)
+
+
+def test_unsubscribing_never_waits_for_a_stream_that_is_opening(monkeypatch):
+    """The hotkey's release unsubscribes on the Qt thread while the mic may still be opening
+    on "assist-mic"; that must not block (D-058). No real stream: opening is faked."""
+    from wisp.audio import capture
+
+    opening, done = threading.Event(), threading.Event()
+
+    def slow_open(self):
+        opening.set()
+        time.sleep(0.6)
+        self._stream = object()
+
+    monkeypatch.setattr(capture.MicCapture, "_open_stream", slow_open)
+    monkeypatch.setattr(capture.MicCapture, "_close_stream",
+                        lambda self: setattr(self, "_stream", None))
+    mic = capture.MicCapture(lambda: "")
+    try:
+        mic.subscribe("assist-1", lambda chunk: None)
+        worker = threading.Thread(target=lambda: (mic.acquire("assist-1"), done.set()))
+        worker.start()
+        assert opening.wait(2)
+        started = time.monotonic()
+        mic.unsubscribe("assist-1")
+        mic.preroll()
+        assert time.monotonic() - started < 0.2 and not done.is_set()
+        worker.join(3)
+        mic.release("assist-1")
+    finally:
+        mic.close()
+
+
+def test_the_mic_warm_up_starts_portaudio_without_opening_a_stream(monkeypatch, caplog):
+    import sys
+
+    from wisp.audio import capture
+
+    class FakeSoundDevice:  # no RawInputStream: opening a stream would fail loudly
+        default = SimpleNamespace(device=[3, 4])
+
+        @staticmethod
+        def query_devices(index):
+            return {"name": "Microphone Array (Fake)"}
+
+    monkeypatch.setitem(sys.modules, "sounddevice", FakeSoundDevice)
+    monkeypatch.setattr(capture, "resolve", lambda name, kind: None)
+    mic = capture.MicCapture.__new__(capture.MicCapture)
+    mic._lock, mic._device_name = threading.RLock(), lambda: ""
+    caplog.set_level("INFO", logger="wisp.audio.capture")
+    mic.warm_up()
+    assert "Audio ready in" in caplog.text and "no stream opened" in caplog.text
 
 
 def test_screen_assist_failures_open_the_screen_tab():

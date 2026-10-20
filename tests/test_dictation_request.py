@@ -28,9 +28,19 @@ class FakeModels:
 def models(monkeypatch):
     holder = {}
 
-    def make_client(key):
-        holder["key"] = key
-        return SimpleNamespace(models=holder["models"])
+    class Client:  # what genai.Client offers here: .models and a with block
+        def __init__(self, key, http_options=None):
+            holder["key"], holder["http_options"] = key, http_options
+            self.models = holder["models"]
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            holder["closed"] = True
+
+    def make_client(key, http_options=None):
+        return Client(key, http_options)
 
     monkeypatch.setattr(gemini, "make_client", make_client)
     return holder

@@ -348,3 +348,33 @@ from `.venv`. Dates are when checked.
 | https://learn.microsoft.com/en-us/uwp/api/windows.security.authorization.appcapabilityaccess.appcapability | `AppCapability` (Windows 10 1903+): "Create is callable only by SUA apps" — not usable by an unpackaged app like Wisp | 2026-10-16 |
 | https://www.elevenforum.com/t/enable-or-disable-apps-access-to-microphone-in-windows-11.17117/ (third-party; UNDOCUMENTED by Microsoft) | `CapabilityAccessManager\ConsentStore\microphone` `Value` Allow/Deny under HKLM ("Microphone access") and HKCU ("Let apps access your microphone"); `…\microphone\NonPackaged` `Value` ("Let desktop apps access your microphone") | 2026-10-16 |
 | this PC (read-only) | all three = Allow; `NonPackaged` usage subkeys list python.exe, never `dist\Wisp\Wisp.exe`; Core Audio `IAudioEndpointVolume`: default capture "Microphone Array (AMD Audio Device)", 4 channels, not muted, 100 %; default communications capture: a Bluetooth headset; Audio/Operational log: no events at either failure | 2026-10-16 |
+
+## Screen Assist fixes (2026-10-20)
+
+### Empty capture rectangles (D-056)
+
+| URL | Confirmed | Checked |
+|---|---|---|
+| https://learn.microsoft.com/en-us/windows/win32/api/dwmapi/ne-dwmapi-dwmwindowattribute | the enum starts at 1, so `DWMWA_EXTENDED_FRAME_BOUNDS` = 9 ("the extended frame bounds rectangle in screen space", a RECT) and `DWMWA_CLOAKED` = 14 (non-zero: why it is cloaked, app/shell/inherited) | 2026-10-20 |
+| https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-getwindowrect | the bounding rectangle in screen coordinates; "may include invisible resize borders" (DWMWA_EXTENDED_FRAME_BOUNDS gives the visible bounds, so GetWindowRect is only the fallback); "virtualized for DPI" (Wisp is per-monitor DPI aware, so physical pixels) | 2026-10-20 |
+| mss 10.2.0 source (`base.py`) | `grab` raises `ScreenShotError("Region has zero or negative size")` for width or height ≤ 0; `monitors[0]` is the bounding box of all monitors | 2026-10-20 |
+| this PC's log and Action log | 2026-10-20 12:05: the 0×0 region came from a Screen-tab request (thread "screen-assist", no hotkey line) | 2026-10-20 |
+
+### Busy Gemini (D-057)
+
+| URL | Confirmed | Checked |
+|---|---|---|
+| https://docs.cloud.google.com/vertex-ai/generative-ai/docs/retry-strategy | the google-genai SDK's `types.HttpRetryOptions` (attempts, initial_delay, max_delay, exp_base, jitter, http_status_codes) set on the client's `types.HttpOptions(retry_options=…)`, or per request in `GenerateContentConfig(http_options=…)`; defaults: 5 attempts, 1 s initial delay | 2026-10-20 |
+| google-genai 2.29.0 source (`_api_client.py`, `types.py`) | `retry_options=None` means one attempt ("never retry"); retries use tenacity with `wait_exponential_jitter`, retry on the listed status codes and on httpx timeouts and connection errors, and log before sleeping; `HttpOptions.client_args` ("Args passed to the HTTP client") go to `httpx.Client` (keys it doesn't take are dropped); a `verify` SSL context there is used as is; the websocket context comes from `async_client_args["ssl"]`, otherwise a new certifi context; `HttpOptions.timeout` is in milliseconds | 2026-10-20 |
+| tenacity source (`wait_exponential_jitter.__call__`) | wait = initial × exp_base^(attempt − 1) + uniform(0, jitter), capped at max | 2026-10-20 |
+| https://www.python-httpx.org/advanced/event-hooks/ | `event_hooks` on `httpx.Client` is a dict of lists of callables; a response hook is "passed the response instance" and called "before determining if the response body should be read" | 2026-10-20 |
+| https://ai.google.dev/gemini-api/docs/models | current text models include gemini-3.8-flash, gemini-3.6-flash (multimodal), gemini-3.5-flash-lite, gemini-3.1-flash-lite | 2026-10-20 |
+| https://ai.google.dev/gemini-api/docs/thinking | thinking levels: gemini-3.6-flash minimal/low/medium/high; gemini-3.5-flash-lite minimal/low/medium/high (so `thinking_level` low works for both fallbacks) | 2026-10-20 |
+| probe on this PC (cProfile) | `genai.Client(...)` spent 0.46 s in two `ssl.create_default_context` calls; with a shared context, about 1 ms | 2026-10-20 |
+
+### The press that ended in nothing (D-058)
+
+| URL | Confirmed | Checked |
+|---|---|---|
+| this PC's log, Action log and `ai_usage` | 2026-10-19 22:27: press 27.616, mic open 29.215 (on MainThread), release 29.220; capture at 22:27:28; no usage row; quit at 22:27:54. 2026-10-20: a 503 arrived 28 s after its capture | 2026-10-20 |
+| probe on this PC (no stream opened) | `import sounddevice` (PortAudio start-up) 0.23–0.65 s; device query 40–60 ms; format checks under 1 ms | 2026-10-20 |

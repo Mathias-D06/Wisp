@@ -12,6 +12,10 @@
   client (``make_client(key).models.generate_content(...)``) is garbage-collected as soon as
   ``.models`` has been read, and ``Client.__del__`` closes its HTTP client before the request is
   sent: "Cannot send a request, as the client has been closed" (D-054).
+* Busy answers (429, 503) are retried by the SDK with backoff and jitter (``wisp.ai.retry``,
+  D-057); ``on_busy`` lets the card say so. If the text model is still overloaded (503) and
+  Settings → General → "Fallback text model" names another model, that one answers once, and the
+  reply says which model it was.
 """
 
 from __future__ import annotations
@@ -24,7 +28,11 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Protocol
 
+from wisp.ai import retry
+
 log = logging.getLogger(__name__)
+
+FALLBACK_ATTEMPTS = 2  # the fallback model gets one retry: the whole wait stays bounded
 
 
 @dataclass
@@ -47,6 +55,8 @@ class Reply:
     text: str
     input_tokens: int = 0
     output_tokens: int = 0
+    model: str = ""  # the model that answered
+    fallback_from: str = ""  # the busy model it stood in for (D-057)
 
 
 @dataclass
@@ -61,7 +71,8 @@ class AssistModel(Protocol):
     def model_name(self) -> str: ...
 
     def answer(self, turns: list[Turn], system: str, json_schema: dict | None = None,
-               low_resolution: bool = False) -> Reply: ...
+               low_resolution: bool = False,
+               on_busy: Callable[[str], None] | None = None) -> Reply: ...
 
     def speak(self, text: str, voice: str) -> Speech: ...
 
@@ -95,24 +106,29 @@ def pcm_from(data: bytes, mime_type: str) -> tuple[bytes, int]:
 class GeminiAssistModel:
     def __init__(self, api_key: Callable[[], str], model: Callable[[], str],
                  tts_model: Callable[[], str],
-                 make_client: Callable[[str], object] | None = None) -> None:
-        """``make_client``: key → ``genai.Client`` (the self-check points one at a loopback
-        stand-in for the API)."""
+                 make_client: Callable[..., object] | None = None,
+                 fallback_model: Callable[[], str] = lambda: "") -> None:
+        """``make_client(key, http_options=…)`` → ``genai.Client`` (the self-check points one
+        at a loopback stand-in for the API)."""
         self._api_key = api_key
         self._model = model
         self._tts_model = tts_model
         self._make_client = make_client
+        self._fallback_model = fallback_model
 
     def model_name(self) -> str:
         return self._model()
 
-    def _client(self):
+    def _client(self, on_busy: Callable[[str], None] | None = None,
+                attempts: int = retry.ATTEMPTS):
         from wisp.ai.gemini import make_client
 
-        return (self._make_client or make_client)(self._api_key())
+        return (self._make_client or make_client)(
+            self._api_key(), http_options=retry.http_options(on_busy, attempts))
 
     def answer(self, turns: list[Turn], system: str, json_schema: dict | None = None,
-               low_resolution: bool = False) -> Reply:
+               low_resolution: bool = False,
+               on_busy: Callable[[str], None] | None = None) -> Reply:
         from google.genai import types
 
         config = types.GenerateContentConfig(
@@ -124,14 +140,30 @@ class GeminiAssistModel:
         if json_schema is not None:
             config.response_mime_type = "application/json"
             config.response_json_schema = json_schema
-        with self._client() as client:
+        model = self._model()
+        try:
+            return self._generate(model, turns, config, on_busy, retry.ATTEMPTS)
+        except Exception as exc:
+            fallback = self._fallback_model().strip()
+            if not retry.is_busy(exc) or not fallback or fallback == model:
+                raise
+            log.warning("%s is still overloaded after %d attempts; asking %s instead", model,
+                        retry.ATTEMPTS, fallback)
+            if on_busy is not None:
+                on_busy(f"Google is busy; asking {fallback} instead…")
+        reply = self._generate(fallback, turns, config, on_busy, FALLBACK_ATTEMPTS)
+        reply.fallback_from = model
+        return reply
+
+    def _generate(self, model: str, turns: list[Turn], config, on_busy, attempts: int) -> Reply:
+        with self._client(on_busy, attempts) as client:
             response = client.models.generate_content(
-                model=self._model(), contents=_contents(turns), config=config)
+                model=model, contents=_contents(turns), config=config)
         usage = response.usage_metadata
         return Reply(response.text or "",
                      int(getattr(usage, "prompt_token_count", 0) or 0),
                      int(getattr(usage, "candidates_token_count", 0) or 0)
-                     + int(getattr(usage, "thoughts_token_count", 0) or 0))
+                     + int(getattr(usage, "thoughts_token_count", 0) or 0), model=model)
 
     def speak(self, text: str, voice: str) -> Speech:
         from google.genai import types

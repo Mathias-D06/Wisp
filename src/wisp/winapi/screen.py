@@ -57,6 +57,15 @@ def grab(region: tuple[int, int, int, int]) -> Image.Image:
         return Image.frombytes("RGB", shot.size, shot.rgb)
 
 
+def virtual_screen() -> tuple[int, int, int, int]:
+    """The bounding rectangle of all monitors (mss's ``monitors[0]``), physical pixels."""
+    from mss import MSS
+
+    with MSS() as sct:
+        m = sct.monitors[0]
+        return m["left"], m["top"], m["left"] + m["width"], m["top"] + m["height"]
+
+
 def monitors() -> list[tuple[int, int, int, int]]:
     from mss import MSS
 

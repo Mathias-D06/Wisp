@@ -22,10 +22,11 @@ class KeyCheck:
     message: str
 
 
-def make_client(api_key: str):
+def make_client(api_key: str, http_options=None):
+    """A ``genai.Client``; ``http_options`` e.g. ``wisp.ai.retry.http_options()`` (D-057)."""
     from google import genai
 
-    return genai.Client(api_key=api_key)
+    return genai.Client(api_key=api_key, http_options=http_options)
 
 
 def describe_error(exc: BaseException, model: str | None = None) -> str:
@@ -48,11 +49,16 @@ def describe_error(exc: BaseException, model: str | None = None) -> str:
             return "Rate limit or quota reached for this key. Try again shortly."
         if exc.code == 403:
             return "This key is not allowed to use the Gemini API (permission denied)."
+        if exc.code == 503:
+            return ("Google's Gemini model is overloaded right now (503, high demand). "
+                    "Try again in a minute or two.")
         if isinstance(exc, errors.ServerError):
-            return "Google's servers returned an error. Try again in a moment."
+            return f"Google's servers returned an error ({exc.code}). Try again in a moment."
         return f"Gemini error {exc.code}: {exc.message or exc.status}"
     import httpx  # generate_content's transport (google-genai depends on it)
 
+    if isinstance(exc, httpx.TimeoutException):
+        return "Google didn't answer in time. Try again in a moment."
     if isinstance(exc, OSError | TimeoutError | httpx.TransportError):
         return "Couldn't reach Google. Check your internet connection."
     from wisp.logging_setup import redact

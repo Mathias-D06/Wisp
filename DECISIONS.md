@@ -1327,3 +1327,129 @@ Decisions:
   as "off".
 * **The level line uses plain numbers:** "channels (dBFS) -96.4, -96.5, …; mixing 1, 2, 3, 4".
   `MicConverter.channel_levels` returns Python floats. "Microphone opened" now names the device.
+
+## D-056 What Screen Assist captures when the window in front can't be captured (fix of 2026-10-20)
+Report (installed build, 2026-10-20 12:05): `mss.exception.ScreenShotError: Region has zero or
+negative size: {'left': 0, 'top': 0, 'width': 0, 'height': 0}`.
+
+Root cause: the capture took the foreground window as it came and checked only
+`bounds is None`.
+* `DwmGetWindowAttribute(DWMWA_EXTENDED_FRAME_BOUNDS)` succeeded but returned an empty
+  rectangle (0,0,0,0) for the window in front. That passed the check and went to mss.
+* The request came from the island's Screen tab, not the hotkey (thread "screen-assist", no
+  hotkey line). The island never takes the foreground (WS_EX_NOACTIVATE), so the window in
+  front was whatever Windows had there, here one with no visible frame.
+* Nothing excluded the desktop, the taskbar, cloaked or off-screen windows, and rectangles
+  were never clamped to the screen.
+
+Decisions:
+* **No empty rectangles.**
+  - `frame_bounds` falls back to `GetWindowRect` when DWM fails or gives an empty rectangle.
+    It returns None rather than an empty one.
+  - The engine treats any width or height ≤ 0 as invalid (`valid_rect`).
+  - Every rectangle is clamped to the virtual screen (mss `monitors[0]`). Less than 8 px left
+    counts as off-screen.
+* **Choosing what to capture** (`Capturer.choose`).
+  - The window in front, if it can be captured. It can't be if it is:
+    - Wisp's own;
+    - the desktop (`Progman`, `WorkerW`) or a taskbar (`Shell_TrayWnd`,
+      `Shell_SecondaryTrayWnd`);
+    - minimised or cloaked (`DWMWA_CLOAKED`);
+    - empty or off-screen.
+  - Otherwise the conversation's window (follow-ups), then the next real window in z-order
+    (`EnumWindows` order), passing over blocklisted ones. The card says "The window in front
+    can't be captured, so I looked at “…”."
+  - Failing all that, the whole monitor under the pointer, with blocked windows masked as
+    usual. The card says "I looked at the whole screen: there was no window to look at."
+  - A blocklisted window *in front* is still refused, never skipped. Only windows the user
+    didn't point at are passed over.
+* The notes travel on `Shot.note` and are shown via `Exchange.notes`: in italics in the Screen
+  tab and on Discreet mode's card.
+
+## D-057 Gemini's "high demand": retries, a fallback model, a plain message (fix of 2026-10-20)
+Report: `ServerError: 503 UNAVAILABLE "This model is currently experiencing high demand"`.
+That 503 arrived 28 s after the request was sent.
+
+Decisions:
+* **The SDK's own retries** (`wisp.ai.retry.http_options`), on every `generate_content`:
+  Screen Assist, Watch mode, reading aloud and dictation.
+  - `HttpRetryOptions(attempts=3, initial_delay=3, exp_base=2, max_delay=10, jitter=2,
+    http_status_codes=[429, 503])`. The SDK does not retry unless told to (`retry_options` None
+    → one attempt). Google's "Retry strategy" page documents these options for this SDK.
+  - The waits (tenacity's `wait_exponential_jitter`) are 3–5 s, then 6–8 s: about 20 s in all
+    with the requests.
+  - 500 and other server errors are not retried; they are reported as they are. The SDK also
+    retries connection errors and timeouts on its own.
+  - A timeout of 40 s per attempt (`HttpOptions.timeout`): a request can no longer wait forever.
+* **"Google is busy, retrying… (2 of 3)" on the card.**
+  - httpx's response event hook (`client_args={"event_hooks": …}`; the SDK passes
+    `client_args` to `httpx.Client`) sees each 429/503 before the SDK waits.
+  - It logs the attempt, and if another attempt follows it calls `on_busy`. Screen Assist
+    shows the text in the island and the Screen tab; dictation shows it in its HUD.
+* **A fallback text model** (Settings → General → "Fallback text model (when busy)", off by
+  default; suggestions gemini-3.6-flash and gemini-3.5-flash-lite, which read images and take
+  `thinking_level` low; any name can be typed).
+  - It is used only by Screen Assist and Watch mode, only after the retries end in 503, and
+    only if it differs from the text model. It gets 2 attempts.
+  - The card says "Answered by gemini-3.6-flash: gemini-3.8-flash was busy." Usage stats
+    record the model that answered.
+* **Messages.**
+  - 503: "Google's Gemini model is overloaded right now (503, high demand). Try again in a
+    minute or two."
+  - Other server errors: "Google's servers returned an error (500). Try again in a moment."
+  - A timeout: "Google didn't answer in time."
+* **One TLS context.** Each `genai.Client` loaded certifi's CA bundle twice (httpx and
+  websockets), about 0.45 s per request on this PC. One context is passed in as
+  `client_args["verify"]` and `async_client_args["ssl"]`; the SDK drops keys httpx doesn't
+  take. A client now takes about 1 ms. The SDK and the bundle are loaded at start-up on a thread.
+
+## D-058 A Screen Assist press that ended in nothing (fix of 2026-10-20)
+Report (2026-10-19 22:27):
+* The hotkey press was logged, then "Microphone opened" 1.6 s later.
+* The release came 5 ms after that, then nothing: no answer, no error, no log line.
+
+Root cause:
+* **The press blocked the UI thread for 1.6 s.** `ScreenAssist.press` called `mic.acquire` on
+  the Qt thread. The first use of audio starts PortAudio (import and host-API enumeration,
+  0.2–0.65 s from source here, more cold in the frozen build) and then opens the 4-channel MME
+  stream.
+  - The key-up waited in the queue, so `release` ran right after the mic opened, with 5 ms of
+    audio.
+  - "Tap or hold" was judged from the amount of audio, so a 1.6 s hold was treated as a tap: a
+    quick look, with no question.
+* **The quick look then waited on an overloaded Gemini.** The screenshot was taken (Action log
+  22:27:28, "Courses - Opera"), but no usage was recorded: the request never finished.
+  - With no timeout and no retry, a "high demand" request can take 28 s or more to fail (as at
+    12:09). Wisp was quit 25 s after the release.
+  - Nothing was logged between the release and an outcome, so the log showed nothing.
+* release() did not return early, and press and release did not race. The handlers ran in
+  order, but the press handler had blocked.
+
+Decisions:
+* **The press never waits for the microphone.**
+  - The mic opens on an "assist-mic" thread. "Listening… release to ask" shows at once, and
+    the subscriber is in place before the stream starts, so audio flows as soon as it opens.
+  - A mic still opening at the release is let go when it opens. Each press has its own mic
+    user (`assist-N`), so a late opening can't close a newer press's stream.
+  - `MicCapture` keeps subscribers and the pre-roll under their own lock. The stream's lock is
+    held while the stream opens, so unsubscribing at the release would otherwise wait for it.
+  - PortAudio and the input device are warmed up at start-up on a thread. No stream is opened
+    (nothing is recorded, no microphone indicator).
+* **Tap or hold is timed from the key events** (press to release), not from the audio.
+* **Every press ends in an answer, an error, or "I didn't hear a question", and the log says
+  which.** The log line reads "Screen Assist hotkey: held 1.60 s, 0.00 s of audio, microphone
+  still opening → no question (microphone still starting)". The outcomes:
+  - under 0.4 s: a quick look;
+  - held with speech: the question;
+  - held, the mic giving only silence: the D-055 notice;
+  - held, the mic unavailable: "I didn't hear a question." plus why;
+  - held, under 0.3 s of audio: "I didn't hear a question. The microphone was still
+    starting…";
+  - held, no speech: "I didn't hear a question. Hold the keys while you speak, or tap them for
+    a quick look."
+
+  "Didn't hear" outcomes are a warning banner that opens the Screen tab, in Discreet mode too.
+  A press while a question runs, and a release with no press, are logged.
+* **The request is logged too:** when it is sent ("Screen Assist asks gemini-3.8-flash (quick
+  look, from hotkey)"), each busy answer and retry, and how it ended, with the time it took and
+  the model that answered.

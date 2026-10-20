@@ -57,10 +57,33 @@ class Shot:
     title: str
     target: str  # "window" | "screen"
     masked: int = 0
+    note: str = ""  # for the card, when Wisp looked at something else than the window in front
 
     @property
     def what(self) -> str:
         return f"the “{self.title}” window" if self.target == "window" else "the screen"
+
+
+Rect = tuple[int, int, int, int]  # left, top, right, bottom in physical pixels
+
+SHELL_CLASSES = frozenset({"Progman", "WorkerW",  # the desktop
+                           "Shell_TrayWnd", "Shell_SecondaryTrayWnd"})  # the taskbars
+MIN_EDGE = 8  # a window showing less than this on screen isn't worth a look
+WHOLE_SCREEN_NOTE = "I looked at the whole screen: there was no window to look at."
+
+
+def valid_rect(rect: Rect | None) -> bool:
+    return rect is not None and rect[2] - rect[0] > 0 and rect[3] - rect[1] > 0
+
+
+def clamp(rect: Rect, bounds: Rect | None) -> Rect | None:
+    """``rect`` cut to ``bounds`` (the virtual screen); None if less than MIN_EDGE remains."""
+    if bounds is not None:
+        rect = (max(rect[0], bounds[0]), max(rect[1], bounds[1]),
+                min(rect[2], bounds[2]), min(rect[3], bounds[3]))
+    if rect[2] - rect[0] < MIN_EDGE or rect[3] - rect[1] < MIN_EDGE:
+        return None
+    return rect
 
 
 @dataclass
@@ -68,12 +91,15 @@ class WindowSystem:
     """The Windows calls a capture needs (injectable for tests)."""
 
     foreground: Callable[[], object | None]
-    windows: Callable[[], list]
-    bounds: Callable[[int], tuple[int, int, int, int] | None]
-    monitor_at: Callable[[int, int], tuple[int, int, int, int]]
-    grab: Callable[[tuple[int, int, int, int]], Image.Image]
+    windows: Callable[[], list]  # top-level windows, front to back (z-order)
+    bounds: Callable[[int], Rect | None]
+    monitor_at: Callable[[int, int], Rect]
+    grab: Callable[[Rect], Image.Image]
     desktop_available: Callable[[], bool] = lambda: True
     cursor: Callable[[], tuple[int, int]] = lambda: (0, 0)
+    class_name: Callable[[int], str] = lambda hwnd: ""
+    cloaked: Callable[[int], bool] = lambda hwnd: False
+    virtual_screen: Callable[[], Rect | None] = lambda: None
 
 
 def real_window_system() -> WindowSystem:
@@ -84,7 +110,18 @@ def real_window_system() -> WindowSystem:
     return WindowSystem(foreground=win.foreground_window, windows=win.list_windows,
                         bounds=win.frame_bounds, monitor_at=screen.monitor_at, grab=screen.grab,
                         desktop_available=win.input_desktop_available,
-                        cursor=screen.cursor_position)
+                        cursor=screen.cursor_position, class_name=win.class_name,
+                        cloaked=win.is_cloaked, virtual_screen=screen.virtual_screen)
+
+
+@dataclass
+class Target:
+    """What a capture looks at: a window and its on-screen rectangle, or (window None) the
+    whole monitor under the pointer."""
+
+    window: object | None
+    rect: Rect | None
+    note: str = ""
 
 
 class Capturer:
@@ -98,16 +135,49 @@ class Capturer:
         self.save_debug = save_debug
         self.own_pid = os.getpid() if own_pid is None else own_pid
 
-    def target_window(self, preferred_hwnd: int | None = None):
-        """The window in front, unless it is one of Wisp's own (then ``preferred_hwnd``)."""
+    def capturable(self, window) -> Rect | None:
+        """The part of ``window`` on screen, or None if it can't be captured: Wisp's own, the
+        desktop or a taskbar, minimised, cloaked, empty (DWM can report 0,0,0,0) or off-screen
+        (D-056)."""
+        if window is None or getattr(window, "pid", None) == self.own_pid:
+            return None
+        if getattr(window, "minimized", False):
+            return None
+        if self.system.class_name(window.hwnd) in SHELL_CLASSES:
+            return None
+        if self.system.cloaked(window.hwnd):
+            return None
+        bounds = self.system.bounds(window.hwnd)
+        if not valid_rect(bounds):
+            return None
+        return clamp(bounds, self.system.virtual_screen())
+
+    def choose(self, preferred_hwnd: int | None = None) -> Target:
+        """The window in front if it can be captured. Otherwise (Wisp's own window, the
+        desktop, a taskbar, an empty or hidden window): ``preferred_hwnd`` (the conversation's
+        window), then the next real window in z-order, skipping blocked ones; failing all that,
+        the whole monitor under the pointer, with a note for the card."""
         front = self.system.foreground()
-        if front is not None and getattr(front, "pid", None) != self.own_pid:
-            return front
-        if preferred_hwnd:
-            for window in self.system.windows():
-                if window.hwnd == preferred_hwnd:
-                    return window
-        return None
+        rect = self.capturable(front)
+        if rect is not None:
+            return Target(front, rect)
+        windows = self.system.windows()
+        rules = self.blocklist()
+        front_hwnd = getattr(front, "hwnd", None)
+        preferred = [w for w in windows if preferred_hwnd and w.hwnd == preferred_hwnd]
+        for index, window in enumerate([*preferred, *windows]):
+            if window.hwnd == front_hwnd or rules.blocks(window):
+                continue
+            rect = self.capturable(window)
+            if rect is not None:
+                note = "" if index < len(preferred) else (
+                    f"The window in front can't be captured, so I looked at “{window.title}”.")
+                return Target(window, rect, note)
+        return Target(None, None, WHOLE_SCREEN_NOTE)
+
+    def target_window(self, preferred_hwnd: int | None = None):
+        """The window a capture would look at (None: the whole screen)."""
+        return self.choose(preferred_hwnd).window
 
     def capture(self, target: str = "window", origin: str = "screen_assist", mode: str = "",
                 max_edge: int = imaging.MAX_EDGE, preferred_hwnd: int | None = None) -> Shot:
@@ -127,37 +197,39 @@ class Capturer:
         if not self.system.desktop_available():
             raise CaptureError("Windows is showing a secure screen (sign-in or a permission "
                                "prompt), which apps can't see.")
-        window = self.target_window(preferred_hwnd)
-        rules = self.blocklist()
-        if window is None and target == "window":
-            raise CaptureError("There's no window to look at.")
+        chosen = self.choose(preferred_hwnd)
+        window, rules = chosen.window, self.blocklist()
         if window is not None:
             reason = rules.reason(window.process, window.title)
-            if reason:
+            if reason:  # only the window in front can be a blocked choice
                 self.log_capture({"origin": origin, "target": target, "mode": mode,
                                   "window": window.title, "blocked": reason})
                 raise Blocked(REFUSAL)
-        bounds = self.system.bounds(window.hwnd) if window is not None else None
-        if target == "window" and (bounds is None or getattr(window, "minimized", False)):
-            raise CaptureError("That window is minimised or off-screen.")
+        kind = target if window is not None else "screen"
         masked = 0
-        if target == "screen":
-            x, y = (((bounds[0] + bounds[2]) // 2, (bounds[1] + bounds[3]) // 2) if bounds
+        if kind == "screen":
+            rect = chosen.rect
+            x, y = (((rect[0] + rect[2]) // 2, (rect[1] + rect[3]) // 2) if rect
                     else self.system.cursor())
-            region = self.system.monitor_at(x, y)
+            region = clamp(self.system.monitor_at(x, y), self.system.virtual_screen())
+            if region is None:
+                raise CaptureError("There's no screen area to look at.")
+            if window is None:
+                log.info("Screen Assist: no window to look at; capturing the whole screen")
             image = self.system.grab(region)
             hidden = [rect for other in self.system.windows()
                       if not getattr(other, "minimized", False) and rules.blocks(other)
-                      and (rect := self.system.bounds(other.hwnd))]
+                      and valid_rect(rect := self.system.bounds(other.hwnd))]
             image, masked = mask(image, region, hidden)
         else:
-            image = self.system.grab(bounds)
+            image = self.system.grab(chosen.rect)
         small = imaging.downscale(imaging.trim(image), max_edge)
         data = imaging.jpeg(small)
         title = window.title if window is not None else ""
+        note = chosen.note if (window is None or target == "window") else ""
         shot = Shot(data, small.size, imaging.fingerprint(small),
-                    window.hwnd if window is not None else 0, title, target, masked)
-        self.log_capture({"origin": origin, "target": target, "mode": mode, "window": title,
+                    window.hwnd if window is not None else 0, title, kind, masked, note)
+        self.log_capture({"origin": origin, "target": kind, "mode": mode, "window": title,
                           "pixels": f"{small.size[0]}x{small.size[1]}", "masked": masked})
         self.save_debug(data, origin)
         return shot
@@ -172,6 +244,18 @@ class Exchange:
     recaptured: bool = False  # a follow-up that needed a new screenshot
     follow_up: bool = False
     reply: Reply | None = None
+
+    @property
+    def notes(self) -> list[str]:
+        """What the card says besides the answer: what Wisp looked at when it wasn't the
+        window in front (D-056), and which model answered when the usual one was busy
+        (D-057)."""
+        notes = []
+        if self.shot.note and (not self.follow_up or self.recaptured):
+            notes.append(self.shot.note)
+        if self.reply is not None and self.reply.fallback_from:
+            notes.append(f"Answered by {self.reply.model}: {self.reply.fallback_from} was busy.")
+        return notes
 
 
 @dataclass
@@ -217,10 +301,12 @@ class AssistEngine:
     def ask(self, question: str | None = None, mode: str | None = None,
             target: str | None = None, audio_wav: bytes = b"", new: bool = False,
             detailed: bool = False, origin: str = "screen_assist",
-            shot: Shot | None = None) -> Exchange:
+            shot: Shot | None = None,
+            on_busy: Callable[[str], None] | None = None) -> Exchange:
         """Answer about the screen. A new conversation captures; a follow-up re-captures only
         if the window changed. ``shot``: a capture already taken (the hotkey takes it the
-        moment it's pressed). Raises Blocked, CaptureError or the model's errors."""
+        moment it's pressed). ``on_busy``: told while Gemini is busy and Wisp retries (D-057).
+        Raises Blocked, CaptureError or the model's errors."""
         follow_up = not new and self.active() and (target is None
                                                    or target == self.conversation.target)
         target = target or (self.conversation.target if follow_up else "window")
@@ -255,7 +341,8 @@ class AssistEngine:
         conversation.last_used = self.clock()
         try:
             reply = self.model.answer(conversation.request_turns(),
-                                      prompts.system_instruction(self.language(), detailed))
+                                      prompts.system_instruction(self.language(), detailed),
+                                      on_busy=on_busy)
         except Exception:
             conversation.turns.pop()  # the question can be asked again
             raise

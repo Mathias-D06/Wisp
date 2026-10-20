@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import sys
+import threading
 from datetime import datetime
 
 from PySide6.QtCore import QObject, QTimer
@@ -11,6 +12,7 @@ from PySide6.QtWidgets import QApplication, QMessageBox, QWidget
 
 from wisp import paths, startup
 from wisp.ai import dictation as dictation_ai
+from wisp.ai import retry
 from wisp.ai.dictation import pcm_to_wav
 from wisp.assist.client import GeminiAssistModel
 from wisp.assist.engine import AssistEngine, Capturer, WatchCheck, real_window_system
@@ -83,7 +85,7 @@ from wisp.ui.console import ConsoleWindow
 from wisp.ui.discreet_card import DiscreetCard
 from wisp.ui.hud import Hud
 from wisp.ui.icons import orb_icon
-from wisp.ui.island.assist_tab import AssistTab
+from wisp.ui.island.assist_tab import AssistTab, escape_markdown
 from wisp.ui.island.calendar_tab import CalendarTab
 from wisp.ui.island.clipboard_tab import ClipboardTab
 from wisp.ui.island.common import Background
@@ -288,6 +290,8 @@ class WispApp(QObject):
         self.assist.started.connect(self._on_assist_started)
         self.assist.answered.connect(self._on_assist_answer)
         self.assist.failed.connect(self._on_assist_failed)
+        self.assist.unheard.connect(self._on_assist_unheard)
+        self.assist.progress.connect(lambda note: self.feedback.show_state(note, "warning"))
         self.island.files_dropped.connect(files_tab.add_to_shelf)
         self.phone.changed.connect(self._update_phone_activity)
         self.phone.upload_requested.connect(lambda _upload: self.island.open_tab(FILES_TAB))
@@ -364,8 +368,9 @@ class WispApp(QObject):
         modifier_keys = (winput.VK_LWIN, winput.VK_RWIN, winput.VK_LCONTROL, winput.VK_RCONTROL,
                          winput.VK_LSHIFT, winput.VK_RSHIFT, winput.VK_LMENU, winput.VK_RMENU)
         return DictationDeps(
-            transcribe=lambda pcm: dictation_ai.transcribe(
-                self.keystore.get() or "", peek().ai.text_model, pcm, peek().ai.language),
+            transcribe=lambda pcm, on_busy: dictation_ai.transcribe(
+                self.keystore.get() or "", peek().ai.text_model, pcm, peek().ai.language,
+                on_busy),
             has_key=self.keystore.has_key,
             snapshot=lambda: clipboard.snapshot(owner),
             set_text=lambda text: clipboard.set_text(text, owner),
@@ -396,6 +401,10 @@ class WispApp(QObject):
         self._apply_discreet(self.discreet.active)  # remembered from last time (D-053)
         self.tray.show()
         self.services.app_index.refresh_in_background()
+        # PortAudio's start-up (and the device query) took over a second on the first hotkey;
+        # do it now, on a thread. No stream is opened: nothing is recorded (D-058).
+        threading.Thread(target=self.mic.warm_up, name="mic-warm-up", daemon=True).start()
+        threading.Thread(target=retry.warm_up, name="gemini-warm-up", daemon=True).start()
         try:
             self.services.scheduler.start()
         except Exception as exc:
@@ -441,11 +450,12 @@ class WispApp(QObject):
                                                             if peek().audio.save_debug_audio
                                                             else None))
         model = GeminiAssistModel(lambda: self.keystore.get() or "", lambda: peek().ai.text_model,
-                                  lambda: peek().ai.tts_model)
+                                  lambda: peek().ai.tts_model,
+                                  fallback_model=lambda: peek().ai.fallback_text_model)
 
         def usage(feature: str, reply) -> None:
-            self.usage.record(feature, peek().ai.text_model, reply.input_tokens,
-                              reply.output_tokens)
+            self.usage.record(feature, reply.model or peek().ai.text_model,
+                              reply.input_tokens, reply.output_tokens)
 
         engine = AssistEngine(model, capturer, lambda: peek().ai.language, on_usage=usage)
         self.assist = ScreenAssist(
@@ -503,13 +513,20 @@ class WispApp(QObject):
     def _on_assist_answer(self, exchange) -> None:
         self.feedback.hide_now()
         if self.discreet.active:  # only the small card (D-053)
-            self.discreet_card.show_text(exchange.answer, self.island.card_anchor(),
+            notes = "".join(f"*{escape_markdown(note)}*\n\n" for note in exchange.notes)
+            self.discreet_card.show_text(notes + exchange.answer, self.island.card_anchor(),
                                          kind="screen", speakable=True, openable=True)
             return
         if self.island.enabled:
             self.island.open_tab("Screen")
         else:
             self.notify("Screen Assist", exchange.answer[:240])
+
+    def _on_assist_unheard(self, message: str) -> None:
+        """The keys were held but no question came through: a warning banner (it opens up in
+        Discreet mode too) whose click shows the whole message in the Screen tab (D-058)."""
+        self.feedback.hide_now()
+        self._notify("Screen Assist didn't hear a question", message)
 
     def _on_assist_failed(self, message: str) -> None:
         """A warning banner (errors open up in Discreet mode too); clicking it opens the Screen

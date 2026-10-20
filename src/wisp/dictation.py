@@ -38,7 +38,7 @@ SILENT_MESSAGE = "Didn't hear any speech — check your microphone (Settings →
 class DictationDeps:
     """Windows/Gemini side effects, injectable for tests."""
 
-    transcribe: Callable[[bytes], str]
+    transcribe: Callable[[bytes, Callable[[str], None]], str]  # pcm, on_busy (D-057)
     has_key: Callable[[], bool]
     snapshot: Callable[[], Any]
     set_text: Callable[[str], None]
@@ -91,6 +91,7 @@ def insert_text(deps: DictationDeps, target, text: str) -> str:
 
 class DictationController(QObject):
     _transcribed = Signal(int, str, str, float)  # token, text, error, seconds
+    _busy = Signal(int, str)  # token, "Google is busy, retrying…"
     state = Signal(str)  # "recording" | "transcribing" | "pasted" | "idle" | "error"
 
     def __init__(self, deps: DictationDeps, mic, hud, stats, notify):
@@ -107,6 +108,7 @@ class DictationController(QObject):
         self._token = 0
         self.last_text = ""
         self._transcribed.connect(self._on_transcribed)
+        self._busy.connect(self._on_busy)
         self._limit = QTimer(self)
         self._limit.setSingleShot(True)
         self._limit.timeout.connect(self.stop)
@@ -179,13 +181,17 @@ class DictationController(QObject):
 
         def work() -> None:
             try:
-                text = self.deps.transcribe(audio)
+                text = self.deps.transcribe(audio, lambda note: self._busy.emit(token, note))
                 self._transcribed.emit(token, text, "", seconds)
             except Exception as exc:
-                log.warning("Dictation failed: %s", type(exc).__name__)
+                log.exception("Dictation failed")
                 self._transcribed.emit(token, "", describe_error(exc), seconds)
 
         threading.Thread(target=work, name="dictation", daemon=True).start()
+
+    def _on_busy(self, token: int, note: str) -> None:
+        if token == self._token:
+            self.hud.show_state(note, "warning")
 
     def _on_transcribed(self, token: int, text: str, error: str, seconds: float) -> None:
         if token != self._token:

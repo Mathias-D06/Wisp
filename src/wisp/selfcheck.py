@@ -252,11 +252,13 @@ def _files_share() -> str:
 @check("screen_assist")
 def _screen_assist() -> str:
     """D-052's path as the hotkey runs it, on worker threads like the app: the real Windows
-    calls capture the screen → blocked windows masked → downscale → JPEG ("assist-capture"),
-    then the real google-genai client sends it ("screen-assist") — to a loopback stand-in for
-    the API (wisp.ai.loopback, D-054), so nothing leaves the PC — and the answer is read aloud
-    the same way. The image stays in memory. This path failed in the build of 2026-10-15:
-    the SDK closed a temporary client before sending."""
+    calls choose the window (or the whole screen when none can be captured, D-056) → blocked
+    windows masked → downscale → JPEG ("assist-capture"), then the real google-genai client
+    sends it ("screen-assist") — to a loopback stand-in for the API (wisp.ai.loopback, D-054),
+    so nothing leaves the PC. The stand-in answers "503 high demand" once, so the SDK's retry
+    and Wisp's busy note run too (D-057); the answer is then read aloud the same way. The image
+    stays in memory. This path failed in the build of 2026-10-15: the SDK closed a temporary
+    client before sending."""
     from concurrent.futures import Future
 
     from PIL import Image
@@ -277,13 +279,15 @@ def _screen_assist() -> str:
 
     def grab() -> None:
         try:
-            shot_future.set_result(capturer.capture("screen", "screen_assist", "self-check"))
+            shot_future.set_result(capturer.capture("window", "screen_assist", "self-check"))
         except Exception as exc:
             shot_future.set_exception(exc)
 
     threading.Thread(target=grab, name="assist-capture", daemon=True).start()
     shot = shot_future.result(30)
+    notes: list[str] = []
     with GeminiLoopback("A self-check answer.", pcm=b"\x10\x00" * 2400) as stub:
+        stub.busy["gemini-self-check"] = 1
         model = GeminiAssistModel(lambda: "self-check-key", lambda: "gemini-self-check",
                                   lambda: "gemini-self-check-tts", make_client=stub.client)
         engine = AssistEngine(model, capturer, lambda: "English (UK)")
@@ -291,7 +295,8 @@ def _screen_assist() -> str:
 
         def ask() -> None:
             try:
-                exchange = engine.ask("What is on the screen?", shot=shot)
+                exchange = engine.ask("What is on the screen?", shot=shot,
+                                      on_busy=notes.append)
                 answer.set_result((exchange, model.speak(exchange.answer, "Kore")))
             except Exception as exc:
                 answer.set_exception(exc)
@@ -299,8 +304,11 @@ def _screen_assist() -> str:
         threading.Thread(target=ask, name="screen-assist", daemon=True).start()
         exchange, speech = answer.result(60)
         sent = stub.requests[0]["body"]
+        asked = stub.models_asked()
     if exchange.answer != "A self-check answer.":
         raise RuntimeError(f"unexpected answer {exchange.answer!r}")
+    if asked[:2] != ["gemini-self-check"] * 2 or len(notes) != 1:
+        raise RuntimeError(f"the busy answer wasn't retried ({asked}, {notes})")
     def field(item: dict, name: str, camel: str):  # the SDK writes either spelling
         return item.get(camel, item.get(name))
 
@@ -321,8 +329,10 @@ def _screen_assist() -> str:
         raise RuntimeError(f"generation config {config}")
     if len(speech.pcm) != 4800 or speech.rate != 24000:
         raise RuntimeError(f"speech {len(speech.pcm)} bytes at {speech.rate} Hz")
-    return (f"{source} → JPEG {size[0]}x{size[1]} ({len(shot.jpeg) // 1024} KB) → "
-            "google-genai via loopback → answer and speech ok")
+    what = source if source != "screen" else (
+        "the whole screen" if shot.target == "screen" else "a window")
+    return (f"{what} → JPEG {size[0]}x{size[1]} ({len(shot.jpeg) // 1024} KB) → google-genai "
+            "via loopback, a 503 retried → answer and speech ok")
 
 
 @check("gemini_config")

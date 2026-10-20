@@ -20,7 +20,6 @@ from wisp.assist.client import Reply, Speech, Turn, pcm_from
 from wisp.assist.engine import (
     AssistEngine,
     Blocked,
-    CaptureError,
     Capturer,
     WatchCheck,
     WindowSystem,
@@ -102,7 +101,7 @@ class FakeModel:
     def model_name(self):
         return "gemini-test"
 
-    def answer(self, turns, system, json_schema=None, low_resolution=False):
+    def answer(self, turns, system, json_schema=None, low_resolution=False, on_busy=None):
         self.calls.append({"turns": turns, "system": system, "schema": json_schema,
                            "low": low_resolution})
         text = self.answers.pop(0) if self.answers else "It's a code editor."
@@ -223,10 +222,11 @@ def test_whole_screen_captures_paint_over_blocked_windows():
 def test_wisps_own_window_in_front_means_the_conversations_window():
     own = Window(9, "Wisp Island", "python", pid=1)
     editor_window = Window(3, "main.py - Code", "Code")
-    system = FakeSystem(own, {3: editor(CODE)}, others=[editor_window])
-    assert capturer(system).target_window(preferred_hwnd=3).hwnd == 3
-    with pytest.raises(CaptureError):
-        capturer(system).capture()
+    other = Window(4, "notes.txt - Notepad", "notepad")
+    system = FakeSystem(own, {3: editor(CODE)}, others=[other, editor_window])
+    assert capturer(system).target_window(preferred_hwnd=3).hwnd == 3  # before z-order
+    shot = capturer(system).capture(preferred_hwnd=3)
+    assert shot.hwnd == 3 and shot.note == ""  # the conversation's window: nothing to explain
 
 
 # ----- the conversation: follow-ups reuse or re-capture -----------------------------------------
@@ -398,7 +398,7 @@ def test_a_client_closed_when_collected_still_works():
     events = []
 
     class ClosingClient:
-        def __init__(self, key):
+        def __init__(self, key, http_options=None):
             self.closed = False
             self.models = SimpleNamespace(generate_content=self.generate_content)
 
@@ -465,7 +465,8 @@ def test_network_failures_say_so():
 
     offline = "Couldn't reach Google. Check your internet connection."
     assert describe_error(httpx.ConnectError("[Errno 11001] getaddrinfo failed")) == offline
-    assert describe_error(httpx.ReadTimeout("timed out")) == offline
+    assert describe_error(httpx.ReadTimeout("timed out")) == (
+        "Google didn't answer in time. Try again in a moment.")
 
 
 def test_the_stored_key_is_redacted_from_errors_once_logging_is_set_up(tmp_path, monkeypatch):

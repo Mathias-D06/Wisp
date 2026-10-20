@@ -16,6 +16,7 @@ import collections
 import logging
 import queue
 import threading
+import time
 from collections.abc import Callable
 
 import numpy as np
@@ -44,7 +45,10 @@ class MicError(RuntimeError):
 class MicCapture:
     def __init__(self, device_name: Callable[[], str]):
         self._device_name = device_name
-        self._lock = threading.RLock()
+        self._lock = threading.RLock()  # the stream; held while it opens (can take a second)
+        # subscribers and pre-roll: never held for long, so subscribing or unsubscribing doesn't
+        # wait for a stream that is opening on another thread (D-058)
+        self._subs_lock = threading.Lock()
         self._users: set[str] = set()
         self._subscribers: dict[str, Callable[[bytes], None]] = {}
         self._stream = None
@@ -97,21 +101,38 @@ class MicCapture:
                 self._close_stream()
 
     def subscribe(self, name: str, callback: Callable[[bytes], None]) -> None:
-        with self._lock:
+        with self._subs_lock:
             self._subscribers[name] = callback
 
     def unsubscribe(self, name: str) -> None:
-        with self._lock:
+        with self._subs_lock:
             self._subscribers.pop(name, None)
 
     def preroll(self, ms: int | None = None) -> bytes:
         """The most recent captured audio (16 kHz mono int16); all of it, or the last ``ms``."""
-        with self._lock:
+        with self._subs_lock:
             data = b"".join(self._preroll)
         if ms is not None:
             keep = INPUT_RATE * 2 * ms // 1000
             data = data[-keep:] if keep else b""
         return data
+
+    def warm_up(self) -> None:
+        """Start PortAudio and look the input device up ahead of the first use: on the first
+        Screen Assist hotkey that took over a second (D-058). Opens no stream, so nothing is
+        recorded and Windows shows no microphone-in-use indicator."""
+        started = time.monotonic()
+        try:
+            with self._lock:
+                import sounddevice as sd
+
+                device = resolve(self._device_name(), "input")
+                info = sd.query_devices(device if device is not None else sd.default.device[0])
+        except Exception as exc:  # no audio devices: acquire() reports it when needed
+            log.info("Audio warm-up skipped: %s", exc)
+            return
+        log.info("Audio ready in %.2f s (input %r; no stream opened)",
+                 time.monotonic() - started, info["name"])
 
     def channel_levels(self) -> list[float]:
         """Level of each device channel (dBFS) while the stream is open, for diagnostics."""
@@ -176,7 +197,8 @@ class MicCapture:
                 continue
             self._converter = MicConverter(rate, channels, dtype)
             self._stream = stream
-            self._preroll.clear()
+            with self._subs_lock:
+                self._preroll.clear()
             self._converted_bytes = 0
             self._levels_logged = False
             self.format_description = f"{rate} Hz × {channels} ch {dtype}"
@@ -229,7 +251,7 @@ class MicCapture:
                     and self._converted_bytes >= INPUT_RATE * 2 * LEVEL_LOG_AFTER_S):
                 self._levels_logged = True
                 self._log_levels(converter, samples)
-            with self._lock:
+            with self._subs_lock:
                 self._preroll.append(chunk)
                 subscribers = list(self._subscribers.values())
             for callback in subscribers:

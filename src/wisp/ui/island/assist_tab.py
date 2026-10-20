@@ -35,12 +35,14 @@ THUMB = QSize(112, 70)
 
 
 def transcript_markdown(exchanges: list) -> str:
-    """The conversation as Markdown: each question in bold, then the answer."""
+    """The conversation as Markdown: each question in bold, its notes in italics (what Wisp
+    looked at, which model answered), then the answer."""
     blocks = []
     for exchange in exchanges:
         label = exchange.question or "Quick look"
         note = " · new screenshot" if exchange.recaptured else ""
-        blocks.append(f"**{escape_markdown(label)}**{note}\n\n{exchange.answer}")
+        notes = "".join(f"\n\n*{escape_markdown(text)}*" for text in exchange.notes)
+        blocks.append(f"**{escape_markdown(label)}**{note}{notes}\n\n{exchange.answer}")
     return "\n\n---\n\n".join(blocks)
 
 
@@ -162,6 +164,8 @@ class AssistTab(QWidget):
 
         assist.answered.connect(self.show_exchange)
         assist.failed.connect(self._failed)
+        assist.unheard.connect(self._failed)
+        assist.progress.connect(self.status.setText)
         assist.busy_changed.connect(self._busy)
         assist.speaking_changed.connect(self._speaking)
         watcher.changed.connect(self._watch_changed)

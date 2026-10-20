@@ -4,6 +4,8 @@ Uses ``client.models.generate_content`` (documented as fully supported; stateles
 not stored as an Interaction) with inline WAV (``types.Part.from_bytes``; audio/wav is a
 documented input type, 32 tokens per second) and ``thinking_level="low"`` for latency
 (ai.google.dev/gemini-api/docs/thinking: gemini-3.8-flash supports low/medium/high).
+Busy answers (429, 503) are retried with backoff and jitter like Screen Assist's
+(``wisp.ai.retry``, D-057); ``on_busy`` lets the HUD say so.
 """
 
 from __future__ import annotations
@@ -12,6 +14,7 @@ import io
 import logging
 import re
 import wave
+from collections.abc import Callable
 
 from wisp.audio import INPUT_RATE
 
@@ -69,26 +72,31 @@ def system_prompt(language: str) -> str:
     return SYSTEM_PROMPT.format(language_rule=rule)
 
 
-def transcribe(api_key: str, model: str, pcm: bytes, language: str) -> str:
+def transcribe(api_key: str, model: str, pcm: bytes, language: str,
+               on_busy: Callable[[str], None] | None = None, make_client=None) -> str:
+    """``make_client(key, http_options=…)``: a ``genai.Client`` (tests: the loopback)."""
     from google.genai import errors, types
 
-    from wisp.ai.gemini import make_client
+    from wisp.ai import retry
+    from wisp.ai.gemini import make_client as default_client
 
-    client = make_client(api_key)
+    client = (make_client or default_client)(api_key, http_options=retry.http_options(on_busy))
     audio = types.Part.from_bytes(data=pcm_to_wav(pcm), mime_type="audio/wav")
     config = types.GenerateContentConfig(
         system_instruction=system_prompt(language),
         thinking_config=types.ThinkingConfig(thinking_level=types.ThinkingLevel.LOW),
     )
     contents = [audio, "Write down this dictation."]
-    try:
-        response = client.models.generate_content(model=model, contents=contents, config=config)
-    except errors.ClientError as exc:
-        if exc.code == 400 and "thinking" in (exc.message or "").lower():
-            log.info("Model rejects thinking_level; retrying without it")
-            config.thinking_config = None
+    with client:
+        try:
             response = client.models.generate_content(model=model, contents=contents,
                                                       config=config)
-        else:
-            raise
+        except errors.ClientError as exc:
+            if exc.code == 400 and "thinking" in (exc.message or "").lower():
+                log.info("Model rejects thinking_level; retrying without it")
+                config.thinking_config = None
+                response = client.models.generate_content(model=model, contents=contents,
+                                                          config=config)
+            else:
+                raise
     return clean_output(response.text)

@@ -102,7 +102,8 @@ class Recorder:
             return self.held > 0
 
         return DictationDeps(
-            transcribe=lambda pcm: self.calls.append(("transcribe", len(pcm))) or self.transcript,
+            transcribe=lambda pcm, on_busy=None: (self.calls.append(("transcribe", len(pcm)))
+                                                  or self.transcript),
             has_key=lambda: self.key,
             snapshot=lambda: self.calls.append(("snapshot",)) or "SAVED",
             set_text=set_text,
