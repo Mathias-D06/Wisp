@@ -132,3 +132,23 @@ def test_build_failures_become_github_annotations(monkeypatch, capsys):
         build.run([sys.executable, "-c", "raise SystemExit(3)"])
     out = capsys.readouterr().out
     assert "::error title=Build step failed%3A PyInstaller::" in out and "code 3" in out
+
+
+def test_build_output_survives_non_ascii_on_a_pipe(monkeypatch):
+    """On GitHub Actions stdout is a pipe in cp1252, and printing the self-check's "→" crashed
+    the build (UnicodeEncodeError). The build script switches its output to UTF-8."""
+    import io
+
+    monkeypatch.syspath_prepend(str(PACKAGING))
+    import build
+
+    with pytest.raises(UnicodeEncodeError):  # what CI did before
+        print("a window → JPEG", file=io.TextIOWrapper(io.BytesIO(), encoding="cp1252"))
+    raw = io.BytesIO()
+    pipe = io.TextIOWrapper(raw, encoding="cp1252")
+    monkeypatch.setattr(sys, "stdout", pipe)
+    monkeypatch.setattr(sys, "stderr", io.TextIOWrapper(io.BytesIO(), encoding="cp1252"))
+    build.utf8_output()
+    print("  ok  screen_assist  a window → JPEG")
+    pipe.flush()
+    assert "a window → JPEG".encode() in raw.getvalue()

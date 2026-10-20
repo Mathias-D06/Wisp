@@ -378,3 +378,13 @@ from `.venv`. Dates are when checked.
 |---|---|---|
 | this PC's log, Action log and `ai_usage` | 2026-10-19 22:27: press 27.616, mic open 29.215 (on MainThread), release 29.220; capture at 22:27:28; no usage row; quit at 22:27:54. 2026-10-20: a 503 arrived 28 s after its capture | 2026-10-20 |
 | probe on this PC (no stream opened) | `import sounddevice` (PortAudio start-up) 0.23–0.65 s; device query 40–60 ms; format checks under 1 ms | 2026-10-20 |
+
+### The CI build (D-059)
+
+| URL | Confirmed | Checked |
+|---|---|---|
+| https://docs.python.org/3.12/library/sys.html (sys.stdout) | "On Windows, UTF-8 is used for the console device. Non-character devices such as disk files and pipes use the system locale encoding (i.e. the ANSI codepage)"; PYTHONIOENCODING / PYTHONUTF8 override it | 2026-10-20 |
+| https://docs.python.org/3.12/library/io.html (TextIOWrapper.reconfigure) | `reconfigure(*, encoding=None, errors=None, …)`; "changing encoding after write is possible"; flushes first | 2026-10-20 |
+| https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-commands | `::error file=…,line=…,title=…::message` creates an error annotation | 2026-10-20 |
+| https://raw.githubusercontent.com/actions/toolkit/main/packages/core/src/command.ts | escapeData: % → %25, CR → %0D, LF → %0A; escapeProperty also : → %3A and , → %2C | 2026-10-20 |
+| GitHub REST API on this repository, unauthenticated | job logs: 403 "Must have admin rights to Repository"; check-run annotations and job steps: readable | 2026-10-20 |

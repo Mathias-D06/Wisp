@@ -535,10 +535,11 @@ acceptance step needs real hardware/API key and is listed in `MANUAL_TESTS.md` (
 - [x] T.3 MANUAL_TESTS.md runnable in ~20 minutes — "Core run" (16 steps, ~27 min) covering every `[~]`
   item; the full catalogue (77 cases) is the extended set
 - [~] T.4 GitHub Actions on windows-latest: lint + tests + PyInstaller exe — `.github/workflows/ci.yml`
-  (ruff, pytest, Inno Setup, `packaging/build.py` incl. frozen self-check, artefacts). Not yet run on GitHub (no
-  remote); every step ran green in a fresh venv from a clean copy on 2026-10-13 (310 passed, build +
-  self-check + installer ok). Hosted runners have no audio devices (those tests skip; the self-check marks
-  audio optional)
+  (ruff, pytest, Inno Setup, `packaging/build.py` incl. frozen self-check, artefacts). On GitHub since
+  2026-10-18 (github.com/Mathias-D06/Wisp): lint and tests pass; the build step failed printing "→" to a
+  cp1252 pipe (D-059), fixed and reproduced fixed on this PC with piped output; failures now show as
+  annotations. Hosted runners have no audio devices (those tests skip; the self-check marks audio
+  optional)
 - [x] D.1 Installer installs, launches at login, uninstalls cleanly — `packaging/installer.iss`; silent
   install/uninstall on this PC 2026-10-13 (files, shortcut, uninstall entry, Run value; the Run command
   started Wisp; uninstall removed everything incl. an app-written Run value; user data kept);

@@ -1453,3 +1453,27 @@ Decisions:
 * **The request is logged too:** when it is sent ("Screen Assist asks gemini-3.8-flash (quick
   look, from hotkey)"), each busy answer and retry, and how it ended, with the time it took and
   the model that answered.
+
+## D-059 The CI build failed printing "→" (fix of 2026-10-20)
+Report: on GitHub Actions every run since the repository went up (0309c28, 102f42e) passed lint
+and tests, then failed in "Build exe, self-check and installer" with only "Process completed with
+exit code 1". The job log needs a signed-in admin, so it couldn't be read here.
+
+Root cause, reproduced on this PC by running the build with its output piped:
+* Since D-054 the `screen_assist` self-check reports "a window → JPEG … → answer and speech ok".
+* `packaging/build.py` prints each check's detail. On Windows Python writes a pipe or a file in
+  the ANSI code page (cp1252), not UTF-8. A runner's step output is a pipe, and "→" can't be
+  encoded: `UnicodeEncodeError` ended the build after PyInstaller and the frozen self-check had
+  both succeeded.
+* Every local build had `PYTHONIOENCODING=utf-8` set, which hid it.
+
+Decisions:
+* `build.py` switches stdout and stderr to UTF-8 (`TextIOWrapper.reconfigure`, errors replaced).
+  GitHub's log viewer reads UTF-8, so "→" shows as it is.
+* On GitHub Actions (`GITHUB_ACTIONS=true`) failures become error annotations
+  (`::error title=…::message`, escaped as actions/toolkit does). They show on the run's page and
+  through the public API without signing in:
+  - a failing step, with its command and exit code;
+  - each failing required self-check, with its detail and traceback (the self-check runs with
+    `WISP_SELFCHECK_TRACE=1`);
+  - any other crash of the script, with its traceback.

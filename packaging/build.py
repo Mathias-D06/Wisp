@@ -3,9 +3,13 @@ the built exe → Inno Setup installer (dist\\WispSetup-<version>.exe) when ISCC
 
 Run: .venv\\Scripts\\python packaging\\build.py [--no-installer]
 
-On GitHub Actions a failing step, and each failing self-check with its message and traceback,
-is also written as an error annotation. Annotations show on the run's page and through the API
-without signing in, unlike the job log.
+On GitHub Actions a failing step, each failing self-check with its message and traceback, and
+any other crash of this script are also written as error annotations. Annotations show on the
+run's page and through the API without signing in, unlike the job log.
+
+Output is UTF-8: the self-check's details contain non-ASCII text ("→", window titles). Python
+writes a pipe or a file (as on GitHub Actions) in the Windows ANSI code page, cp1252, and the
+build died with UnicodeEncodeError while printing them (docs.python.org: sys.stdout).
 """
 
 from __future__ import annotations
@@ -16,6 +20,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import traceback
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -125,5 +130,20 @@ def main() -> None:
     print(f"built {DIST / f'WispSetup-{__version__}.exe'}")
 
 
+def utf8_output() -> None:
+    """Print in UTF-8 whatever stdout is (TextIOWrapper.reconfigure; GitHub's log is UTF-8)."""
+    for stream in (sys.stdout, sys.stderr):
+        if stream is not None and hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="replace")
+
+
 if __name__ == "__main__":
-    main()
+    utf8_output()
+    try:
+        main()
+    except subprocess.CalledProcessError:
+        raise  # run() has annotated it
+    except Exception:
+        annotate(f"Build failed: {CURRENT_STEP or 'before the first step'}",
+                 traceback.format_exc())
+        raise
