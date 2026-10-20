@@ -233,32 +233,10 @@ def test_loadout_page_has_the_wallpaper_picker(qtbot, monkeypatch):
     assert opened == [page]
 
 
-def test_island_tabs_have_calendar_and_no_wallpaper(qtbot, isolated_data_dir, monkeypatch):
-    import logging
-    import sys
-    import threading
-
-    from PySide6.QtWidgets import QApplication
-
-    from wisp.app import WispApp
-
-    # WispApp sets up logging and the exception hooks for the whole process: put them back.
-    monkeypatch.setattr(sys, "excepthook", sys.excepthook)
-    monkeypatch.setattr(threading, "excepthook", threading.excepthook)
-    root = logging.getLogger()
-    handlers, level = list(root.handlers), root.level
-    wisp = WispApp(QApplication.instance(), background=True)
-    try:
-        names = [name for name, _widget in wisp.island.panel.tabs]
-        assert "Calendar" in names and "Wallpaper" not in names
-        assert names.index("Calendar") == names.index("Today") + 1
-        for tool in ("wallpaper", "calendar_list", "calendar_create"):
-            assert wisp.registry.get(tool) is not None
-        assert "Accounts" in [page.title for page in wisp.settings_pages()]
-    finally:
-        wisp.quit()
-        for handler in root.handlers:
-            if handler not in handlers:
-                handler.close()
-        root.handlers[:] = handlers
-        root.setLevel(level)
+def test_island_tabs_have_calendar_and_no_wallpaper(wisp_app):
+    names = [name for name, _widget in wisp_app.island.panel.tabs]
+    assert "Calendar" in names and "Wallpaper" not in names
+    assert names.index("Calendar") == names.index("Today") + 1
+    for tool in ("wallpaper", "calendar_list", "calendar_create"):
+        assert wisp_app.registry.get(tool) is not None
+    assert "Accounts" in [page.title for page in wisp_app.settings_pages()]

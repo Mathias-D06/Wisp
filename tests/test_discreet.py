@@ -6,9 +6,6 @@ with no sound and only the card, then everything back as before."""
 
 from __future__ import annotations
 
-import logging
-import sys
-import threading
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
@@ -289,49 +286,34 @@ def test_go_discreet_by_voice():
 
 # ----- acceptance: a Screen Assist exchange in Discreet mode --------------------------------------
 def test_screen_assist_in_discreet_mode_is_silent_and_only_shows_the_card(
-        qtbot, isolated_data_dir, monkeypatch):
-    from PySide6.QtWidgets import QApplication
-
+        qtbot, wisp_app, monkeypatch):
     from tests.test_screen_assist import CODE, FakeModel, FakeSystem, Window, capturer, editor
-    from wisp.app import WispApp
 
-    monkeypatch.setattr(sys, "excepthook", sys.excepthook)
-    monkeypatch.setattr(threading, "excepthook", threading.excepthook)
-    root = logging.getLogger()
-    handlers, level = list(root.handlers), root.level
-    wisp = WispApp(QApplication.instance(), background=True)
-    try:
-        model = FakeModel(["A Python file: line 4 uses `quantity`, which isn't defined."])
-        wisp.assist.engine.model = model
-        wisp.assist.engine.capturer = capturer(FakeSystem(Window(1, "budget.py - Code", "Code"),
-                                                          {1: editor(CODE)}))
-        fed, toasts = [], []
-        from tests.test_screen_assist_ui import FakeMic
+    wisp = wisp_app
+    model = FakeModel(["A Python file: line 4 uses `quantity`, which isn't defined."])
+    wisp.assist.engine.model = model
+    wisp.assist.engine.capturer = capturer(FakeSystem(Window(1, "budget.py - Code", "Code"),
+                                                      {1: editor(CODE)}))
+    fed, toasts = [], []
+    from tests.test_screen_assist_ui import FakeMic
 
-        wisp.assist.mic = FakeMic()  # never the real microphone in tests
-        wisp.assist.has_key = lambda: True
-        monkeypatch.setattr(wisp.player, "feed", lambda pcm, force=False: fed.append(pcm))
-        monkeypatch.setattr(wisp.tray, "notify", lambda *args, **kw: toasts.append(args))
-        normal = (wisp.island.x(), wisp.player.muted, wisp.voice.discreet)
-        wisp.discreet.set_enabled(True, "hotkey")
-        with qtbot.waitSignal(wisp.assist.answered, timeout=5000):
-            wisp.assist.on_hotkey("screen_assist", "press")
-            wisp.assist.on_hotkey("screen_assist", "release")
-        qtbot.wait(300)
-        assert wisp.discreet_card.isVisible() and "quantity" in wisp.discreet_card.text
-        assert not wisp.island.machine.expanded  # the island stays a line
-        assert model.spoken == [] and fed == [] and toasts == []  # no sound, no toasts
-        wisp._notify("Routine done: Morning apps", "✓")
-        assert toasts == [] and wisp.island.machine._queue == []  # a pulse, not a banner
-        wisp.discreet.set_enabled(False, "hotkey")
-        assert not wisp.discreet_card.isVisible() and wisp.island.discreet is None
-        restored = (wisp.island.x(), wisp.player.muted, wisp.voice.discreet)
-        assert restored == normal
-        assert QRect(wisp.island.geometry()).isValid()
-    finally:
-        wisp.quit()
-        for handler in root.handlers:
-            if handler not in handlers:
-                handler.close()
-        root.handlers[:] = handlers
-        root.setLevel(level)
+    wisp.assist.mic = FakeMic()  # never the real microphone in tests
+    wisp.assist.has_key = lambda: True
+    monkeypatch.setattr(wisp.player, "feed", lambda pcm, force=False: fed.append(pcm))
+    monkeypatch.setattr(wisp.tray, "notify", lambda *args, **kw: toasts.append(args))
+    normal = (wisp.island.x(), wisp.player.muted, wisp.voice.discreet)
+    wisp.discreet.set_enabled(True, "hotkey")
+    with qtbot.waitSignal(wisp.assist.answered, timeout=5000):
+        wisp.assist.on_hotkey("screen_assist", "press")
+        wisp.assist.on_hotkey("screen_assist", "release")
+    qtbot.wait(300)
+    assert wisp.discreet_card.isVisible() and "quantity" in wisp.discreet_card.text
+    assert not wisp.island.machine.expanded  # the island stays a line
+    assert model.spoken == [] and fed == [] and toasts == []  # no sound, no toasts
+    wisp._notify("Routine done: Morning apps", "✓")
+    assert toasts == [] and wisp.island.machine._queue == []  # a pulse, not a banner
+    wisp.discreet.set_enabled(False, "hotkey")
+    assert not wisp.discreet_card.isVisible() and wisp.island.discreet is None
+    restored = (wisp.island.x(), wisp.player.muted, wisp.voice.discreet)
+    assert restored == normal
+    assert QRect(wisp.island.geometry()).isValid()

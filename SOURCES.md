@@ -388,3 +388,5 @@ from `.venv`. Dates are when checked.
 | https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-commands | `::error file=…,line=…,title=…::message` creates an error annotation | 2026-10-20 |
 | https://raw.githubusercontent.com/actions/toolkit/main/packages/core/src/command.ts | escapeData: % → %25, CR → %0D, LF → %0A; escapeProperty also : → %3A and , → %2C | 2026-10-20 |
 | GitHub REST API on this repository, unauthenticated | job logs: 403 "Must have admin rights to Repository"; check-run annotations and job steps: readable | 2026-10-20 |
+| https://doc.qt.io/qt-6/qobject.html (deleteLater) | without a running event loop "deferred deletes will not be processed automatically"; `QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete)` processes them | 2026-10-20 |
+| this PC: pytest with a diagnostic plugin running atexit callbacks one by one | the crash is in `PySide6.QtCore.__moduleShutdown` (0xC0000005 / 0xC0000409); 29 top-level and 671 widgets in all left, two of each WispApp window; with the `wisp_app` fixture none are left and the exit code is 0 | 2026-10-20 |

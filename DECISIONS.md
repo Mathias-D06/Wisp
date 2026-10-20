@@ -1477,3 +1477,23 @@ Decisions:
   - each failing required self-check, with its detail and traceback (the self-check runs with
     `WISP_SELFCHECK_TRACE=1`);
   - any other crash of the script, with its traceback.
+
+Then the Tests step failed: "677 passed, 4 skipped", then exit code 1.
+* pytest itself returned 0. The process crashed afterwards, in PySide6's atexit callback
+  `PySide6.QtCore.__moduleShutdown`: 0xC0000005 or 0xC0000409 locally, shown on CI as exit code 1.
+  Each atexit callback was run one by one with a marker before it to find this.
+* At that point Qt still held 29 top-level and 671 widgets in all, two of every WispApp window
+  (Island, ConsoleWindow, Hud, DiscreetCard, ConfirmCard, the tray menu…). The two tests that
+  build a whole WispApp (Calendar tabs, Discreet mode's acceptance test) called `quit()`.
+  That stops the services but leaves the windows, because the real app's process ends right
+  after.
+* PySide6 then destroyed those windows of two finished apps (database closed, loop stopped) in
+  its own order. Whether that crashed depended on what else had run. Each file alone, or the
+  suite without either of the two new packaging tests, exited 0; so did the earlier CI runs.
+
+Decision: a `wisp_app` fixture (tests/conftest.py) builds the app for those tests. Afterwards it
+quits it, closes the windows it made, and deletes them now (`deleteLater` +
+`QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)`, which Qt documents for
+deletions without a running event loop). It also puts logging and the exception hooks back, as
+each test did by hand before. With it: no widgets left at the end, and exit code 0 on three
+full runs in a row.

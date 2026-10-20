@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import gc
+import logging
 import sys
+import threading
 
 import pytest
 
@@ -33,6 +36,47 @@ def pytest_collection_modifyitems(config, items):
     for item in items:
         if "windows" in item.keywords:
             item.add_marker(skip)
+
+
+@pytest.fixture
+def wisp_app(qtbot, isolated_data_dir, monkeypatch):
+    """A whole WispApp (in the background, with this test's data folder), quit and torn down
+    afterwards.
+
+    * WispApp sets up logging and the exception hooks for the whole process: put back.
+    * ``quit()`` stops the services but leaves the windows: the real app's process ends right
+      after. Here the process goes on, so the windows the app made are closed and deleted now.
+      Left alive, two finished apps (database closed, loop stopped) were destroyed by PySide6's
+      own shutdown at exit, which crashed the test run after "all passed" (0xC0000005 /
+      0xC0000409: CI's "exit code 1", D-059).
+    """
+    from PySide6.QtCore import QCoreApplication, QEvent
+    from PySide6.QtWidgets import QApplication
+
+    from wisp.app import WispApp
+
+    monkeypatch.setattr(sys, "excepthook", sys.excepthook)
+    monkeypatch.setattr(threading, "excepthook", threading.excepthook)
+    root = logging.getLogger()
+    handlers, level = list(root.handlers), root.level
+    qt = QApplication.instance()
+    before = set(qt.topLevelWidgets())
+    wisp = WispApp(qt, background=True)
+    try:
+        yield wisp
+    finally:
+        wisp.quit()
+        for widget in qt.topLevelWidgets():
+            if widget not in before:
+                widget.close()
+                widget.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+        gc.collect()
+        for handler in root.handlers:
+            if handler not in handlers:
+                handler.close()
+        root.handlers[:] = handlers
+        root.setLevel(level)
 
 
 @pytest.fixture(autouse=True)
