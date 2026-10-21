@@ -656,3 +656,5 @@ acceptance step needs real hardware/API key and is listed in `MANUAL_TESTS.md` (
 - 2026-10-21: MIT licence (owner's choice); CI publishes a release from a version tag; `--mic-check` added and
   run with the owner's permission: both builds get about −95 dBFS from the AMD array with every privacy switch
   on, so MT-116's answer is the input, not Windows privacy.
+- 2026-10-21: v0.1.1 (the uninstaller in the Start menu and Settings → General, D-061); notes in
+  `docs/releases/v0.1.1.md`, published by CI from the tag.

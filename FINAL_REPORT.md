@@ -1,6 +1,6 @@
 # Wisp — final report
 
-Updated 2026-10-21 · Version 0.1.0 · 12 phases (0–11), then four briefs and two rounds of fixes
+Updated 2026-10-21 · Version 0.1.1 · 12 phases (0–11), then four briefs and two rounds of fixes
 from real use. The first version of this report was written on 2026-10-13, at the end of phase 11.
 
 ## What was built
@@ -150,4 +150,4 @@ matching Settings page.
 4. Optionally, sign the exe and installer to avoid the SmartScreen warning.
 
 Build everything with `.venv\Scripts\python packaging\build.py`. This produces
-`dist\Wisp\Wisp.exe` and `dist\WispSetup-0.1.0.exe`. CI builds the same on every push.
+`dist\Wisp\Wisp.exe` and `dist\WispSetup-<version>.exe`. CI builds the same on every push.

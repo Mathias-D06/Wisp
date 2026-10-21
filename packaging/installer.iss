@@ -1,5 +1,5 @@
 ; Inno Setup 6 script for Wisp (DECISIONS.md D-037). Built by packaging\build.py:
-;   ISCC /DAppVersion=0.1.0 /DSourceDir=dist\Wisp /Odist packaging\installer.iss
+;   ISCC /DAppVersion=<version> /DSourceDir=dist\Wisp /Odist packaging\installer.iss
 ; Per-user install (no administrator rights): %LOCALAPPDATA%\Programs\Wisp, Start-menu shortcuts
 ; (Wisp, Uninstall Wisp), optional desktop shortcut, optional start at sign-in (HKCU Run value "Wisp", the same value
 ; the app's own setting writes). Uninstall removes the program, shortcuts, the Run value and
