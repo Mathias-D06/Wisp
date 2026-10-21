@@ -535,6 +535,12 @@ acceptance step needs real hardware/API key and is listed in `MANUAL_TESTS.md` (
   and `docs/releases/<tag>.md`; job `release-notes`: a push to main that changes those notes updates the
   published release's text (`gh release edit --notes-file`) — `test_packaging.py::test_version_matches_pyproject`
   (notes exist for the version); v0.1.0 published by CI on 2026-10-21 with the installer; D-060
+- [x] R.4 An uninstaller you can find — Start menu "Uninstall Wisp" (`installer.iss`, `{uninstallexe}`) and
+  Settings → General → "Uninstall Wisp…" in an installed copy (`uninstall.py`: a detached
+  `Wisp.exe --run-uninstaller <pid>` waits for Wisp to close, since the uninstaller refuses while its mutex
+  exists) — `test_uninstall.py` (6: found only when installed, the waiter's command, waits then starts, no
+  start while Wisp runs, waiting on a real process, never from source, the Settings button and its
+  confirmation), `test_packaging.py::test_installer_agrees_with_the_app`; D-061; MT-125
 - [x] R.3 `Wisp.exe --mic-check [report.json]` — `audio/mic_report.py`, `__main__.py`; 1.5 s, levels only, a
   verdict and an exit code — `test_mic_check.py` (4 new: working, silent vs blocked, not opening, exit code);
   run on this PC from source and from the exe for MT-116; D-060

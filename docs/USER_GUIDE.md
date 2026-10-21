@@ -47,10 +47,14 @@ use a solid background. Before-and-after screenshots of the UI are in
 3. Wisp starts in the system tray (the coloured orb). With no API key stored, Settings opens
    on the General tab.
 
-**Uninstall:** Settings → Apps → Installed apps → Wisp → Uninstall. This removes the program,
-its shortcuts and the start-at-sign-in entry. Then it asks whether to delete your data as well
-(settings, API key, memories, to-dos, routines, clipboard history and logs). The default answer
-is **no**.
+**Uninstall:** use any one of these.
+- **Start menu → Uninstall Wisp.**
+- **Wisp's Settings → General → Uninstall Wisp…** Wisp closes, then the uninstaller starts.
+- **Windows Settings → Apps → Installed apps → Wisp → Uninstall.**
+
+The uninstaller asks once more, then removes the program, its shortcuts and the
+start-at-sign-in entry. Then it asks whether to delete your data as well (settings, API key,
+memories, to-dos, routines, clipboard history and logs). The default answer is **no**.
 
 ## Your Gemini API key
 

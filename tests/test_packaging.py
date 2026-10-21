@@ -108,6 +108,8 @@ def test_installer_agrees_with_the_app():
     assert "PrivilegesRequired=lowest" in script
     # Silent uninstall must keep user data (the question defaults to "no").
     assert "MB_DEFBUTTON2, IDNO" in script
+    # The Start menu has an uninstaller shortcut (D-061)
+    assert 'Name: "{autoprograms}\\Uninstall Wisp"; Filename: "{uninstallexe}"' in script
 
 
 def test_spec_inputs_exist():

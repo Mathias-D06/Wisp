@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import sys
 import threading
 from datetime import datetime
@@ -680,7 +681,7 @@ class WispApp(QObject):
 
     def settings_pages(self) -> list:
         return [
-            GeneralPage(self.settings_store, self.keystore),
+            GeneralPage(self.settings_store, self.keystore, uninstall_app=self._uninstall),
             AccountsPage(self.calendar),
             AssistPage(),
             DiscreetPage(),
@@ -691,6 +692,14 @@ class WispApp(QObject):
             RoutinesPage(self.services.tasks, self.services.scheduler),
             ActionLogPage(self.services.action_log, str(paths.log_dir())),
         ]
+
+    def _uninstall(self) -> None:
+        """Settings → General → Uninstall: a waiter starts the uninstaller once Wisp has closed
+        (the uninstaller refuses while Wisp's mutex exists, D-061)."""
+        from wisp import uninstall
+
+        uninstall.start_waiter(os.getpid())
+        self.quit()
 
     def _open_wallpaper(self, parent) -> None:
         WallpaperDialog(self.background, parent).exec()

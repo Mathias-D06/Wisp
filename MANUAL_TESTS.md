@@ -125,6 +125,7 @@ it in the background during the extended cases. MT-47 needs a sign-out and sign-
 | MT-47 | Sign out of Windows and sign back in. | The Wisp orb appears in the tray and the Island at the top, with no window opening. |
 | MT-48 | With Wisp running, run the installer again. | Setup asks you to close Wisp first, then upgrades in place; settings and memories are kept. |
 | MT-49 | Settings → Apps → Wisp → Uninstall; answer **Yes** to "Also delete your Wisp data". Reinstall, set a key, uninstall again and answer **No**. | First time: `%LOCALAPPDATA%\Programs\Wisp`, the Start-menu entry, the start-at-sign-in entry (Task Manager → Startup apps) and `%APPDATA%\Wisp` are gone. Second time: the program is gone but `%APPDATA%\Wisp` remains. |
+| MT-125 | Install the new version. Open the Start menu: next to **Wisp** there is **Uninstall Wisp**; open it and choose **No** at its first question. Then start Wisp, open Settings → General → **Uninstall Wisp…**, choose Cancel, then open it again and choose Yes. | The Start-menu entry opens Wisp's uninstaller. In Settings, Cancel changes nothing; Yes closes Wisp, and a moment later the uninstaller starts without saying Wisp is still running. It then works as in MT-49. Running Wisp from source (`python -m wisp`) shows no Uninstall button. |
 
 ## Speech recognition (D-039…D-041)
 

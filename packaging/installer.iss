@@ -1,7 +1,7 @@
 ; Inno Setup 6 script for Wisp (DECISIONS.md D-037). Built by packaging\build.py:
 ;   ISCC /DAppVersion=0.1.0 /DSourceDir=dist\Wisp /Odist packaging\installer.iss
-; Per-user install (no administrator rights): %LOCALAPPDATA%\Programs\Wisp, Start-menu shortcut,
-; optional desktop shortcut, optional start at sign-in (HKCU Run value "Wisp", the same value
+; Per-user install (no administrator rights): %LOCALAPPDATA%\Programs\Wisp, Start-menu shortcuts
+; (Wisp, Uninstall Wisp), optional desktop shortcut, optional start at sign-in (HKCU Run value "Wisp", the same value
 ; the app's own setting writes). Uninstall removes the program, shortcuts, the Run value and
 ; comtypes' empty cache folder, and asks whether to delete the user's data (default: keep).
 ; Sources: jrsoftware.org/ishelp — [Setup] PrivilegesRequired, AppMutex,
@@ -52,6 +52,8 @@ Type: filesandordirs; Name: "{app}\_internal"
 
 [Icons]
 Name: "{autoprograms}\Wisp"; Filename: "{app}\Wisp.exe"
+; {uninstallexe}: "typically used in an [Icons] section entry for creating an Uninstall icon" (D-061)
+Name: "{autoprograms}\Uninstall Wisp"; Filename: "{uninstallexe}"
 Name: "{autodesktop}\Wisp"; Filename: "{app}\Wisp.exe"; Tasks: desktopicon
 
 [Registry]

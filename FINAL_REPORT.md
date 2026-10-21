@@ -23,10 +23,10 @@ Wisp is a Windows 10/11 voice assistant built on the Gemini Live API:
 There are about 24,000 lines of application code in 171 files and 10,800 lines of tests in 47
 test files.
 - `README.md` describes the project; `docs/USER_GUIDE.md` covers installing and using it.
-- `PROGRESS.md` holds the evidence behind each requirement, and `DECISIONS.md` the 60 design
+- `PROGRESS.md` holds the evidence behind each requirement, and `DECISIONS.md` the 61 design
   decisions.
 - `SOURCES.md` lists every API and document the code relies on.
-- `MANUAL_TESTS.md` holds the 124 hands-on checks.
+- `MANUAL_TESTS.md` holds the 125 hands-on checks.
 
 The code is at github.com/Mathias-D06/Wisp.
 
@@ -34,7 +34,7 @@ The code is at github.com/Mathias-D06/Wisp.
 
 | Status | Count | Meaning |
 |---|---|---|
-| `[x]` done | 136 | Implemented, with automated evidence (tests, a spike, or a build, install or CI run). |
+| `[x]` done | 137 | Implemented, with automated evidence (tests, a spike, or a build, install or CI run). |
 | `[~]` implemented, needs a person | 21 | Acceptance needs a real API key, a microphone, an account, a phone or a second monitor. |
 | `[ ]` open | 0 | |
 
@@ -57,7 +57,7 @@ The fixes of 2026-10-16 and 2026-10-20 add MT-115 and MT-119…MT-124.
 
 ## Evidence summary
 
-- **Automated tests:** 682 passed, 3 skipped on this PC (opt-in tests that touch the clipboard,
+- **Automated tests:** 688 passed, 3 skipped on this PC (opt-in tests that touch the clipboard,
   the keyboard or the Recycle Bin). The suite exits cleanly on three runs in a row. Ruff reports
   no problems.
 - **CI on GitHub** (`windows-latest`), run 39449959046 for commit 1fac972, passed every step:

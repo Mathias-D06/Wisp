@@ -1546,3 +1546,23 @@ full runs in a row.
   - the AMD driver or its enhancements;
   - Windows Settings → System → Sound → Input → the array's test bar;
   - or choosing the headset as Wisp's input.
+
+## D-061 An uninstaller you can find (2026-10-21)
+Request: "add in an uninstaller as well". Inno Setup's uninstaller already existed and was tested
+(D.1): `unins000.exe` in the install folder, run from Settings → Apps. It removes the program,
+the shortcuts and the Run value, and asks before deleting user data (default: keep). What was
+missing was a way to find it.
+
+Decisions:
+* **Start menu → "Uninstall Wisp"** (`[Icons]` entry with `{uninstallexe}`, which Inno documents
+  as "typically used in an [Icons] section entry for creating an Uninstall icon").
+* **Settings → General → "Uninstall Wisp…"**, shown only in an installed copy (a frozen exe with
+  an `unins*.exe` beside it; Inno documents only "unins*.*" in `{app}`).
+  - It asks first, then Wisp closes and the uninstaller starts. The uninstaller checks Wisp's
+    mutex at start-up (AppMutex) and won't run while Wisp does.
+  - So Wisp starts a detached `Wisp.exe --run-uninstaller <pid>` and quits. That copy waits for
+    the pid to exit (OpenProcess(SYNCHRONIZE) + WaitForSingleObject, 30 s) and then starts the
+    uninstaller.
+  - The waiter takes no mutex and starts nothing else. It exits straight away, before the
+    uninstaller asks for confirmation and removes the files.
+* Tests never start a real uninstaller: fake folders and fake process launchers only.

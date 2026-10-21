@@ -1,8 +1,10 @@
-"""General settings: API key, models, language, idle timeout, start-up."""
+"""General settings: API key, models, language, idle timeout, start-up, and (in an installed
+copy) Uninstall."""
 
 from __future__ import annotations
 
 import threading
+from collections.abc import Callable
 
 from PySide6.QtCore import QObject, Signal
 from PySide6.QtWidgets import (
@@ -13,12 +15,13 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QMessageBox,
     QPushButton,
     QSpinBox,
     QVBoxLayout,
 )
 
-from wisp import startup
+from wisp import startup, uninstall
 from wisp.ai.gemini import validate_key
 from wisp.keystore import KeyStore, looks_like_key, mask
 from wisp.settings import LANGUAGE_CODES, Settings, SettingsStore
@@ -46,10 +49,15 @@ class _KeyCheckBridge(QObject):
 class GeneralPage(SettingsPage):
     title = "General"
 
-    def __init__(self, store: SettingsStore, keystore: KeyStore):
+    def __init__(self, store: SettingsStore, keystore: KeyStore,
+                 uninstall_app: Callable[[], None] | None = None,
+                 uninstaller: Callable[[], object] = uninstall.uninstaller_path):
+        """``uninstall_app`` closes Wisp and starts its uninstaller (D-061); the button shows
+        only when ``uninstaller()`` finds one, i.e. in an installed copy."""
         super().__init__()
         self._store = store
         self._keystore = keystore
+        self._uninstall_app = uninstall_app
         self._bridge = _KeyCheckBridge()
         self._bridge.finished.connect(self._on_key_checked)
         self._pending_key: str | None = None
@@ -144,6 +152,14 @@ class GeneralPage(SettingsPage):
         app_form.addRow(self.island_keep_music)
         app_form.addRow("Clipboard history items", self.clipboard_size)
         app_form.addRow("Your typing speed (for Stats)", self.typing_wpm)
+        self.uninstall_button = QPushButton("Uninstall Wisp…")
+        self.uninstall_button.setToolTip(
+            "Closes Wisp and starts its uninstaller, which asks before removing anything and "
+            "whether to delete your data too")
+        self.uninstall_button.clicked.connect(self._confirm_uninstall)
+        installed = uninstall_app is not None and uninstaller() is not None
+        self.uninstall_button.setVisible(installed)
+        app_form.addRow(self.uninstall_button)
         layout.addWidget(app_box)
         layout.addStretch(1)
         self._show_key_status()
@@ -202,6 +218,17 @@ class GeneralPage(SettingsPage):
             self._set_message("Key saved without a successful test.", "info")
         self.save_anyway_button.setVisible(False)
         self._show_key_status()
+
+    def _confirm_uninstall(self) -> None:
+        answer = QMessageBox.question(
+            self, "Uninstall Wisp",
+            "Wisp will close and its uninstaller will start. The uninstaller asks once more "
+            "before removing anything, and whether to delete your Wisp data (settings, API "
+            "key, memories, logs) too.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
+            QMessageBox.StandardButton.Cancel)
+        if answer == QMessageBox.StandardButton.Yes and self._uninstall_app is not None:
+            self._uninstall_app()
 
     def _remove_key(self) -> None:
         self._keystore.clear()

@@ -402,3 +402,12 @@ from `.venv`. Dates are when checked.
 | https://docs.github.com/en/rest/releases/releases#create-a-release | "Users with push access to the repository can create a release"; a token creating the tag needs Workflows permission when the target commit changes `.github/workflows/` (here the tag is pushed first and verified) | 2026-10-21 |
 | actions/download-artifact v8.0.2, actions/checkout v7.0.1, actions/setup-python v7.0.0, actions/upload-artifact v7.0.2 (`action.yml`, release notes) | all `using: node24`; v7/v8 changes: ESM, setup-python's `pip-install` input removed (unused), upload-artifact's opt-in `archive: false` | 2026-10-21 |
 | this PC, `--mic-check` from source and from the exe (with the owner's permission) | see D-060: −95 / −93 dBFS on all four channels, every privacy switch Allow | 2026-10-21 |
+
+### The uninstaller (D-061)
+
+| URL | Confirmed | Checked |
+|---|---|---|
+| https://jrsoftware.org/ishelp/topic_consts.htm | `{uninstallexe}`: "The full pathname of the uninstall program extracted by Setup", "typically used in an [Icons] section entry for creating an Uninstall icon"; `{autoprograms}` = the Start menu's Programs folder (per user here) | 2026-10-21 |
+| https://jrsoftware.org/ishelp/topic_setup_appmutex.htm | Setup and Uninstall check the AppMutex "at startup"; if it exists the user is told the app "is currently running" and must close it (OK) or Cancel | 2026-10-21 |
+| https://jrsoftware.org/ishelp/topic_setup_uninstallfilesdir.htm | the uninstaller's "unins*.*" files go in `{app}` by default | 2026-10-21 |
+| https://learn.microsoft.com/en-us/windows/win32/api/synchapi/nf-synchapi-waitforsingleobject | WaitForSingleObject on a process handle (SYNCHRONIZE access) returns WAIT_OBJECT_0 once the process has ended, WAIT_TIMEOUT otherwise | 2026-10-21 |
