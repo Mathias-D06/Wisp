@@ -345,6 +345,8 @@ pastes are kept out of both Windows clipboard history and Wisp's.
   your microphone" in that page; a mute key or switch on the laptop; the input chosen in Windows
   Settings → System → Sound → Input and in Wisp's Settings → Hotkeys and audio. Test microphone
   shows what Wisp hears. The log's "Mic levels" line shows each channel and the switches.
+  `Wisp.exe --mic-check report.json` measures the microphone for 1.5 s and writes the levels,
+  the switches and a verdict to `report.json`; no audio is kept.
 - **"Google is busy, retrying…" / "Google's Gemini model is overloaded".** Gemini answered "503,
   high demand". Wisp tries three times over about 20 s, then says so; try again a minute later. To
   get an answer anyway, choose a **Fallback text model (when busy)** in Settings → General: Screen
@@ -406,7 +408,10 @@ Project notes:
 - `SOURCES.md` lists every API and document the code relies on.
 - `MANUAL_TESTS.md` has the hands-on checks, about 20 minutes' worth.
 
-## Third-party software
+## Licence and third-party software
+
+Wisp is released under the MIT License (`LICENSE`, also in the installation's `_internal`
+folder).
 
 Wisp bundles Python and open-source packages. Their names, versions, licences and home pages are
 in `THIRD_PARTY_NOTICES.txt` in the installation folder. Qt for Python (PySide6) is used under

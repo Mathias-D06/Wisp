@@ -390,3 +390,15 @@ from `.venv`. Dates are when checked.
 | GitHub REST API on this repository, unauthenticated | job logs: 403 "Must have admin rights to Repository"; check-run annotations and job steps: readable | 2026-10-20 |
 | https://doc.qt.io/qt-6/qobject.html (deleteLater) | without a running event loop "deferred deletes will not be processed automatically"; `QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete)` processes them | 2026-10-20 |
 | this PC: pytest with a diagnostic plugin running atexit callbacks one by one | the crash is in `PySide6.QtCore.__moduleShutdown` (0xC0000005 / 0xC0000409); 29 top-level and 671 widgets in all left, two of each WispApp window; with the `wisp_app` fixture none are left and the exit code is 0 | 2026-10-20 |
+
+### Licence, releases and the microphone check (D-060)
+
+| URL | Confirmed | Checked |
+|---|---|---|
+| https://raw.githubusercontent.com/spdx/license-list-data/main/text/MIT.txt | the MIT License text used in `LICENSE` | 2026-10-21 |
+| https://setuptools.pypa.io/en/latest/userguide/pyproject_config.html | `[project] license = "<SPDX expression>"`; PEP 639 support "introduced in version 77.0.0"; `tool.setuptools.license-files` deprecated for `project.license-files` | 2026-10-21 |
+| https://cli.github.com/manual/gh_release_create | `gh release create [<tag>] [<filename>...]`, `--title`, `--notes-file`, `--verify-tag` (abort if the tag isn't on the remote), `file#label` display labels | 2026-10-21 |
+| https://docs.github.com/en/actions/how-tos/write-workflows/choose-what-workflows-do/use-github-cli | "GitHub CLI is preinstalled on all GitHub-hosted runners"; each step sets `GH_TOKEN` (e.g. `secrets.GITHUB_TOKEN`) | 2026-10-21 |
+| https://docs.github.com/en/rest/releases/releases#create-a-release | "Users with push access to the repository can create a release"; a token creating the tag needs Workflows permission when the target commit changes `.github/workflows/` (here the tag is pushed first and verified) | 2026-10-21 |
+| actions/download-artifact v8.0.2, actions/checkout v7.0.1, actions/setup-python v7.0.0, actions/upload-artifact v7.0.2 (`action.yml`, release notes) | all `using: node24`; v7/v8 changes: ESM, setup-python's `pip-install` input removed (unused), upload-artifact's opt-in `archive: false` | 2026-10-21 |
+| this PC, `--mic-check` from source and from the exe (with the owner's permission) | see D-060: −95 / −93 dBFS on all four channels, every privacy switch Allow | 2026-10-21 |

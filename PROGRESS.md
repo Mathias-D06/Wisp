@@ -17,8 +17,9 @@ acceptance step needs real hardware/API key and is listed in `MANUAL_TESTS.md` (
   On GitHub (github.com/Mathias-D06/Wisp) with CI green. Remaining work needs a person: the
   MANUAL_TESTS core run and the extended cases (API key + microphone, MT-01…MT-124: a Google account
   for MT-82…MT-89, a phone on a Private Wi-Fi for MT-94…MT-96, Gemini answering for MT-98…MT-124 — it
-  returned 503 "high demand" during the builds; MT-116 settles whether the exe's silent mic is Windows
-  privacy or the input), choosing a licence. See FINAL_REPORT.md.
+  returned 503 "high demand" during the builds). The laptop's AMD microphone array delivers almost no
+  signal to any program (MT-116, D-060): check its mute key, driver or input choice. MIT-licensed;
+  releases are published by CI from a version tag. See FINAL_REPORT.md.
 - Safety note for automated runs: never toggle the user's Night Light/Wi-Fi/Bluetooth/theme/
   volume/output device in tests on this PC; test write paths with pure functions + manual tests.
 - Environment: Windows 11, Python 3.12.10 venv in `.venv`, Git 2.55, Inno Setup 6.7.3 (per-user,
@@ -484,14 +485,14 @@ acceptance step needs real hardware/API key and is listed in `MANUAL_TESTS.md` (
   JPEG on "assist-capture", then the real google-genai client to a 127.0.0.1 stand-in on "screen-assist", answer
   and speech checked; `build.py` stops if it fails — `test_packaging.py::test_self_check_from_source`; frozen
   run in the build of 2026-10-16
-- [~] X.4 A microphone that delivers only silence — `audio/mic_check.py` (digital silence vs a quiet room, the
+- [x] X.4 A microphone that delivers only silence — `audio/mic_check.py` (digital silence vs a quiet room, the
   three Windows privacy switches read from the registry, a notice naming the switch or listing what to check);
   Screen Assist holds, push-to-talk turns ("mic_silent") and dictation show it instead of acting on silence; the
-  1 s level line uses plain numbers and warns with the switches — `test_mic_check.py` (13),
+  1 s level line uses plain numbers and warns with the switches — `test_mic_check.py`,
   `test_live_session.py::test_a_mic_that_delivers_nothing_is_reported_as_such`, `test_screen_assist_ui.py`
-  (silent hold vs tap). On this PC all three switches are on and the AMD array is unmuted at 100 %, but Windows
-  has no record of the exe using the mic; which cause applies needs the mic opened from both builds: MT-116;
-  D-055; MT-116…MT-118
+  (silent hold vs tap). The cause, measured on 2026-10-21 with `--mic-check` (D-060): source and exe both get
+  about −95 dBFS from the AMD array with every privacy switch on, so it is the input itself (mute key, driver,
+  or the wrong input), not Windows privacy; D-055, D-060; MT-116…MT-118
 
 ### Fixes of 2026-10-20
 - [x] Y.1 Zero-size capture — root cause: the window in front was used as it came; DWM gave it an empty
@@ -524,6 +525,18 @@ acceptance step needs real hardware/API key and is listed in `MANUAL_TESTS.md` (
   `test_mic_check.py`); the 2026-10-19 log has no such line because the mic was open for 79 ms only
 - [x] Y.5 `--self-check` `screen_assist` now chooses a window with the new rules and has the loopback answer
   503 once, so the SDK's retry and the busy note run in the frozen build too
+
+### Licence and release (2026-10-21)
+- [x] R.1 Licence: MIT, chosen by the owner — `LICENSE` (SPDX text), `pyproject.toml` `license`/`license-files`
+  (PEP 639, setuptools ≥ 77), bundled next to `THIRD_PARTY_NOTICES.txt` (`packaging/wisp.spec`); README and
+  the user guide say so — `test_packaging.py::test_version_matches_pyproject`; D-060
+- [x] R.2 Releases from CI — `.github/workflows/ci.yml` job `release`: on a tag `v<version>` it checks the
+  version, takes the installer the build job tested and publishes it with `gh release create --verify-tag`
+  and `docs/releases/<tag>.md` — `test_packaging.py::test_version_matches_pyproject` (notes exist for the
+  version); D-060
+- [x] R.3 `Wisp.exe --mic-check [report.json]` — `audio/mic_report.py`, `__main__.py`; 1.5 s, levels only, a
+  verdict and an exit code — `test_mic_check.py` (4 new: working, silent vs blocked, not opening, exit code);
+  run on this PC from source and from the exe for MT-116; D-060
 
 ### Testing, packaging, definition of done
 - [x] T.1 Unit tests: dispatcher, safety tiers, scheduler parsing + persistence, memory, clipboard store,
@@ -633,3 +646,6 @@ acceptance step needs real hardware/API key and is listed in `MANUAL_TESTS.md` (
   already there at the previous commit and the tests pass.
 - 2026-10-21: CI's actions moved to their Node 24 majors (@v7); FINAL_REPORT.md brought up to date (it
   still described the 2026-10-13 state); T.4 done.
+- 2026-10-21: MIT licence (owner's choice); CI publishes a release from a version tag; `--mic-check` added and
+  run with the owner's permission: both builds get about −95 dBFS from the AMD array with every privacy switch
+  on, so MT-116's answer is the input, not Windows privacy.

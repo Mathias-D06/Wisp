@@ -21,6 +21,10 @@ def test_version_matches_pyproject():
     project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"]
     assert project["version"] == __version__
     assert re.fullmatch(r"\d+\.\d+\.\d+", __version__)  # the spec turns it into a file version
+    assert project["license"] == "MIT" and (ROOT / "LICENSE").read_text(
+        encoding="utf-8").startswith("MIT License")
+    # CI's release job publishes these notes for the tag v<version>
+    assert (ROOT / "docs" / "releases" / f"v{__version__}.md").is_file()
 
 
 def test_version_flag():

@@ -186,3 +186,100 @@ def test_dictation_with_a_dead_mic_says_which_setting_to_check(qtbot):
     controller.stop()
     assert "Wisp got only silence from the microphone." in hud.messages
     assert "transcribe" not in names(rec) and stats.events == []
+
+
+# ----- Wisp.exe --mic-check (MT-116) ------------------------------------------------------------
+class ReportMic:
+    """A fake MicCapture: delivers ``pcm`` once opened, with fixed channel levels."""
+
+    def __init__(self, pcm=b"", levels=(-40.0, -41.5), fail=""):
+        self.pcm, self.levels, self.fail = pcm, list(levels), fail
+        self.subscribers, self.events = {}, []
+        self.device_label, self.format_description = "Microphone Array (Fake)", "44100 Hz × 2 ch"
+
+    def subscribe(self, name, callback):
+        self.subscribers[name] = callback
+
+    def unsubscribe(self, name):
+        self.subscribers.pop(name)
+
+    def acquire(self, user):
+        if self.fail:
+            from wisp.audio.capture import MicError
+
+            raise MicError(self.fail)
+        self.events.append("open")
+        for callback in self.subscribers.values():
+            callback(self.pcm)
+
+    def channel_levels(self):
+        return self.levels
+
+    def release(self, user):
+        self.events.append("released")
+
+    def close(self):
+        self.events.append("closed")
+
+
+def states_allowed():
+    return mic_check.privacy_states(registry(ALL_ALLOWED))
+
+
+def test_mic_check_reports_a_working_microphone():
+    from wisp.audio import mic_report
+
+    mic = ReportMic(pcm(1.5, 33))
+    result = mic_report.measure(lambda: mic, seconds=0, states=states_allowed)
+    assert result["opened"] and not result["digital_silence"] and result["seconds"] == 1.5
+    assert result["channels_dbfs"] == [-40.0, -41.5] and -65 < result["output_dbfs"] < -55
+    assert result["privacy"]["Let desktop apps access your microphone"] == "Allow"
+    assert result["verdict"].startswith("Sound arrived") and mic.events == [
+        "open", "released", "closed"]
+    assert "program" in result and result["frozen"] is False
+
+
+def test_mic_check_tells_silence_from_a_blocked_switch():
+    from wisp.audio import mic_report
+
+    silent = mic_report.measure(lambda: ReportMic(lsb_noise(1.5), levels=(-96.4, -96.5)),
+                                seconds=0, states=states_allowed)
+    assert silent["digital_silence"] and silent["silent_channels"]
+    assert "Compare with the other build" in silent["verdict"]
+    blocked = mic_report.measure(
+        lambda: ReportMic(pcm(1.5, 0), levels=(-120.0,)), seconds=0,
+        states=lambda: mic_check.privacy_states(registry(
+            {**ALL_ALLOWED, "Let desktop apps access your microphone": "Deny"})))
+    assert blocked["verdict"] == ("Windows is blocking it: Let desktop apps access your "
+                                  "microphone is off.")
+
+
+def test_mic_check_reports_a_microphone_that_does_not_open():
+    from wisp.audio import mic_report
+
+    mic = ReportMic(fail="Microphone unavailable.")
+    result = mic_report.measure(lambda: mic, seconds=0, states=states_allowed)
+    assert result["opened"] is False and result["error"] == "Microphone unavailable."
+    assert result["verdict"] == "The microphone didn't open: Microphone unavailable."
+    assert mic.events == ["closed"]
+
+
+def test_mic_check_exit_code_fails_on_silent_channels(monkeypatch, tmp_path):
+    """A start-up click lifts the peak above digital silence; silent channels still fail."""
+    import json
+
+    from wisp.audio import mic_report
+
+    real_measure = mic_report.measure
+    click = bytearray(lsb_noise(1.5))
+    click[100:102] = (900).to_bytes(2, "little", signed=True)
+    for data, levels, expected in ((bytes(click), (-93.0, -93.1), 1),
+                                   (pcm(1.5, 33), (-40.0, -41.0), 0)):
+        def fake_measure(data=data, levels=levels):
+            return real_measure(lambda: ReportMic(data, levels=levels), seconds=0,
+                                states=states_allowed)
+
+        monkeypatch.setattr(mic_report, "measure", fake_measure)
+        report = tmp_path / "mic.json"
+        assert mic_report.run(report) == expected
+        assert json.loads(report.read_text(encoding="utf-8"))["opened"] is True

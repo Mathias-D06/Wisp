@@ -53,3 +53,34 @@ jobs:
           name: Wisp-installer-${{ github.sha }}
           path: dist/WispSetup-*.exe
           if-no-files-found: error
+
+  # Pushing a tag "v<version>" (the version in pyproject.toml) publishes a GitHub Release with the
+  # installer this run built and tested, and the notes in docs/releases/<tag>.md. Sources:
+  # cli.github.com/manual/gh_release_create; docs.github.com "Using GitHub CLI in workflows"
+  # (preinstalled on hosted runners, GH_TOKEN); actions/download-artifact@v8 (node24).
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: test-and-build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write  # create the release and upload its asset; every other job only reads
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: Wisp-installer-${{ github.sha }}
+          path: dist
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          version=$(sed -n 's/^version = "\(.*\)"/\1/p' pyproject.toml)
+          if [ "$TAG" != "v$version" ]; then
+            echo "::error title=Release::Tag $TAG doesn't match the version $version in pyproject.toml"
+            exit 1
+          fi
+          gh release create "$TAG" "dist/WispSetup-$version.exe#WispSetup-$version.exe (Windows installer)" \
+            --verify-tag --title "Wisp $version" --notes-file "docs/releases/$TAG.md"

@@ -52,6 +52,7 @@ datas = (
     copy_metadata("APScheduler")  # trigger/executor aliases are entry points
     + copy_metadata("google-genai")
     + [(str(ROOT / "build" / "THIRD_PARTY_NOTICES.txt"), ".")]
+    + [(str(ROOT / "LICENSE"), ".")]  # Wisp's MIT licence, next to the notices
     + [(str(ROOT / "src" / "wisp" / "assets" / "icons"), "wisp/assets/icons")]  # Lucide (ISC)
 )
 

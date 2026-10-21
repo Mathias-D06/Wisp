@@ -124,5 +124,5 @@ UK, EEA and Swiss users need a billing-enabled key under Google's terms. To buil
 Version 0.1.0, a personal project. The installer isn't code-signed, so SmartScreen warns on first run.
 Some system toggles (Night Light, dark mode, default output device) use undocumented Windows
 behaviour; each one is isolated and fails gracefully (see [FINAL_REPORT.md](FINAL_REPORT.md)).
-No licence has been chosen yet. Third-party licences are listed in the build's
+Wisp is released under the [MIT License](LICENSE). Third-party licences are listed in the build's
 `THIRD_PARTY_NOTICES.txt`.

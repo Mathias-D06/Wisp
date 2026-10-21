@@ -17,12 +17,13 @@ Wisp is a Windows 10/11 voice assistant built on the Gemini Live API:
 - **Discreet mode:** a quiet look, text-only answers, no sounds or pop-ups.
 - **Also:** dictation, Circle to Ask, to-dos, persistent routines, memory, a loadout, stats and a
   safety layer.
-- **Packaging:** a per-user installer, a frozen `--self-check`, and CI on GitHub.
+- **Packaging:** a per-user installer, a frozen `--self-check`, `--mic-check`, and CI on
+  GitHub that also publishes a release from a version tag. MIT licence.
 
 There are about 24,000 lines of application code in 171 files and 10,800 lines of tests in 47
 test files.
 - `README.md` describes the project; `docs/USER_GUIDE.md` covers installing and using it.
-- `PROGRESS.md` holds the evidence behind each requirement, and `DECISIONS.md` the 59 design
+- `PROGRESS.md` holds the evidence behind each requirement, and `DECISIONS.md` the 60 design
   decisions.
 - `SOURCES.md` lists every API and document the code relies on.
 - `MANUAL_TESTS.md` holds the 124 hands-on checks.
@@ -33,8 +34,8 @@ The code is at github.com/Mathias-D06/Wisp.
 
 | Status | Count | Meaning |
 |---|---|---|
-| `[x]` done | 132 | Implemented, with automated evidence (tests, a spike, or a build, install or CI run). |
-| `[~]` implemented, needs a person | 22 | Acceptance needs a real API key, a microphone, an account, a phone or a second monitor. |
+| `[x]` done | 136 | Implemented, with automated evidence (tests, a spike, or a build, install or CI run). |
+| `[~]` implemented, needs a person | 21 | Acceptance needs a real API key, a microphone, an account, a phone or a second monitor. |
 | `[ ]` open | 0 | |
 
 The items that need a person, with the manual test for each:
@@ -51,13 +52,12 @@ The items that need a person, with the manual test for each:
 | I.3, I.9, I.A the Island's activities, window behaviour and one fluid shape | MT-66, MT-70, MT-71, MT-74, MT-77 |
 | P4.2b reveal from the top edge; P4.3 Calendar; P4.4 Files & Share | MT-79…MT-81; MT-82…MT-89; MT-90…MT-97 |
 | S.1 Screen Assist; S.2 Watch mode; S.3 Discreet mode | MT-98…MT-106; MT-104, MT-105; MT-107…MT-114 |
-| X.4 a microphone that delivers only silence (and which cause it is) | MT-116…MT-118 |
 
 The fixes of 2026-10-16 and 2026-10-20 add MT-115 and MT-119…MT-124.
 
 ## Evidence summary
 
-- **Automated tests:** 678 passed, 3 skipped on this PC (opt-in tests that touch the clipboard,
+- **Automated tests:** 682 passed, 3 skipped on this PC (opt-in tests that touch the clipboard,
   the keyboard or the Recycle Bin). The suite exits cleanly on three runs in a row. Ruff reports
   no problems.
 - **CI on GitHub** (`windows-latest`), run 39449959046 for commit 1fac972, passed every step:
@@ -88,8 +88,10 @@ The fixes of 2026-10-16 and 2026-10-20 add MT-115 and MT-119…MT-124.
    capture of the 4-channel microphone array fixed it.
 7. **D-054:** Screen Assist failed every time with "RuntimeError". A temporary `genai.Client` was
    garbage-collected and closed its HTTP client before the request went out.
-8. **D-055:** the installed exe got only silence from the microphone. Wisp now detects it and
-   names the Windows setting to check. Which cause it was needs MT-116.
+8. **D-055, D-060:** the installed exe got only silence from the microphone. Wisp now detects
+   it and names the Windows setting to check. Measured with `--mic-check` from source and from
+   the exe: about −95 dBFS on all four channels of the AMD array with every privacy switch on.
+   The input itself is silent, for any program.
 9. **D-056:** an empty window rectangle (0,0,0,0) reached the screenshot code. The desktop, the
    taskbar and empty, cloaked or off-screen windows are now skipped, and rectangles clamped.
 10. **D-057:** Gemini's 503 "high demand". The SDK now retries 429/503 with backoff, the card
@@ -131,8 +133,9 @@ matching Settings page.
   request shapes are verified against the SDK and a local stand-in, and the live check is MT-98.
 - Free-tier Gemini keys allow Google to use what you send to improve its products, and human
   reviewers may read it. Users in the EEA, UK and Switzerland must use a billing-enabled key.
-- No licence has been chosen, so others have no rights to use the code beyond viewing it on
-  GitHub.
+- This PC's built-in microphone array ("Microphone Array (AMD Audio Device)") delivers almost
+  no signal (D-060). Check its mute key or switch and the AMD audio driver, or choose the headset
+  in Settings → Hotkeys and audio. `Wisp.exe --mic-check report.json` measures it again.
 
 ## What you need to do next
 
@@ -140,9 +143,11 @@ matching Settings page.
    These need your API key and microphone; some also need a Google account, a phone on a Private
    Wi-Fi network or a second monitor. Report any failure with the matching lines from
    `%APPDATA%\Wisp\logs\wisp.log`.
-2. Choose a licence for Wisp. Third-party licences are listed in `THIRD_PARTY_NOTICES.txt`.
-3. Optionally, publish a GitHub Release with the installer, and sign the exe and installer to
-   avoid the SmartScreen warning.
+2. Fix or replace the microphone input above, then repeat MT-116 and MT-51.
+3. For the next version, raise `version` in `pyproject.toml` and `wisp/__init__.py`, add
+   `docs/releases/v<version>.md`, and push the tag `v<version>`. CI builds, tests and publishes
+   the release.
+4. Optionally, sign the exe and installer to avoid the SmartScreen warning.
 
 Build everything with `.venv\Scripts\python packaging\build.py`. This produces
 `dist\Wisp\Wisp.exe` and `dist\WispSetup-0.1.0.exe`. CI builds the same on every push.

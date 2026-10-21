@@ -1328,6 +1328,9 @@ Decisions:
 * **The level line uses plain numbers:** "channels (dBFS) -96.4, -96.5, …; mixing 1, 2, 3, 4".
   `MicConverter.channel_levels` returns Python floats. "Microphone opened" now names the device.
 
+Result (D-060): MT-116 measured both builds. The array gives about −95 dBFS to `python.exe` and
+to `Wisp.exe` alike, with every switch on. It isn't Windows privacy; it is the input itself.
+
 ## D-056 What Screen Assist captures when the window in front can't be captured (fix of 2026-10-20)
 Report (installed build, 2026-10-20 12:05): `mss.exception.ScreenShotError: Region has zero or
 negative size: {'left': 0, 'top': 0, 'width': 0, 'height': 0}`.
@@ -1497,3 +1500,42 @@ quits it, closes the windows it made, and deletes them now (`deleteLater` +
 deletions without a running event loop). It also puts logging and the exception hooks back, as
 each test did by hand before. With it: no widgets left at the end, and exit code 0 on three
 full runs in a row.
+
+## D-060 Licence, releases, and `--mic-check` (2026-10-21)
+* **Licence: MIT**, chosen by the owner.
+  - `LICENSE` holds the SPDX text, with "Copyright (c) 2026 Mathias-D06" (the GitHub account
+    name).
+  - `pyproject.toml` declares `license = "MIT"` and `license-files = ["LICENSE"]` (PEP 639;
+    setuptools 77 or newer, so the build requirement is now `setuptools>=77`).
+  - The app ships the file next to `THIRD_PARTY_NOTICES.txt`, as the licence asks for copies.
+* **Releases come from CI, on a tag.** Pushing `v<version>` runs the usual job. A `release` job
+  then:
+  - checks that the tag matches the version in `pyproject.toml`;
+  - downloads the installer that job built and tested;
+  - publishes it with `gh release create --verify-tag` and the notes in
+    `docs/releases/<tag>.md`.
+
+  Only that job has `contents: write`; the others keep read-only access. The installer on the
+  release is therefore built from the tagged commit, never from a PC.
+* **`Wisp.exe --mic-check [report.json]`** (`audio/mic_report.py`) answers MT-116 without the
+  UI.
+  - It opens the input chosen in Settings the way the app does, for 1.5 s.
+  - It reports the program, the device, the format, each channel's level, the output's level
+    and peak, digital silence, the three privacy switches, and a verdict.
+  - The audio stays in memory and is dropped. It exits 1 on silence or when the mic doesn't
+    open.
+* **MT-116, run with the owner's permission on 2026-10-21:**
+
+  | Run by | Channels | Output | Privacy switches |
+  |---|---|---|---|
+  | `python.exe` (source) | −95.1 dBFS ×4 | −84 dBFS | all Allow |
+  | `dist\Wisp\Wisp.exe` | −93.0 dBFS ×4 | −80 dBFS | all Allow |
+
+  Both runs used "Microphone Array (AMD Audio Device)", 44.1 kHz × 4 ch float32. Windows
+  treats both programs alike and privacy isn't blocking either: that input delivers almost
+  nothing to any program. A quiet room is about −60 dBFS; a single −58 to −62 dBFS peak is the
+  stream starting. What is left is outside Wisp:
+  - a microphone mute key or switch;
+  - the AMD driver or its enhancements;
+  - Windows Settings → System → Sound → Input → the array's test bar;
+  - or choosing the headset as Wisp's input.
