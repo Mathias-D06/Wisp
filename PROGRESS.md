@@ -13,12 +13,12 @@ acceptance step needs real hardware/API key and is listed in `MANUAL_TESTS.md` (
   part 2; Dynamic Island, part 3; part 4: font warning, auto-hide, Calendar tab, Files & Share tab) and
   of 2026-10-14 (Screen Assist + Watch mode, part 1; Discreet mode, part 2), and the fixes of 2026-10-16
   (Screen Assist's closed client, D-054; a silent microphone, D-055) and of 2026-10-20 (empty capture
-  rectangles, D-056; Gemini's "high demand", D-057; a press that ended in nothing, D-058). Remaining
-  work needs a person: the MANUAL_TESTS core run (API key + microphone, now including MT-50…MT-124: a
-  Google account for MT-82…MT-89, a phone on a Private Wi-Fi for MT-94…MT-96, Gemini answering for
-  MT-98…MT-124 — it returned 503 "high demand" during the builds; MT-116 settles whether the exe's
-  silent mic is Windows privacy or the input), pushing to GitHub so CI runs, choosing a licence. See
-  FINAL_REPORT.md.
+  rectangles, D-056; Gemini's "high demand", D-057; a press that ended in nothing, D-058; CI, D-059).
+  On GitHub (github.com/Mathias-D06/Wisp) with CI green. Remaining work needs a person: the
+  MANUAL_TESTS core run and the extended cases (API key + microphone, MT-01…MT-124: a Google account
+  for MT-82…MT-89, a phone on a Private Wi-Fi for MT-94…MT-96, Gemini answering for MT-98…MT-124 — it
+  returned 503 "high demand" during the builds; MT-116 settles whether the exe's silent mic is Windows
+  privacy or the input), choosing a licence. See FINAL_REPORT.md.
 - Safety note for automated runs: never toggle the user's Night Light/Wi-Fi/Bluetooth/theme/
   volume/output device in tests on this PC; test write paths with pure functions + manual tests.
 - Environment: Windows 11, Python 3.12.10 venv in `.venv`, Git 2.55, Inno Setup 6.7.3 (per-user,
@@ -534,13 +534,15 @@ acceptance step needs real hardware/API key and is listed in `MANUAL_TESTS.md` (
   (FakeLiveServer), `test_live_session.py`, `test_schedule_tools.py::test_model_schedules_routine_then_it_replays_without_model`
 - [x] T.3 MANUAL_TESTS.md runnable in ~20 minutes — "Core run" (16 steps, ~27 min) covering every `[~]`
   item; the full catalogue (77 cases) is the extended set
-- [~] T.4 GitHub Actions on windows-latest: lint + tests + PyInstaller exe — `.github/workflows/ci.yml`
+- [x] T.4 GitHub Actions on windows-latest: lint + tests + PyInstaller exe — `.github/workflows/ci.yml`
   (ruff, pytest, Inno Setup, `packaging/build.py` incl. frozen self-check, artefacts). On GitHub since
-  2026-10-18 (github.com/Mathias-D06/Wisp): lint and tests pass; the build step failed printing "→" to a
-  cp1252 pipe (D-059), fixed and reproduced fixed on this PC with piped output; failures now show as
-  annotations. Then the Tests step exited 1 after "all passed": PySide6's shutdown crashed destroying the
-  windows of two WispApps left by tests; the `wisp_app` fixture deletes them (D-059). Hosted runners have no audio devices (those tests skip; the self-check marks audio
-  optional)
+  2026-10-18 (github.com/Mathias-D06/Wisp). The first runs failed twice over (D-059): the build printed
+  "→" to a cp1252 pipe, and the test process crashed in PySide6's shutdown after "all passed" (two
+  WispApps' windows left by tests). Both fixed; run 39449959046 (1fac972, 2026-10-20) passed every step,
+  677 passed / 4 skipped, all required self-checks ok on the runner, app and installer artefacts uploaded.
+  Failures show as annotations. The actions are on their Node 24 majors (checkout, setup-python and
+  upload-artifact @v7). Hosted runners have no audio devices (those tests skip; the self-check marks
+  audio optional)
 - [x] D.1 Installer installs, launches at login, uninstalls cleanly — `packaging/installer.iss`; silent
   install/uninstall on this PC 2026-10-13 (files, shortcut, uninstall entry, Run value; the Run command
   started Wisp; uninstall removed everything incl. an app-written Run value; user data kept);
@@ -629,3 +631,5 @@ acceptance step needs real hardware/API key and is listed in `MANUAL_TESTS.md` (
   bundle twice (0.45 s a request), now shared. The "Windows fatal exception 0x8001010d" printed during
   `test_win_integration.py` is COM's RPC_E_CANTCALLOUT_ININPUTSYNCCALL reported by faulthandler; it is
   already there at the previous commit and the tests pass.
+- 2026-10-21: CI's actions moved to their Node 24 majors (@v7); FINAL_REPORT.md brought up to date (it
+  still described the 2026-10-13 state); T.4 done.
