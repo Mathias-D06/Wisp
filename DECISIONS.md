@@ -1517,6 +1517,13 @@ full runs in a row.
 
   Only that job has `contents: write`; the others keep read-only access. The installer on the
   release is therefore built from the tagged commit, never from a PC.
+* **Release notes can be corrected by a push.** A `release-notes` job runs on pushes to `main`. When
+  the push changes `docs/releases/<tag>.md` and that release exists, it runs
+  `gh release edit <tag> --notes-file …`, which touches only the notes.
+  - GitHub shows every line break in release notes, so the files have one line per paragraph or
+    list item (a comment at the top says so).
+  - v0.1.0's first notes were hard-wrapped at 100 characters and showed broken sentences. The
+    browser pane had been signed out, so they were fixed this way.
 * **`Wisp.exe --mic-check [report.json]`** (`audio/mic_report.py`) answers MT-116 without the
   UI.
   - It opens the input chosen in Settings the way the app does, for 1.5 s.

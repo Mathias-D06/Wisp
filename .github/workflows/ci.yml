@@ -84,3 +84,36 @@ jobs:
           fi
           gh release create "$TAG" "dist/WispSetup-$version.exe#WispSetup-$version.exe (Windows installer)" \
             --verify-tag --title "Wisp $version" --notes-file "docs/releases/$TAG.md"
+
+  # A push to main that changes docs/releases/<tag>.md puts the new text on that published release
+  # (only its notes: gh release edit with --notes-file alone). Sources: cli.github.com/manual/
+  # gh_release_edit, gh_release_view; the push event's "before" commit (docs.github.com, webhook
+  # events: push).
+  release-notes:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write  # edit release notes
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0  # the push's earlier commit, to see which notes changed
+
+      - name: Update the notes of published releases
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BEFORE: ${{ github.event.before }}
+        run: |
+          if [ -z "$BEFORE" ] || [ "$BEFORE" = "0000000000000000000000000000000000000000" ]; then
+            echo "No earlier commit to compare with."; exit 0
+          fi
+          git diff --name-only --diff-filter=AM "$BEFORE" "$GITHUB_SHA" -- 'docs/releases/*.md' |
+          while read -r file; do
+            tag=$(basename "$file" .md)
+            if gh release view "$tag" > /dev/null 2>&1; then
+              gh release edit "$tag" --notes-file "$file"
+              echo "Updated the notes of $tag from $file"
+            else
+              echo "$tag has no published release yet; its notes are used when the tag is pushed."
+            fi
+          done

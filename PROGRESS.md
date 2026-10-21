@@ -532,8 +532,9 @@ acceptance step needs real hardware/API key and is listed in `MANUAL_TESTS.md` (
   the user guide say so — `test_packaging.py::test_version_matches_pyproject`; D-060
 - [x] R.2 Releases from CI — `.github/workflows/ci.yml` job `release`: on a tag `v<version>` it checks the
   version, takes the installer the build job tested and publishes it with `gh release create --verify-tag`
-  and `docs/releases/<tag>.md` — `test_packaging.py::test_version_matches_pyproject` (notes exist for the
-  version); D-060
+  and `docs/releases/<tag>.md`; job `release-notes`: a push to main that changes those notes updates the
+  published release's text (`gh release edit --notes-file`) — `test_packaging.py::test_version_matches_pyproject`
+  (notes exist for the version); v0.1.0 published by CI on 2026-10-21 with the installer; D-060
 - [x] R.3 `Wisp.exe --mic-check [report.json]` — `audio/mic_report.py`, `__main__.py`; 1.5 s, levels only, a
   verdict and an exit code — `test_mic_check.py` (4 new: working, silent vs blocked, not opening, exit code);
   run on this PC from source and from the exe for MT-116; D-060
